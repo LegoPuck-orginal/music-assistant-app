@@ -71,6 +71,7 @@ jobs:
             * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
             * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
             * **Features & Highlights**:
+              - 🎨 **Eigenes App-Icon (Spotify Edition)**: Speziell designtes, hochauflösendes iOS App-Icon mit tiefem OLED-Schwarz, konzentrischen Vinyl-Grooves und leuchtend grünem Spotify-Musik-Emblem in allen iOS- und Watch-Größen
               - 🏝️ **Echte Apple Dynamic Island & Live Activities (ActivityKit & WidgetKit)**: Native Hardware-Integration für iPhone 14 Pro, 15 und 16 – zeigt aktive Lautsprecher, pulsierende Soundwaves und DJ-Sprachblasen direkt in der Dynamic Island und auf dem Sperrbildschirm
               - 📲 **Autarker In-App-Updater (Keine Extra-App nötig)**: One-Tap-Installation und direktes In-App-Update über das native Apple OTA-Protokoll (`itms-services`) ohne SideStore, AltStore oder PC
               - 💾 **Offline Musik-Downloads & Speicher-Manager**: Lade einzelne Songs oder ganze Playlists herunter und genieße unterbrechungsfreie Musikwiedergabe komplett ohne Internetverbindung

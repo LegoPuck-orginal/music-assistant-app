@@ -160,37 +160,37 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Glowing Music Icon
+                // App Icon with subtle glow
                 Center(
                   child: Container(
                     width: 90,
                     height: 90,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [
-                          SpotifyColors.green.withValues(alpha: 0.35),
-                          SpotifyColors.surfaceElevated,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      borderRadius: BorderRadius.circular(22),
                       boxShadow: [
                         BoxShadow(
-                          color: SpotifyColors.green.withValues(alpha: 0.3),
+                          color: SpotifyColors.green.withValues(alpha: 0.35),
                           blurRadius: 28,
                           spreadRadius: 2,
                         ),
                       ],
-                      border: Border.all(
-                        color: SpotifyColors.green,
-                        width: 2,
-                      ),
                     ),
-                    child: const Icon(
-                      Icons.graphic_eq,
-                      color: SpotifyColors.green,
-                      size: 46,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(22),
+                      child: Image.asset(
+                        'assets/images/app_icon.png',
+                        width: 90,
+                        height: 90,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Container(
+                          color: SpotifyColors.surfaceElevated,
+                          child: const Icon(
+                            Icons.graphic_eq,
+                            color: SpotifyColors.green,
+                            size: 46,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
