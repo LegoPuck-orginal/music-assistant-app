@@ -407,69 +407,341 @@ class NowPlayingSheet extends StatelessWidget {
   }
 
   void _showQueueModal(BuildContext context, MusicProvider prov) {
+    prov.loadServerQueue();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: SpotifyColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final queue = prov.queue;
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              padding: const EdgeInsets.only(top: 12),
+              child: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: SpotifyColors.textMuted,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                      child: Row(
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Warteschlange',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                '${queue.length} Titel',
+                                style: const TextStyle(
+                                  color: SpotifyColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Spacer(),
+                          if (queue.isNotEmpty)
+                            TextButton.icon(
+                              icon: const Icon(Icons.delete_outline,
+                                  color: Colors.redAccent, size: 18),
+                              label: const Text('Leeren',
+                                  style: TextStyle(color: Colors.redAccent)),
+                              onPressed: () {
+                                prov.clearCurrentQueue();
+                                setModalState(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    const Divider(color: SpotifyColors.borderSubtle),
+                    if (queue.isEmpty)
+                      const Expanded(
+                        child: Center(
+                          child: Text(
+                            'Warteschlange ist leer',
+                            style: TextStyle(
+                              color: SpotifyColors.textSecondary,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: queue.length,
+                          itemBuilder: (c, idx) {
+                            final item = queue[idx];
+                            final isNow = item.id == prov.currentTrack?.id;
+                            return Dismissible(
+                              key: ValueKey('${item.id}_$idx'),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                color: Colors.redAccent.withValues(alpha: 0.8),
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 20),
+                                child: const Icon(Icons.delete,
+                                    color: Colors.white),
+                              ),
+                              onDismissed: (_) {
+                                prov.removeFromQueue(idx);
+                                setModalState(() {});
+                              },
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(
+                                  isNow ? Icons.equalizer : Icons.music_note,
+                                  color: isNow
+                                      ? SpotifyColors.green
+                                      : SpotifyColors.textMuted,
+                                ),
+                                title: Text(
+                                  item.title,
+                                  style: TextStyle(
+                                    color: isNow
+                                        ? SpotifyColors.green
+                                        : Colors.white,
+                                    fontWeight: isNow
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  item.artist,
+                                  style: const TextStyle(
+                                      color: SpotifyColors.textSecondary),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      item.formattedDuration,
+                                      style: const TextStyle(
+                                          color: SpotifyColors.textMuted,
+                                          fontSize: 12),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close,
+                                          size: 16,
+                                          color: SpotifyColors.textMuted),
+                                      onPressed: () {
+                                        prov.removeFromQueue(idx);
+                                        setModalState(() {});
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                onTap: () {
+                                  prov.jumpToQueueIndex(idx);
+                                  Navigator.pop(ctx);
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showSleepTimerDialog(BuildContext context, MusicProvider prov) {
     showModalBottomSheet(
       context: context,
       backgroundColor: SpotifyColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
-                child: Text(
-                  'Warteschlange',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+              child: Row(
+                children: [
+                  Icon(Icons.bedtime, color: SpotifyColors.green),
+                  SizedBox(width: 8),
+                  Text(
+                    'Sleep Timer (Einschlaftimer)',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
+                ],
               ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: prov.queue.length,
-                  itemBuilder: (c, idx) {
-                    final item = prov.queue[idx];
-                    final isNow = item.id == prov.currentTrack?.id;
-                    return ListTile(
-                      dense: true,
-                      leading: Icon(
-                        isNow ? Icons.equalizer : Icons.music_note,
-                        color: isNow ? SpotifyColors.green : SpotifyColors.textMuted,
-                      ),
-                      title: Text(
-                        item.title,
-                        style: TextStyle(
-                          color: isNow ? SpotifyColors.green : Colors.white,
-                          fontWeight: isNow ? FontWeight.w700 : FontWeight.w500,
-                        ),
-                      ),
-                      subtitle: Text(
-                        item.artist,
-                        style: const TextStyle(color: SpotifyColors.textSecondary),
-                      ),
-                      trailing: Text(
-                        item.formattedDuration,
-                        style: const TextStyle(color: SpotifyColors.textMuted, fontSize: 12),
-                      ),
-                      onTap: () {
-                        prov.playTrack(item);
-                        Navigator.pop(ctx);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
+            ),
+            const Divider(color: SpotifyColors.borderSubtle),
+            ListTile(
+              leading: const Icon(Icons.timer_10, color: Colors.white),
+              title: const Text('15 Minuten',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                prov.setSleepTimer(const Duration(minutes: 15));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Einschlaftimer auf 15 Minuten gestellt'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer, color: Colors.white),
+              title: const Text('30 Minuten',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                prov.setSleepTimer(const Duration(minutes: 30));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Einschlaftimer auf 30 Minuten gestellt'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer, color: Colors.white),
+              title: const Text('45 Minuten',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                prov.setSleepTimer(const Duration(minutes: 45));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Einschlaftimer auf 45 Minuten gestellt'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer, color: Colors.white),
+              title:
+                  const Text('1 Stunde', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                prov.setSleepTimer(const Duration(hours: 1));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Einschlaftimer auf 1 Stunde gestellt'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.timer_off, color: Colors.redAccent),
+              title: const Text('Timer ausschalten',
+                  style: TextStyle(color: Colors.redAccent)),
+              onTap: () {
+                prov.clearSleepTimer();
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Einschlaftimer deaktiviert'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAnnouncementDialog(BuildContext context, MusicProvider prov) {
+    final textCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: SpotifyColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.campaign, color: SpotifyColors.green),
+            SizedBox(width: 8),
+            Text('Durchsage senden',
+                style: TextStyle(color: Colors.white, fontSize: 18)),
+          ],
+        ),
+        content: TextField(
+          controller: textCtrl,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Nachricht eingeben (TTS)...',
+            hintStyle: const TextStyle(color: SpotifyColors.textSecondary),
+            filled: true,
+            fillColor: Colors.black26,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
           ),
-        );
-      },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen',
+                style: TextStyle(color: SpotifyColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: SpotifyColors.green,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              final text = textCtrl.text.trim();
+              if (text.isNotEmpty) {
+                prov.sendAnnouncement(text);
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Durchsage wird abgespielt: "$text"'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              }
+            },
+            child: const Text('Senden'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -551,6 +823,24 @@ class NowPlayingSheet extends StatelessWidget {
                     backgroundColor: Colors.transparent,
                     builder: (_) => const DevicePickerSheet(),
                   );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.bedtime, color: Colors.white),
+                title: const Text('Sleep Timer / Einschlaftimer',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showSleepTimerDialog(context, prov);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.campaign, color: Colors.white),
+                title: const Text('Durchsage an Lautsprecher senden',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showAnnouncementDialog(context, prov);
                 },
               ),
               ListTile(

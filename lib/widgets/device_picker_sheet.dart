@@ -154,6 +154,32 @@ class DevicePickerSheet extends StatelessWidget {
                               ],
                             ),
                           ),
+                          IconButton(
+                            icon: Icon(
+                              active.isMuted
+                                  ? Icons.volume_off
+                                  : Icons.volume_up,
+                              color: active.isMuted
+                                  ? Colors.redAccent
+                                  : SpotifyColors.green,
+                              size: 20,
+                            ),
+                            tooltip: active.isMuted
+                                ? 'Stummschaltung aufheben'
+                                : 'Stummschalten',
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              prov.toggleMute(active);
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.campaign,
+                                color: Colors.white, size: 20),
+                            tooltip: 'Durchsage an diesen Lautsprecher',
+                            onPressed: () {
+                              _showAnnouncementDialog(context, prov, active.id);
+                            },
+                          ),
                           Text(
                             '${active.volume}%',
                             style: const TextStyle(
@@ -263,13 +289,40 @@ class DevicePickerSheet extends StatelessWidget {
                             fontSize: 12,
                           ),
                         ),
-                        trailing: isCurrent
-                            ? const Icon(Icons.check_circle,
-                                color: SpotifyColors.green, size: 20)
-                            : null,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!player.isLocal && isAvail)
+                              IconButton(
+                                icon: Icon(
+                                  Icons.power_settings_new,
+                                  color: player.state != 'idle'
+                                      ? SpotifyColors.green
+                                      : SpotifyColors.textMuted,
+                                  size: 20,
+                                ),
+                                tooltip: 'Power an/aus',
+                                onPressed: () {
+                                  HapticFeedback.lightImpact();
+                                  prov.togglePlayerPower(player);
+                                },
+                              ),
+                            if (isCurrent)
+                              const Icon(Icons.check_circle,
+                                  color: SpotifyColors.green, size: 20),
+                          ],
+                        ),
                         onTap: () {
                           HapticFeedback.lightImpact();
                           prov.setActivePlayer(player);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                  'Wiedergabe aktiv auf: ${player.name}'),
+                              duration: const Duration(seconds: 1),
+                              backgroundColor: SpotifyColors.surfaceElevated,
+                            ),
+                          );
                         },
                       ),
                     ),
@@ -279,6 +332,68 @@ class DevicePickerSheet extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showAnnouncementDialog(
+      BuildContext context, MusicProvider prov, String? targetPlayerId) {
+    final textCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: SpotifyColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.campaign, color: SpotifyColors.green),
+            SizedBox(width: 8),
+            Text('Durchsage senden',
+                style: TextStyle(color: Colors.white, fontSize: 18)),
+          ],
+        ),
+        content: TextField(
+          controller: textCtrl,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Nachricht eingeben (TTS)...',
+            hintStyle: const TextStyle(color: SpotifyColors.textSecondary),
+            filled: true,
+            fillColor: Colors.black26,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen',
+                style: TextStyle(color: SpotifyColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: SpotifyColors.green,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              final text = textCtrl.text.trim();
+              if (text.isNotEmpty) {
+                prov.sendAnnouncement(text, targetPlayerId: targetPlayerId);
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Durchsage wird abgespielt: "$text"'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              }
+            },
+            child: const Text('Senden'),
+          ),
+        ],
       ),
     );
   }

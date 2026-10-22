@@ -57,6 +57,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             actions: [
               IconButton(
+                icon: const Icon(Icons.campaign_outlined, color: Colors.white),
+                tooltip: 'Durchsage an Lautsprecher',
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  _showAnnouncementDialog(context, prov);
+                },
+              ),
+              IconButton(
                 icon: const Icon(Icons.notifications_none, color: Colors.white),
                 tooltip: 'Mitteilungen',
                 onPressed: () {
@@ -383,6 +391,67 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  void _showAnnouncementDialog(BuildContext context, MusicProvider prov) {
+    final textCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: SpotifyColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.campaign, color: SpotifyColors.green),
+            SizedBox(width: 8),
+            Text('Durchsage senden',
+                style: TextStyle(color: Colors.white, fontSize: 18)),
+          ],
+        ),
+        content: TextField(
+          controller: textCtrl,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Nachricht eingeben (TTS)...',
+            hintStyle: const TextStyle(color: SpotifyColors.textSecondary),
+            filled: true,
+            fillColor: Colors.black26,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen',
+                style: TextStyle(color: SpotifyColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: SpotifyColors.green,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              final text = textCtrl.text.trim();
+              if (text.isNotEmpty) {
+                prov.sendAnnouncement(text);
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Durchsage wird abgespielt: "$text"'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              }
+            },
+            child: const Text('Senden'),
+          ),
+        ],
+      ),
     );
   }
 }

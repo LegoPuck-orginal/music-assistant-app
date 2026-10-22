@@ -430,8 +430,22 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> setActivePlayer(PlayerDevice player) async {
+    final oldPlayer = _activePlayer;
     if (_activePlayer?.isLocal == true && !player.isLocal) {
       await _localAudioPlayer.stop();
+    }
+
+    // Seamless Queue Transfer if music was playing on an external speaker and transferring to another external speaker
+    if (_isPlaying &&
+        oldPlayer != null &&
+        !oldPlayer.isLocal &&
+        !player.isLocal &&
+        oldPlayer.id != player.id) {
+      try {
+        await _api.transferQueue(oldPlayer.id, player.id, autoPlay: true);
+      } catch (e) {
+        debugPrint('[MusicProvider] transferQueue error: $e');
+      }
     }
 
     for (final p in _players) {
@@ -452,6 +466,88 @@ class MusicProvider extends ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  Future<void> toggleMute(PlayerDevice player) async {
+    player.isMuted = !player.isMuted;
+    if (player.isLocal) {
+      await _localAudioPlayer
+          .setVolume(player.isMuted ? 0.0 : player.volume / 100.0);
+    } else {
+      await _api.playerMute(player.id, player.isMuted);
+    }
+    notifyListeners();
+  }
+
+  Future<void> togglePlayerPower(PlayerDevice player) async {
+    final isCurrentlyOn = player.state != 'idle';
+    if (!player.isLocal) {
+      await _api.setPower(player.id, !isCurrentlyOn);
+      player.state = isCurrentlyOn ? 'idle' : 'paused';
+      notifyListeners();
+    }
+  }
+
+  Future<void> setSleepTimer(Duration duration) async {
+    if (_activePlayer != null && !_activePlayer!.isLocal) {
+      await _api.setSleepTimer(_activePlayer!.id, duration.inSeconds);
+    }
+  }
+
+  Future<void> clearSleepTimer() async {
+    if (_activePlayer != null && !_activePlayer!.isLocal) {
+      await _api.clearSleepTimer(_activePlayer!.id);
+    }
+  }
+
+  Future<void> sendAnnouncement(String message, {String? targetPlayerId}) async {
+    final playerId = targetPlayerId ?? _activePlayer?.id;
+    if (playerId != null && playerId != 'local_iphone') {
+      await _api.playAnnouncement(playerId, message);
+    }
+  }
+
+  Future<void> loadServerQueue() async {
+    if (_activePlayer != null && !_activePlayer!.isLocal) {
+      final items = await _api.fetchQueueItems(_activePlayer!.id);
+      if (items.isNotEmpty) {
+        _queue = items;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> removeFromQueue(int index) async {
+    if (index >= 0 && index < _queue.length) {
+      if (_activePlayer != null && !_activePlayer!.isLocal) {
+        await _api.deleteQueueItem(_activePlayer!.id, index);
+      }
+      _queue.removeAt(index);
+      if (_queueIndex >= _queue.length) {
+        _queueIndex = _queue.length - 1;
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> jumpToQueueIndex(int index) async {
+    if (index >= 0 && index < _queue.length) {
+      _queueIndex = index;
+      if (_activePlayer != null && !_activePlayer!.isLocal) {
+        await _api.playQueueIndex(_activePlayer!.id, index);
+      }
+      await playTrack(_queue[index]);
+    }
+  }
+
+  Future<void> clearCurrentQueue() async {
+    if (_activePlayer != null && !_activePlayer!.isLocal) {
+      await _api.clearQueue(_activePlayer!.id);
+    }
+    _queue.clear();
+    _currentTrack = null;
+    _isPlaying = false;
+    notifyListeners();
   }
 
   // --- Equalizer Controls ---

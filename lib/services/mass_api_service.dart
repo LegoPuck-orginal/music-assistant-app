@@ -454,6 +454,99 @@ class MassApiService {
         'option': 'replace',
       });
 
+  /// Nahtlose Übergabe der Wiedergabe (Queue Transfer von einem Speaker zu einem anderen)
+  Future<void> transferQueue(String sourceQueueId, String targetQueueId,
+          {bool autoPlay = true}) =>
+      sendCommand('player_queues/transfer', {
+        'source_queue_id': sourceQueueId,
+        'target_queue_id': targetQueueId,
+        'auto_play': autoPlay,
+      });
+
+  /// Power an/aus für einen Lautsprecher
+  Future<void> setPower(String playerId, bool power) =>
+      sendCommand('players/cmd/power', {
+        'player_id': playerId,
+        'power': power,
+      });
+
+  /// Einschlaftimer / Sleep Timer setzen (in Sekunden)
+  Future<void> setSleepTimer(String playerId, int durationSeconds) =>
+      sendCommand('players/sleep_timer/set', {
+        'player_id': playerId,
+        'duration': durationSeconds,
+      });
+
+  /// Einschlaftimer löschen
+  Future<void> clearSleepTimer(String playerId) =>
+      sendCommand('players/sleep_timer/clear', {
+        'player_id': playerId,
+      });
+
+  /// Sprachansage / Announcement auf Lautsprecher abspielen
+  Future<void> playAnnouncement(String playerId, String message) =>
+      sendCommand('players/cmd/play_announcement', {
+        'player_id': playerId,
+        'message': message,
+      });
+
+  /// Überblenden / Crossfade aktivieren/deaktivieren
+  Future<void> setCrossfade(String queueId, bool enabled) =>
+      sendCommand('player_queues/crossfade', {
+        'queue_id': queueId,
+        'crossfade_enabled': enabled,
+      });
+
+  /// Don't stop the music (Automatische ähnliche Titel bei Queue-Ende)
+  Future<void> setDontStopTheMusic(String queueId, bool enabled) =>
+      sendCommand('player_queues/dont_stop_the_music', {
+        'queue_id': queueId,
+        'dont_stop_the_music_enabled': enabled,
+      });
+
+  /// Warteschlangen-Titel live vom Server abrufen
+  Future<List<Track>> fetchQueueItems(String queueId,
+      {int limit = 50, int offset = 0}) async {
+    try {
+      final res = await sendCommand('player_queues/items', {
+        'queue_id': queueId,
+        'limit': limit,
+        'offset': offset,
+      });
+      if (res is List) {
+        return res.map((item) {
+          final map = item as Map<String, dynamic>;
+          final mediaItem =
+              map['media_item'] as Map<String, dynamic>? ?? map;
+          return _parseTrack(mediaItem, defaultProvider: 'library');
+        }).toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchQueueItems error: $e');
+    }
+    return [];
+  }
+
+  /// Einzelnen Titel aus der Warteschlange löschen
+  Future<void> deleteQueueItem(String queueId, dynamic itemIdOrIndex) =>
+      sendCommand('player_queues/delete_item', {
+        'queue_id': queueId,
+        'item_id_or_index': itemIdOrIndex,
+      });
+
+  /// Zu einem bestimmten Queue-Index springen
+  Future<void> playQueueIndex(String queueId, int index) =>
+      sendCommand('player_queues/play_index', {
+        'queue_id': queueId,
+        'index': index,
+      });
+
+  /// Warteschlange leeren
+  Future<void> clearQueue(String queueId) =>
+      sendCommand('player_queues/clear', {
+        'queue_id': queueId,
+      });
+
   /// Equalizer / DSP Preset anwenden
   Future<void> applyDSPPreset(String playerId, String presetId) =>
       sendCommand('config/players/dsp/apply_preset', {
