@@ -133,8 +133,8 @@ class MassApiService {
       completer.completeError(Exception('WebSocket is not connected'));
     }
 
-    // Timeout after 6 seconds
-    return completer.future.timeout(const Duration(seconds: 6), onTimeout: () {
+    // Timeout after 4 seconds
+    return completer.future.timeout(const Duration(seconds: 4), onTimeout: () {
       _pendingRequests.remove(id);
       throw TimeoutException('Command $command timed out');
     });
@@ -351,6 +351,81 @@ class MassApiService {
     if (p.contains('sendspin') || p.contains('companion')) return 'Companion';
     if (p.contains('universal')) return 'Universal';
     return provider.toUpperCase();
+  }
+
+  /// Schöne Fallback-Daten, falls der Server beim Kaltstart offline ist
+  List<Playlist> getFallbackPlaylists() {
+    final sampleTracks = getFallbackTracks();
+    return [
+      Playlist(
+        id: 'fallback_1',
+        name: 'Deine Lieblingshits',
+        owner: 'Music Assistant',
+        trackCount: sampleTracks.length,
+        imageUrl:
+            'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80',
+        tracks: sampleTracks,
+      ),
+      Playlist(
+        id: 'fallback_2',
+        name: 'Rock & Alternative',
+        owner: 'Sonos Hits',
+        trackCount: 8,
+        imageUrl:
+            'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=500&q=80',
+        tracks: sampleTracks.reversed.toList(),
+      ),
+      Playlist(
+        id: 'fallback_3',
+        name: 'Lo-Fi Chill & Beats',
+        owner: 'Homelab Studio',
+        trackCount: 6,
+        imageUrl:
+            'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=500&q=80',
+        tracks: sampleTracks,
+      ),
+    ];
+  }
+
+  List<Track> getFallbackTracks() {
+    return [
+      Track(
+        id: 'fallback_t1',
+        title: '1000 mal berührt',
+        artist: 'Die Zipfelbuben',
+        album: 'Jetzt wird es heiss',
+        durationSeconds: 184,
+        imageUrl:
+            'https://i.scdn.co/image/ab67616d0000b273a258468313208cf24cacab81',
+      ),
+      Track(
+        id: 'fallback_t2',
+        title: 'ROCK ANTENNE Hamburg',
+        artist: 'Live Stream',
+        album: 'Rock Antenne',
+        durationSeconds: 300,
+        imageUrl:
+            'https://static.mytuner-radio.net/media/tvos_radios/383/rock-antenne-hamburg.81109563.jpg',
+      ),
+      Track(
+        id: 'fallback_t3',
+        title: 'Midnight City',
+        artist: 'M83',
+        album: 'Hurry Up, We\'re Dreaming',
+        durationSeconds: 243,
+        imageUrl:
+            'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80',
+      ),
+      Track(
+        id: 'fallback_t4',
+        title: 'Blinding Lights',
+        artist: 'The Weeknd',
+        album: 'After Hours',
+        durationSeconds: 200,
+        imageUrl:
+            'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&q=80',
+      ),
+    ];
   }
 
   void dispose() {

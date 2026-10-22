@@ -7,7 +7,7 @@ class Playlist {
   final int trackCount;
   final String? imageUrl;
   final String type; // playlist, album, artist, mix
-  final List<Track> tracks;
+  List<Track> tracks;
 
   Playlist({
     required this.id,
@@ -16,8 +16,8 @@ class Playlist {
     required this.trackCount,
     this.imageUrl,
     this.type = 'playlist',
-    this.tracks = const [],
-  });
+    List<Track>? tracks,
+  }) : tracks = tracks != null ? List<Track>.from(tracks) : <Track>[];
 
   Playlist copyWith({
     String? id,
@@ -35,7 +35,7 @@ class Playlist {
       trackCount: trackCount ?? this.trackCount,
       imageUrl: imageUrl ?? this.imageUrl,
       type: type ?? this.type,
-      tracks: tracks ?? this.tracks,
+      tracks: tracks != null ? List<Track>.from(tracks) : List<Track>.from(this.tracks),
     );
   }
 }

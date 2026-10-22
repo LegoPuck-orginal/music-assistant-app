@@ -32,6 +32,19 @@ class MusicProvider extends ChangeNotifier {
   EqualizerSettings _equalizerSettings = EqualizerSettings();
   StreamSubscription? _eventsSubscription;
 
+  MusicProvider() {
+    // Populate with fallback data immediately so UI never shows a blank screen
+    _playlists = _api.getFallbackPlaylists();
+    _queue = _api.getFallbackTracks();
+    if (_queue.isNotEmpty) {
+      _currentTrack = _queue.first;
+      _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
+    }
+    final localIPhone = PlayerDevice.localIPhone(isSelected: true);
+    _players = [localIPhone];
+    _activePlayer = localIPhone;
+  }
+
   Track? get currentTrack => _currentTrack;
   bool get isPlaying => _isPlaying;
   Duration get currentPosition => _currentPosition;
@@ -48,30 +61,39 @@ class MusicProvider extends ChangeNotifier {
   EqualizerSettings get equalizerSettings => _equalizerSettings;
 
   Future<void> initialize() async {
-    _serverUrl = await _storage.loadServerUrl();
-    _authToken = await _storage.loadAuthToken();
-    _likedTrackIds = await _storage.loadLikedTrackIds();
-    _equalizerSettings = await _storage.loadEqualizerSettings();
+    try {
+      _serverUrl = await _storage.loadServerUrl();
+      _authToken = await _storage.loadAuthToken();
+      _likedTrackIds = await _storage.loadLikedTrackIds();
+      _equalizerSettings = await _storage.loadEqualizerSettings();
+    } catch (e) {
+      debugPrint('[MusicProvider] Storage init error: $e');
+    }
 
     // Setup local audio player listeners
-    _setupLocalAudioPlayer();
-
-    // Start with local iPhone player as default
-    final localIPhone = PlayerDevice.localIPhone(isSelected: true);
-    _players = [localIPhone];
-    _activePlayer = localIPhone;
-
-    // Connect to live Music Assistant server
-    _api.configure(_serverUrl, _authToken);
-
-    // Listen to live WebSocket events from Music Assistant
-    _eventsSubscription?.cancel();
-    _eventsSubscription = _api.events.listen(_handleServerEvent);
-
-    // Fetch live data from Music Assistant
-    await refreshServerData();
+    try {
+      _setupLocalAudioPlayer();
+    } catch (e) {
+      debugPrint('[MusicProvider] AudioPlayer setup error: $e');
+    }
 
     notifyListeners();
+
+    // Connect to server and refresh data asynchronously in background
+    _connectAndRefresh();
+  }
+
+  void _connectAndRefresh() {
+    try {
+      _api.configure(_serverUrl, _authToken);
+
+      _eventsSubscription?.cancel();
+      _eventsSubscription = _api.events.listen(_handleServerEvent);
+
+      refreshServerData();
+    } catch (e) {
+      debugPrint('[MusicProvider] Background connect error: $e');
+    }
   }
 
   void _setupLocalAudioPlayer() {
@@ -109,120 +131,128 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void _handleServerEvent(Map<String, dynamic> event) {
-    final eventName = event['event']?.toString();
-    final data = event['data'] as Map<String, dynamic>?;
+    try {
+      final eventName = event['event']?.toString();
+      final data = event['data'] as Map<String, dynamic>?;
 
-    if (eventName == 'player_updated' && data != null) {
-      final playerId = data['player_id']?.toString();
-      final state = data['playback_state']?.toString() ??
-          data['state']?.toString();
-      final volume = (data['volume_level'] as num?)?.toInt();
+      if (eventName == 'player_updated' && data != null) {
+        final playerId = data['player_id']?.toString();
+        final state = data['playback_state']?.toString() ??
+            data['state']?.toString();
+        final volume = (data['volume_level'] as num?)?.toInt();
 
-      // Update matching player in list
-      for (final p in _players) {
-        if (p.id == playerId) {
-          if (volume != null) p.volume = volume;
-          if (state != null) p.state = state;
-        }
-      }
-
-      // If active player is the updated external player, update playback state
-      if (_activePlayer != null && _activePlayer!.id == playerId) {
-        if (state != null) {
-          _isPlaying = (state == 'playing');
-        }
-        if (volume != null) {
-          _activePlayer!.volume = volume;
-        }
-
-        // If media metadata is attached
-        final currentMedia = data['current_media'] as Map<String, dynamic>?;
-        if (currentMedia != null) {
-          final title = currentMedia['title']?.toString();
-          final artist = currentMedia['artist']?.toString() ?? '';
-          final album = currentMedia['album']?.toString() ?? '';
-          final img = currentMedia['image_url']?.toString();
-          if (title != null && title.isNotEmpty) {
-            _currentTrack = Track(
-              id: playerId ?? 'remote',
-              title: title,
-              artist: artist,
-              album: album,
-              durationSeconds:
-                  (currentMedia['duration'] as num?)?.toInt() ?? 180,
-              imageUrl: img,
-              isLiked: _likedTrackIds.contains(playerId),
-            );
+        // Update matching player in list
+        for (final p in _players) {
+          if (p.id == playerId) {
+            if (volume != null) p.volume = volume;
+            if (state != null) p.state = state;
           }
         }
-        notifyListeners();
+
+        // If active player is the updated external player, update playback state
+        if (_activePlayer != null && _activePlayer!.id == playerId) {
+          if (state != null) {
+            _isPlaying = (state == 'playing');
+          }
+          if (volume != null) {
+            _activePlayer!.volume = volume;
+          }
+
+          // If media metadata is attached
+          final currentMedia = data['current_media'] as Map<String, dynamic>?;
+          if (currentMedia != null) {
+            final title = currentMedia['title']?.toString();
+            final artist = currentMedia['artist']?.toString() ?? '';
+            final album = currentMedia['album']?.toString() ?? '';
+            final img = currentMedia['image_url']?.toString();
+            if (title != null && title.isNotEmpty) {
+              _currentTrack = Track(
+                id: playerId ?? 'remote',
+                title: title,
+                artist: artist,
+                album: album,
+                durationSeconds:
+                    (currentMedia['duration'] as num?)?.toInt() ?? 180,
+                imageUrl: img,
+                isLiked: _likedTrackIds.contains(playerId),
+              );
+            }
+          }
+          notifyListeners();
+        }
       }
+    } catch (e) {
+      debugPrint('[MusicProvider] Event handler error: $e');
     }
   }
 
   Future<void> refreshServerData() async {
-    // 1. Fetch real players
-    final remotePlayers = await _api.fetchPlayers();
-    final localIPhone = PlayerDevice.localIPhone(
-      isSelected: _activePlayer?.isLocal ?? true,
-      volume: _activePlayer?.isLocal == true ? _activePlayer!.volume : 60,
-    );
-
-    _players = [localIPhone, ...remotePlayers];
-
-    final savedPlayerId = await _storage.loadActivePlayerId();
-    if (savedPlayerId != null) {
-      final match = _players.firstWhere(
-        (p) => p.id == savedPlayerId,
-        orElse: () => localIPhone,
+    try {
+      // 1. Fetch real players
+      final remotePlayers = await _api.fetchPlayers();
+      final localIPhone = PlayerDevice.localIPhone(
+        isSelected: _activePlayer?.isLocal ?? true,
+        volume: _activePlayer?.isLocal == true ? _activePlayer!.volume : 60,
       );
-      _activePlayer = match;
-    } else {
-      _activePlayer ??= localIPhone;
-    }
 
-    for (final p in _players) {
-      p.isSelected = (p.id == _activePlayer!.id);
-    }
+      _players = [localIPhone, ...remotePlayers];
 
-    // 2. Fetch real library tracks
-    final libraryTracks = await _api.fetchLibraryTracks(limit: 100);
-
-    // 3. Fetch real library playlists
-    final libraryPlaylists = await _api.fetchLibraryPlaylists(limit: 50);
-
-    if (libraryTracks.isNotEmpty) {
-      for (final t in libraryTracks) {
-        if (_likedTrackIds.contains(t.id)) t.isLiked = true;
+      final savedPlayerId = await _storage.loadActivePlayerId();
+      if (savedPlayerId != null) {
+        final match = _players.firstWhere(
+          (p) => p.id == savedPlayerId,
+          orElse: () => localIPhone,
+        );
+        _activePlayer = match;
+      } else {
+        _activePlayer ??= localIPhone;
       }
-      _queue = libraryTracks;
-      _currentTrack ??= libraryTracks.first;
-      _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
-    }
 
-    if (libraryPlaylists.isNotEmpty) {
-      // Attach tracks to playlists if empty
-      for (final p in libraryPlaylists) {
-        if (p.tracks.isEmpty) {
-          p.tracks.addAll(libraryTracks.take(15));
+      for (final p in _players) {
+        p.isSelected = (p.id == _activePlayer!.id);
+      }
+
+      // 2. Fetch real library tracks
+      final libraryTracks = await _api.fetchLibraryTracks(limit: 100);
+
+      // 3. Fetch real library playlists
+      final libraryPlaylists = await _api.fetchLibraryPlaylists(limit: 50);
+
+      if (libraryTracks.isNotEmpty) {
+        for (final t in libraryTracks) {
+          if (_likedTrackIds.contains(t.id)) t.isLiked = true;
         }
+        _queue = libraryTracks;
+        _currentTrack ??= libraryTracks.first;
+        _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
       }
-      _playlists = libraryPlaylists;
-    } else if (libraryTracks.isNotEmpty) {
-      // Create a default playlist from all tracks
-      _playlists = [
-        Playlist(
-          id: 'all_tracks',
-          name: 'Deine Mediathek',
-          owner: 'Music Assistant',
-          trackCount: libraryTracks.length,
-          imageUrl: libraryTracks.first.imageUrl,
-          tracks: libraryTracks,
-        ),
-      ];
-    }
 
-    notifyListeners();
+      if (libraryPlaylists.isNotEmpty) {
+        // Attach tracks to playlists if empty
+        for (final p in libraryPlaylists) {
+          if (p.tracks.isEmpty) {
+            p.tracks.addAll(libraryTracks.take(15));
+          }
+        }
+        _playlists = libraryPlaylists;
+      } else if (libraryTracks.isNotEmpty) {
+        // Create a default playlist from all tracks
+        _playlists = [
+          Playlist(
+            id: 'all_tracks',
+            name: 'Deine Mediathek',
+            owner: 'Music Assistant',
+            trackCount: libraryTracks.length,
+            imageUrl: libraryTracks.first.imageUrl,
+            tracks: libraryTracks,
+          ),
+        ];
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[MusicProvider] refreshServerData error: $e');
+    }
   }
 
   Future<void> playTrack(Track track, {List<Track>? newQueue}) async {
@@ -250,7 +280,6 @@ class MusicProvider extends ChangeNotifier {
           await _localAudioPlayer.setVolume(_activePlayer!.volume / 100.0);
           await _localAudioPlayer.play(UrlSource(playUrl));
         } else {
-          // Simulated local playback with timer if no direct stream URL
           _startPositionTimer();
         }
       } catch (e) {
@@ -381,7 +410,6 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> setActivePlayer(PlayerDevice player) async {
-    // If switching away from local iPhone, stop local audio
     if (_activePlayer?.isLocal == true && !player.isLocal) {
       await _localAudioPlayer.stop();
     }
@@ -431,7 +459,6 @@ class MusicProvider extends ChangeNotifier {
 
   void _syncEqualizerToHardware() {
     if (_activePlayer != null && !_activePlayer!.isLocal) {
-      // Map EQ preset to Music Assistant player DSP / Tone controls
       _api.applyDSPPreset(
           _activePlayer!.id, _equalizerSettings.currentPreset.toLowerCase());
     }

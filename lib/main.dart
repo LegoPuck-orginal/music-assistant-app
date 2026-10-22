@@ -5,7 +5,7 @@ import 'providers/music_provider.dart';
 import 'screens/main_navigation_screen.dart';
 import 'theme/spotify_theme.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Set system navigation & status bar styling for OLED Spotify look
@@ -18,14 +18,10 @@ void main() async {
     ),
   );
 
-  final musicProvider = MusicProvider();
-  await musicProvider.initialize();
-
+  // Run the app immediately so the UI renders without blocking
   runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider<MusicProvider>.value(value: musicProvider),
-      ],
+    ChangeNotifierProvider(
+      create: (_) => MusicProvider()..initialize(),
       child: const MusicAssistantApp(),
     ),
   );
