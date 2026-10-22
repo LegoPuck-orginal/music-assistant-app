@@ -294,11 +294,13 @@ class DevicePickerSheet extends StatelessWidget {
                           !isAvail
                               ? 'Nicht erreichbar (Offline)'
                               : player.isLocal
-                                  ? 'Lokaler iPhone-Lautsprecher & Kopfhörer'
-                                  : '${player.type} • Lautstärke ${player.volume}%',
+                                  ? 'Lokaler iPhone-Lautsprecher (Vorschau / Unterwegs)'
+                                  : '${player.type} • Volle Songlänge • DSP Equalizer',
                           style: TextStyle(
                             color: isAvail
-                                ? SpotifyColors.textSecondary
+                                ? (player.isLocal
+                                    ? SpotifyColors.textSecondary
+                                    : SpotifyColors.green.withValues(alpha: 0.85))
                                 : SpotifyColors.textMuted,
                             fontSize: 12,
                           ),

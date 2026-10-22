@@ -93,14 +93,48 @@ class MiniPlayer extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          track.artist,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: SpotifyColors.textSecondary,
-                            fontSize: 11,
-                          ),
+                        Row(
+                          children: [
+                            if (prov.activePlayer != null) ...[
+                              Icon(
+                                prov.activePlayer!.isLocal
+                                    ? Icons.smartphone
+                                    : Icons.speaker,
+                                size: 11,
+                                color: SpotifyColors.green,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  prov.activePlayer!.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: SpotifyColors.green,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              const Text('•',
+                                  style: TextStyle(
+                                      color: SpotifyColors.textSecondary,
+                                      fontSize: 10)),
+                              const SizedBox(width: 5),
+                            ],
+                            Flexible(
+                              child: Text(
+                                track.artist,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: SpotifyColors.textSecondary,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

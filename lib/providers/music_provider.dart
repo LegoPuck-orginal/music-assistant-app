@@ -271,6 +271,28 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void _setupLocalAudioPlayer() {
+    try {
+      AudioPlayer.global.setAudioContext(
+        AudioContext(
+          iOS: AudioContextIOS(
+            category: AVAudioSessionCategory.playback,
+            options: {
+              AVAudioSessionOptions.defaultToSpeaker,
+            },
+          ),
+          android: AudioContextAndroid(
+            isSpeakerphoneOn: false,
+            stayAwake: true,
+            contentType: AndroidContentType.music,
+            usageType: AndroidUsageType.media,
+            audioFocus: AndroidAudioFocus.gain,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[MusicProvider] setAudioContext error: $e');
+    }
+
     _localAudioPlayer.onPlayerStateChanged.listen((state) {
       if (_activePlayer?.isLocal == true) {
         _isPlaying = (state == PlayerState.playing);
@@ -384,24 +406,43 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> refreshServerData() async {
     try {
-      // 1. Fetch real players
+      // 1. Fetch real players from server
       final remotePlayers = await _api.fetchPlayers();
       final localIPhone = PlayerDevice.localIPhone(
-        isSelected: _activePlayer?.isLocal ?? true,
-        volume: _activePlayer?.isLocal == true ? _activePlayer!.volume : 60,
+        isSelected: false,
+        volume: 60,
       );
 
-      _players = [localIPhone, ...remotePlayers];
+      // Put real Multiroom network speakers first
+      _players = [...remotePlayers, localIPhone];
 
       final savedPlayerId = await _storage.loadActivePlayerId();
       if (savedPlayerId != null) {
         final match = _players.firstWhere(
           (p) => p.id == savedPlayerId,
-          orElse: () => localIPhone,
+          orElse: () => _players.first,
         );
         _activePlayer = match;
       } else {
-        _activePlayer ??= localIPhone;
+        // Auto-select Tim's room speaker if available, or first active/available remote player
+        PlayerDevice? preferred;
+        for (final p in remotePlayers) {
+          if (p.isAvailable && p.name.toLowerCase().contains('tim')) {
+            preferred = p;
+            break;
+          }
+        }
+        preferred ??= remotePlayers.firstWhere(
+          (p) => p.isAvailable && p.state == 'playing',
+          orElse: () => remotePlayers.firstWhere(
+            (p) => p.isAvailable,
+            orElse: () => localIPhone,
+          ),
+        );
+        _activePlayer = preferred;
+        if (_activePlayer != null) {
+          await _storage.saveActivePlayerId(_activePlayer!.id);
+        }
       }
 
       for (final p in _players) {
@@ -500,6 +541,21 @@ class MusicProvider extends ChangeNotifier {
       _queue = newQueue;
       _queueIndex = _queue.indexWhere((t) => t.id == track.id);
       if (_queueIndex == -1) _queueIndex = 0;
+    } else {
+      final existingIdx = _queue.indexWhere((t) => t.id == track.id);
+      if (existingIdx != -1) {
+        _queueIndex = existingIdx;
+      } else {
+        _queue.add(track);
+        _queueIndex = _queue.length - 1;
+      }
+    }
+
+    if (_activePlayer == null && _players.isNotEmpty) {
+      _activePlayer = _players.firstWhere(
+        (p) => !p.isLocal && p.isAvailable,
+        orElse: () => _players.first,
+      );
     }
 
     notifyListeners();

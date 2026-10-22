@@ -71,6 +71,8 @@ jobs:
             * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
             * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
             * **Features & Highlights**:
+              - 🔊 Automatische Raum-Lautsprecher-Auswahl ("Tim", "Wohnzimmer", Sonos) für volle Songlänge & Hi-Fi
+              - 📱 iOS Hintergrund-Wiedergabe & Audio-Session Fix (kein Abbruch mehr beim Sperren des iPhones)
               - 💡 Intelligente Musik-Empfehlungen direkt auf dem Home Screen (Last.fm Ähnliche Titel & Künstler, Allzeit-Favoriten, Vergessene Schätze)
               - 🎙️ Vollständige Podcast-Integration (Shows, Episoden-Browser, Cover & Audio-Previews)
               - 🎚️ Direkte Server-Anbindung an das Music Assistant DSP-System (Presets wie *ARC Daily Punch*, *Airpods*, Preamp, parametrische Bänder)
