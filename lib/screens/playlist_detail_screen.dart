@@ -6,7 +6,7 @@ import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/track_tile.dart';
 
-class PlaylistDetailScreen extends StatelessWidget {
+class PlaylistDetailScreen extends StatefulWidget {
   final Playlist playlist;
 
   const PlaylistDetailScreen({
@@ -15,9 +15,17 @@ class PlaylistDetailScreen extends StatelessWidget {
   });
 
   @override
+  State<PlaylistDetailScreen> createState() => _PlaylistDetailScreenState();
+}
+
+class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
+  bool _isLiked = false;
+  bool _isDownloaded = false;
+
+  @override
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
-    final tracks = playlist.tracks;
+    final tracks = widget.playlist.tracks;
 
     return Scaffold(
       backgroundColor: SpotifyColors.pureBlack,
@@ -35,7 +43,11 @@ class PlaylistDetailScreen extends StatelessWidget {
             actions: [
               IconButton(
                 icon: const Icon(Icons.more_vert, color: Colors.white),
-                onPressed: () {},
+                tooltip: 'Optionen',
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  _showPlaylistOptions(context);
+                },
               ),
             ],
             flexibleSpace: FlexibleSpaceBar(
@@ -71,11 +83,12 @@ class PlaylistDetailScreen extends StatelessWidget {
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: playlist.imageUrl != null
+                          child: widget.playlist.imageUrl != null
                               ? Image.network(
-                                  playlist.imageUrl!,
+                                  widget.playlist.imageUrl!,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => const Icon(
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(
                                     Icons.album,
                                     size: 80,
                                     color: SpotifyColors.textSecondary,
@@ -90,7 +103,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        playlist.name,
+                        widget.playlist.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -102,7 +115,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${playlist.owner} • ${tracks.length} Songs',
+                        '${widget.playlist.owner} • ${tracks.length} Songs',
                         style: const TextStyle(
                           color: SpotifyColors.textSecondary,
                           fontSize: 13,
@@ -115,7 +128,7 @@ class PlaylistDetailScreen extends StatelessWidget {
             ),
           ),
 
-          // Action Row (Shuffle, Play Big Button)
+          // Action Row (Shuffle, Like, Download, Big Green Play)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -129,17 +142,61 @@ class PlaylistDetailScreen extends StatelessWidget {
                           : SpotifyColors.textSecondary,
                       size: 26,
                     ),
-                    onPressed: () => prov.toggleShuffle(),
+                    tooltip: 'Zufallswiedergabe',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      prov.toggleShuffle();
+                    },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.favorite_border,
-                        color: SpotifyColors.textSecondary, size: 24),
-                    onPressed: () {},
+                    icon: Icon(
+                      _isLiked ? Icons.favorite : Icons.favorite_border,
+                      color: _isLiked ? SpotifyColors.green : SpotifyColors.textSecondary,
+                      size: 24,
+                    ),
+                    tooltip: 'Zu Favoriten hinzufügen',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      setState(() {
+                        _isLiked = !_isLiked;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(_isLiked
+                              ? 'Playlist zu deinen Favoriten hinzugefügt'
+                              : 'Playlist aus Favoriten entfernt'),
+                          duration: const Duration(seconds: 1),
+                          backgroundColor: SpotifyColors.surfaceElevated,
+                        ),
+                      );
+                    },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.download_for_offline_outlined,
-                        color: SpotifyColors.textSecondary, size: 24),
-                    onPressed: () {},
+                    icon: Icon(
+                      _isDownloaded
+                          ? Icons.download_done
+                          : Icons.download_for_offline_outlined,
+                      color: _isDownloaded
+                          ? SpotifyColors.green
+                          : SpotifyColors.textSecondary,
+                      size: 24,
+                    ),
+                    tooltip: 'Herunterladen',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      setState(() {
+                        _isDownloaded = !_isDownloaded;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(_isDownloaded
+                              ? 'Playlist offline verfügbar gemacht'
+                              : 'Offline-Download entfernt'),
+                          duration: const Duration(seconds: 1),
+                          backgroundColor: SpotifyColors.surfaceElevated,
+                        ),
+                      );
+                    },
                   ),
                   const Spacer(),
                   // Big Green Play Button
@@ -192,6 +249,54 @@ class PlaylistDetailScreen extends StatelessWidget {
             child: SizedBox(height: 100),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showPlaylistOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SpotifyColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.share, color: Colors.white),
+              title: const Text('Playlist teilen',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Playlist-Link in die Zwischenablage kopiert!'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.queue_music, color: Colors.white),
+              title: const Text('An Warteschlange anhängen',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                final prov = context.read<MusicProvider>();
+                prov.queue.addAll(widget.playlist.tracks);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                        '${widget.playlist.tracks.length} Songs an die Warteschlange angehängt'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

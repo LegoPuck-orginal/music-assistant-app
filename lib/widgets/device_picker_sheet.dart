@@ -11,7 +11,7 @@ class DevicePickerSheet extends StatelessWidget {
     final t = type.toLowerCase();
     if (t.contains('sonos')) return Icons.speaker;
     if (t.contains('airplay') || t.contains('apple')) return Icons.airplay;
-    if (t.contains('chromecast') || t.contains('cast') || t.contains('google')) {
+    if (t.contains('chromecast') || t.contains('cast') || t.contains('google') || t.contains('shield')) {
       return Icons.cast;
     }
     if (t.contains('phone') || t.contains('iphone')) return Icons.smartphone;
@@ -24,15 +24,15 @@ class DevicePickerSheet extends StatelessWidget {
     final active = prov.activePlayer;
 
     return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
       decoration: const BoxDecoration(
         color: SpotifyColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      padding: const EdgeInsets.only(top: 12, bottom: 32),
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
       child: SafeArea(
         top: false,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Drag handle
@@ -46,22 +46,42 @@ class DevicePickerSheet extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
 
-            // Title
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                'Mit einem Gerät verbinden',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
-                ),
+            // Title & Refresh Icon
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  const Text(
+                    'Mit einem Gerät verbinden',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.sync,
+                        color: SpotifyColors.green, size: 22),
+                    tooltip: 'Lautsprecher neu suchen',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      prov.refreshServerData();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Lautsprecher werden aktualisiert...'),
+                          duration: Duration(seconds: 1),
+                          backgroundColor: SpotifyColors.surfaceElevated,
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Row(
@@ -78,7 +98,7 @@ class DevicePickerSheet extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Music Assistant (${prov.serverUrl})',
+                    'Music Assistant (${prov.players.length} Geräte gefunden)',
                     style: const TextStyle(
                       color: SpotifyColors.textSecondary,
                       fontSize: 12,
@@ -87,7 +107,7 @@ class DevicePickerSheet extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
             // Active Device Volume Slider (if any active player)
             if (active != null) ...[
@@ -123,7 +143,9 @@ class DevicePickerSheet extends StatelessWidget {
                                   ),
                                 ),
                                 Text(
-                                  'Wiedergabe aktiv • ${active.type}',
+                                  active.isLocal
+                                      ? 'Wiedergabe aktiv • iPhone Audio'
+                                      : 'Wiedergabe aktiv • ${active.type}',
                                   style: const TextStyle(
                                     color: SpotifyColors.textSecondary,
                                     fontSize: 12,
@@ -175,7 +197,7 @@ class DevicePickerSheet extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
             ],
 
             const Padding(
@@ -190,57 +212,66 @@ class DevicePickerSheet extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
 
-            // Device list
-            Flexible(
+            // Device list (full height scrollable)
+            Expanded(
               child: ListView.builder(
-                shrinkWrap: true,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 itemCount: prov.players.length,
                 itemBuilder: (context, index) {
                   final player = prov.players[index];
                   final isCurrent = active?.id == player.id;
+                  final isAvail = player.isAvailable;
 
-                  return Material(
-                    color: Colors.transparent,
-                    child: ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      leading: Icon(
-                        _iconForType(player.type),
-                        color: isCurrent
-                            ? SpotifyColors.green
-                            : SpotifyColors.textSecondary,
-                        size: 24,
-                      ),
-                      title: Text(
-                        player.name,
-                        style: TextStyle(
-                          color: isCurrent ? SpotifyColors.green : Colors.white,
-                          fontSize: 15,
-                          fontWeight:
-                              isCurrent ? FontWeight.w700 : FontWeight.w500,
+                  return Opacity(
+                    opacity: isAvail ? 1.0 : 0.45,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: ListTile(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ),
-                      subtitle: Text(
-                        player.isLocal
-                            ? 'Lokaler iPhone-Lautsprecher & Kopfhörer'
-                            : '${player.type} • Lautstärke ${player.volume}%',
-                        style: const TextStyle(
-                          color: SpotifyColors.textSecondary,
-                          fontSize: 12,
+                        leading: Icon(
+                          _iconForType(player.type),
+                          color: isCurrent
+                              ? SpotifyColors.green
+                              : (isAvail ? SpotifyColors.textSecondary : SpotifyColors.textMuted),
+                          size: 24,
                         ),
+                        title: Text(
+                          player.name,
+                          style: TextStyle(
+                            color: isCurrent
+                                ? SpotifyColors.green
+                                : (isAvail ? Colors.white : SpotifyColors.textSecondary),
+                            fontSize: 15,
+                            fontWeight:
+                                isCurrent ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                        subtitle: Text(
+                          !isAvail
+                              ? 'Nicht erreichbar (Offline)'
+                              : player.isLocal
+                                  ? 'Lokaler iPhone-Lautsprecher & Kopfhörer'
+                                  : '${player.type} • Lautstärke ${player.volume}%',
+                          style: TextStyle(
+                            color: isAvail
+                                ? SpotifyColors.textSecondary
+                                : SpotifyColors.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                        trailing: isCurrent
+                            ? const Icon(Icons.check_circle,
+                                color: SpotifyColors.green, size: 20)
+                            : null,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          prov.setActivePlayer(player);
+                        },
                       ),
-                      trailing: isCurrent
-                          ? const Icon(Icons.check_circle,
-                              color: SpotifyColors.green, size: 20)
-                          : null,
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        prov.setActivePlayer(player);
-                      },
                     ),
                   );
                 },

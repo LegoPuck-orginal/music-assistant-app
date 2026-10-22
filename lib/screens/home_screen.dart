@@ -1,14 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/playlist.dart';
+import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/album_card.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  String _selectedFilter = 'Alle';
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -20,7 +29,13 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
-    final playlists = prov.playlists;
+    final allPlaylists = prov.playlists;
+
+    final filteredPlaylists = _selectedFilter == 'Alle'
+        ? allPlaylists
+        : _selectedFilter == 'Musik'
+            ? allPlaylists.where((p) => p.type != 'podcast').toList()
+            : allPlaylists.where((p) => p.type == 'podcast').toList();
 
     return Scaffold(
       backgroundColor: SpotifyColors.pureBlack,
@@ -43,14 +58,23 @@ class HomeScreen extends StatelessWidget {
             actions: [
               IconButton(
                 icon: const Icon(Icons.notifications_none, color: Colors.white),
-                onPressed: () {},
+                tooltip: 'Mitteilungen',
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  _showNotificationsSheet(context);
+                },
               ),
               IconButton(
                 icon: const Icon(Icons.history, color: Colors.white),
-                onPressed: () {},
+                tooltip: 'Zuletzt gehört',
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  _showHistorySheet(context, prov);
+                },
               ),
               IconButton(
                 icon: const Icon(Icons.settings_outlined, color: Colors.white),
+                tooltip: 'Einstellungen',
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -66,7 +90,7 @@ class HomeScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  _buildChip('Alle', isSelected: true),
+                  _buildChip('Alle'),
                   const SizedBox(width: 8),
                   _buildChip('Musik'),
                   const SizedBox(width: 8),
@@ -89,9 +113,9 @@ class HomeScreen extends StatelessWidget {
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
                 ),
-                itemCount: playlists.take(6).length,
+                itemCount: filteredPlaylists.take(6).length,
                 itemBuilder: (context, index) {
-                  final p = playlists[index];
+                  final p = filteredPlaylists[index];
                   return _buildQuickTile(context, p, prov);
                 },
               ),
@@ -108,9 +132,9 @@ class HomeScreen extends StatelessWidget {
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 scrollDirection: Axis.horizontal,
-                itemCount: playlists.length,
+                itemCount: filteredPlaylists.length,
                 itemBuilder: (context, index) {
-                  final p = playlists[index];
+                  final p = filteredPlaylists[index];
                   return AlbumCard(
                     playlist: p,
                     onTap: () {
@@ -136,9 +160,9 @@ class HomeScreen extends StatelessWidget {
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 scrollDirection: Axis.horizontal,
-                itemCount: playlists.reversed.length,
+                itemCount: filteredPlaylists.reversed.length,
                 itemBuilder: (context, index) {
-                  final p = playlists.reversed.toList()[index];
+                  final p = filteredPlaylists.reversed.toList()[index];
                   return AlbumCard(
                     playlist: p,
                     onTap: () {
@@ -163,19 +187,28 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildChip(String label, {bool isSelected = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: BoxDecoration(
-        color: isSelected ? SpotifyColors.green : SpotifyColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: isSelected ? Colors.black : Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
+  Widget _buildChip(String label) {
+    final isSelected = _selectedFilter == label;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        setState(() {
+          _selectedFilter = label;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? SpotifyColors.green : SpotifyColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.black : Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -252,6 +285,104 @@ class HomeScreen extends StatelessWidget {
           letterSpacing: -0.4,
         ),
       ),
+    );
+  }
+
+  void _showNotificationsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SpotifyColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Neuigkeiten & Mitteilungen',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: SpotifyColors.surfaceHighlight,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.check, color: SpotifyColors.green, size: 20),
+                  ),
+                  title: const Text('Music Assistant 2.10 ist online',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Alle Lautsprecher im Homelab sind betriebsbereit.',
+                      style: TextStyle(color: SpotifyColors.textSecondary, fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showHistorySheet(BuildContext context, MusicProvider prov) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SpotifyColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+                child: Text(
+                  'Zuletzt gehört',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: prov.queue.take(8).length,
+                  itemBuilder: (c, idx) {
+                    final Track item = prov.queue[idx];
+                    return ListTile(
+                      leading: const Icon(Icons.music_note, color: SpotifyColors.green),
+                      title: Text(item.title,
+                          style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.w600)),
+                      subtitle: Text(item.artist,
+                          style: const TextStyle(color: SpotifyColors.textSecondary)),
+                      onTap: () {
+                        prov.playTrack(item);
+                        Navigator.pop(ctx);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

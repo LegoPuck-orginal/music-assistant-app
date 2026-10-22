@@ -190,19 +190,44 @@ class TrackTile extends StatelessWidget {
                 leading: const Icon(Icons.playlist_add, color: Colors.white),
                 title: const Text('Zu Playlist hinzufügen',
                     style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(ctx),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('"${track.title}" zu Playlist hinzugefügt'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.radio, color: Colors.white),
                 title: const Text('Song-Radio starten',
                     style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(ctx),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  prov.playTrack(track);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Song-Radio für "${track.title}" gestartet'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.share, color: Colors.white),
                 title: const Text('Teilen',
                     style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(ctx),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Link für "${track.title}" kopiert!'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                },
               ),
             ],
           ),

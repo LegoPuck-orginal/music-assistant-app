@@ -31,6 +31,7 @@ class MusicProvider extends ChangeNotifier {
   String _authToken = StorageService.defaultToken;
   EqualizerSettings _equalizerSettings = EqualizerSettings();
   StreamSubscription? _eventsSubscription;
+  StreamSubscription? _authSubscription;
 
   MusicProvider() {
     // Populate with fallback data immediately so UI never shows a blank screen
@@ -85,10 +86,16 @@ class MusicProvider extends ChangeNotifier {
 
   void _connectAndRefresh() {
     try {
-      _api.configure(_serverUrl, _authToken);
+      _authSubscription?.cancel();
+      _authSubscription = _api.onAuthenticated.listen((_) {
+        debugPrint('[MusicProvider] Authenticated with Music Assistant! Synchronizing players and library...');
+        refreshServerData();
+      });
 
       _eventsSubscription?.cancel();
       _eventsSubscription = _api.events.listen(_handleServerEvent);
+
+      _api.configure(_serverUrl, _authToken);
 
       refreshServerData();
     } catch (e) {
@@ -492,6 +499,7 @@ class MusicProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _eventsSubscription?.cancel();
     _positionTimer?.cancel();
     _localAudioPlayer.dispose();

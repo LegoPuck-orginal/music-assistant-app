@@ -233,38 +233,47 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildGenreCard(Map<String, dynamic> genre) {
-    return Container(
-      decoration: BoxDecoration(
-        color: genre['color'] as Color,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Text(
-              genre['name'] as String,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
+    return GestureDetector(
+      onTap: () {
+        final name = genre['name'] as String;
+        _searchCtrl.text = name;
+        setState(() {
+          _query = name;
+        });
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: genre['color'] as Color,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                genre['name'] as String,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
-          ),
-          Positioned(
-            right: -8,
-            bottom: -8,
-            child: Transform.rotate(
-              angle: 0.35,
-              child: Icon(
-                genre['icon'] as IconData,
-                size: 54,
-                color: Colors.white.withValues(alpha: 0.3),
+            Positioned(
+              right: -8,
+              bottom: -8,
+              child: Transform.rotate(
+                angle: 0.35,
+                child: Icon(
+                  genre['icon'] as IconData,
+                  size: 54,
+                  color: Colors.white.withValues(alpha: 0.3),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

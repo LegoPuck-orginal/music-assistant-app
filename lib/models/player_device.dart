@@ -6,6 +6,7 @@ class PlayerDevice {
   bool isMuted;
   String state; // playing, paused, idle
   bool isSelected;
+  bool isAvailable;
 
   PlayerDevice({
     required this.id,
@@ -15,6 +16,7 @@ class PlayerDevice {
     this.isMuted = false,
     this.state = 'idle',
     this.isSelected = false,
+    this.isAvailable = true,
   });
 
   bool get isLocal => id == 'local_iphone';
@@ -26,6 +28,7 @@ class PlayerDevice {
       type: 'iPhone',
       volume: volume,
       isSelected: isSelected,
+      isAvailable: true,
     );
   }
 
@@ -37,6 +40,7 @@ class PlayerDevice {
     bool? isMuted,
     String? state,
     bool? isSelected,
+    bool? isAvailable,
   }) {
     return PlayerDevice(
       id: id ?? this.id,
@@ -46,6 +50,7 @@ class PlayerDevice {
       isMuted: isMuted ?? this.isMuted,
       state: state ?? this.state,
       isSelected: isSelected ?? this.isSelected,
+      isAvailable: isAvailable ?? this.isAvailable,
     );
   }
 }

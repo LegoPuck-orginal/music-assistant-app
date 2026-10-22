@@ -19,7 +19,12 @@ class MassApiService {
   final StreamController<Map<String, dynamic>> _eventsController =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  // Stream controller when auth completes successfully
+  final StreamController<void> _authenticatedController =
+      StreamController<void>.broadcast();
+
   Stream<Map<String, dynamic>> get events => _eventsController.stream;
+  Stream<void> get onAuthenticated => _authenticatedController.stream;
   bool get isConnected => _isConnected;
   String get serverUrl => _serverUrl;
 
@@ -99,6 +104,7 @@ class MassApiService {
     sendCommand('auth', {'token': _token}).then((result) {
       debugPrint('[MassApi] Authenticated successfully with Music Assistant!');
       _isConnected = true;
+      _authenticatedController.add(null);
     }).catchError((err) {
       debugPrint('[MassApi] Auth error: $err');
       _isConnected = false;
@@ -133,8 +139,8 @@ class MassApiService {
       completer.completeError(Exception('WebSocket is not connected'));
     }
 
-    // Timeout after 4 seconds
-    return completer.future.timeout(const Duration(seconds: 4), onTimeout: () {
+    // Timeout after 5 seconds
+    return completer.future.timeout(const Duration(seconds: 5), onTimeout: () {
       _pendingRequests.remove(id);
       throw TimeoutException('Command $command timed out');
     });
@@ -142,31 +148,41 @@ class MassApiService {
 
   // --- Real API Endpoints ---
 
-  /// Ruft alle verfügbaren Player (Sonos, AirPlay, Chromecast etc.) ab
+  /// Ruft alle Lautsprecher aus Music Assistant ab
   Future<List<PlayerDevice>> fetchPlayers() async {
     try {
       final res = await sendCommand('players/all');
       if (res is List) {
-        return res.map((p) {
+        final list = <PlayerDevice>[];
+        for (final p in res) {
           final map = p as Map<String, dynamic>;
+          final type = map['type']?.toString().toLowerCase() ?? '';
+          // Filter out lights (Philips Hue synced lights in Sendspin)
+          if (type == 'light') continue;
+
           final playerId = map['player_id']?.toString() ?? '';
-          final name = map['name']?.toString() ?? 'Player';
+          final name = map['display_name']?.toString() ??
+              map['name']?.toString() ??
+              'Player';
           final provider = map['provider']?.toString() ?? 'generic';
           final state = map['playback_state']?.toString() ??
               map['state']?.toString() ??
               'idle';
           final volume = (map['volume_level'] as num?)?.toInt() ?? 50;
           final isMuted = map['volume_muted'] as bool? ?? false;
+          final available = map['available'] as bool? ?? true;
 
-          return PlayerDevice(
+          list.add(PlayerDevice(
             id: playerId,
             name: name,
             type: _formatPlayerType(provider),
             volume: volume,
             isMuted: isMuted,
             state: state,
-          );
-        }).toList();
+            isAvailable: available,
+          ));
+        }
+        return list;
       }
     } catch (e) {
       debugPrint('[MassApi] fetchPlayers error: $e');
@@ -331,7 +347,8 @@ class MassApiService {
   Future<void> playMedia(String playerId, String mediaUri) =>
       sendCommand('player_queues/play_media', {
         'queue_id': playerId,
-        'media': [mediaUri],
+        'media': mediaUri,
+        'option': 'replace',
       });
 
   /// Equalizer / DSP Preset anwenden
@@ -432,5 +449,6 @@ class MassApiService {
     _channel?.sink.close();
     _reconnectTimer?.cancel();
     _eventsController.close();
+    _authenticatedController.close();
   }
 }

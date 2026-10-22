@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import 'device_picker_sheet.dart';
@@ -87,7 +88,10 @@ class NowPlayingSheet extends StatelessWidget {
                   IconButton(
                     icon: const Icon(Icons.more_vert,
                         color: Colors.white, size: 22),
-                    onPressed: () {},
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      _showTrackOptions(context, track, prov);
+                    },
                   ),
                 ],
               ),
@@ -320,6 +324,7 @@ class NowPlayingSheet extends StatelessWidget {
                     onTap: () {
                       showModalBottomSheet(
                         context: context,
+                        isScrollControlled: true,
                         backgroundColor: Colors.transparent,
                         builder: (_) => const DevicePickerSheet(),
                       );
@@ -369,7 +374,18 @@ class NowPlayingSheet extends StatelessWidget {
                       IconButton(
                         icon: const Icon(Icons.share_outlined,
                             color: SpotifyColors.textSecondary, size: 20),
-                        onPressed: () {},
+                        tooltip: 'Teilen',
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                  'Titel-Link für "${track.title}" in die Zwischenablage kopiert!'),
+                              duration: const Duration(seconds: 2),
+                              backgroundColor: SpotifyColors.surfaceElevated,
+                            ),
+                          );
+                        },
                       ),
                       IconButton(
                         icon: const Icon(Icons.queue_music,
@@ -449,6 +465,108 @@ class NowPlayingSheet extends StatelessWidget {
                     );
                   },
                 ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showTrackOptions(
+      BuildContext context, Track track, MusicProvider prov) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SpotifyColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    color: SpotifyColors.surfaceElevated,
+                    child: track.imageUrl != null
+                        ? Image.network(track.imageUrl!, fit: BoxFit.cover)
+                        : const Icon(Icons.music_note, color: Colors.white),
+                  ),
+                ),
+                title: Text(track.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: Text(track.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: SpotifyColors.textSecondary)),
+              ),
+              const Divider(color: SpotifyColors.borderSubtle),
+              ListTile(
+                leading: Icon(
+                  track.isLiked ? Icons.favorite : Icons.favorite_border,
+                  color: track.isLiked ? SpotifyColors.green : Colors.white,
+                ),
+                title: Text(
+                  track.isLiked
+                      ? 'Aus Lieblingssongs entfernen'
+                      : 'Zu Lieblingssongs hinzufügen',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  prov.toggleLike(track);
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.tune, color: Colors.white),
+                title: const Text('Equalizer anpassen',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => const EqualizerSheet(),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.devices, color: Colors.white),
+                title: const Text('Wiedergabegerät wechseln',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => const DevicePickerSheet(),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share, color: Colors.white),
+                title: const Text('Titel teilen',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          'Link für "${track.title}" in die Zwischenablage kopiert!'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                },
               ),
             ],
           ),

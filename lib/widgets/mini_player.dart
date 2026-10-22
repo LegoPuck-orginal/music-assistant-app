@@ -118,6 +118,7 @@ class MiniPlayer extends StatelessWidget {
                     onPressed: () {
                       showModalBottomSheet(
                         context: context,
+                        isScrollControlled: true,
                         backgroundColor: Colors.transparent,
                         builder: (_) => const DevicePickerSheet(),
                       );
