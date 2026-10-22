@@ -265,13 +265,13 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
 
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
     DispatchQueue.main.async { [weak self] in
-      self?.channel?.invokeMethod("onSpeechFinished", nil)
+      self?.channel?.invokeMethod("onSpeechFinished", arguments: nil)
     }
   }
 
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
     DispatchQueue.main.async { [weak self] in
-      self?.channel?.invokeMethod("onSpeechCancelled", nil)
+      self?.channel?.invokeMethod("onSpeechCancelled", arguments: nil)
     }
   }
 }
