@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/dj_voice_settings.dart';
 import '../models/equalizer_settings.dart';
 import '../models/user_profile.dart';
 
@@ -134,5 +135,21 @@ class StorageService {
       _keyEqBands,
       settings.bandGains.map((e) => e.toString()).toList(),
     );
+  }
+
+  static const String _keyDjVoiceSettings = 'mass_dj_voice_settings';
+
+  Future<DjVoiceSettings> loadDjVoiceSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final str = prefs.getString(_keyDjVoiceSettings);
+    if (str != null && str.isNotEmpty) {
+      return DjVoiceSettings.fromJsonString(str);
+    }
+    return const DjVoiceSettings();
+  }
+
+  Future<void> saveDjVoiceSettings(DjVoiceSettings settings) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyDjVoiceSettings, settings.toJsonString());
   }
 }

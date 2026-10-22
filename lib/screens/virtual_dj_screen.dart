@@ -5,6 +5,7 @@ import '../models/virtual_dj_vibe.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/dj_orb_visualizer.dart';
+import '../widgets/dj_voice_settings_sheet.dart';
 
 class VirtualDjScreen extends StatelessWidget {
   const VirtualDjScreen({super.key});
@@ -60,6 +61,17 @@ class VirtualDjScreen extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.tune_rounded,
+                      color: Colors.white70,
+                    ),
+                    tooltip: 'DJ-Stimme & KI-Modell anpassen',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      DjVoiceSettingsSheet.show(context);
+                    },
+                  ),
                   IconButton(
                     icon: Icon(
                       prov.isDjVoiceEnabled

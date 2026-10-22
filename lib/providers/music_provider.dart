@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../models/app_update_info.dart';
+import '../models/dj_voice_settings.dart';
 import '../models/dsp_models.dart';
 import '../models/equalizer_settings.dart';
 import '../models/player_device.dart';
@@ -16,6 +17,7 @@ import '../services/live_activity_service.dart';
 import '../services/mass_api_service.dart';
 import '../services/storage_service.dart';
 import '../services/update_service.dart';
+import '../services/virtual_dj_service.dart';
 import '../services/watch_service.dart';
 
 class MusicProvider extends ChangeNotifier {
@@ -87,6 +89,8 @@ class MusicProvider extends ChangeNotifier {
   String get lastSearchQuery => _lastSearchQuery;
 
   // Virtual DJ & Dynamic Island State
+  final VirtualDjService _djService = VirtualDjService();
+  DjVoiceSettings _djVoiceSettings = const DjVoiceSettings();
   bool _isDjActive = false;
   bool _isDjSpeaking = false;
   bool _isDjVoiceEnabled = true;
@@ -94,7 +98,9 @@ class MusicProvider extends ChangeNotifier {
   String? _djSpeechText;
   bool _isDynamicIslandExpanded = false;
   Timer? _djSpeechTimer;
+  StreamSubscription? _djSpeechSub;
 
+  DjVoiceSettings get djVoiceSettings => _djVoiceSettings;
   bool get isDjActive => _isDjActive;
   bool get isDjSpeaking => _isDjSpeaking;
   bool get isDjVoiceEnabled => _isDjVoiceEnabled;
@@ -110,6 +116,17 @@ class MusicProvider extends ChangeNotifier {
   void toggleDjVoice() {
     _isDjVoiceEnabled = !_isDjVoiceEnabled;
     notifyListeners();
+  }
+
+  Future<void> updateDjVoiceSettings(DjVoiceSettings newSettings) async {
+    _djVoiceSettings = newSettings;
+    await _storage.saveDjVoiceSettings(newSettings);
+    notifyListeners();
+  }
+
+  Future<void> previewDjVoice() async {
+    final userName = _currentUser?.effectiveName.split(' ').first ?? 'Tim';
+    await _djService.previewVoice(_djVoiceSettings, userName);
   }
 
   MusicProvider() {
@@ -206,6 +223,7 @@ class MusicProvider extends ChangeNotifier {
       final isGuest = await _storage.loadIsGuest();
       _likedTrackIds = await _storage.loadLikedTrackIds();
       _equalizerSettings = await _storage.loadEqualizerSettings();
+      _djVoiceSettings = await _storage.loadDjVoiceSettings();
 
       if (token != null && token.isNotEmpty) {
         _authToken = token;
@@ -697,12 +715,19 @@ class MusicProvider extends ChangeNotifier {
       vibeTracks = List.from(_queue);
     }
 
-    // Sprachansage formulieren
+    // Sprachansage formulieren (per lokalem Ollama LLM oder dynamischem Template)
     final userName = _currentUser?.effectiveName.split(' ').first ?? 'Tim';
-    final rawSpeech = chosenVibe.introPrompt.replaceAll('{user}', userName);
+    final nextTrack = vibeTracks.isNotEmpty ? vibeTracks.first : null;
+
+    final speech = await _djService.composeDjSpeech(
+      settings: _djVoiceSettings,
+      vibe: chosenVibe,
+      userName: userName,
+      nextTrack: nextTrack,
+    );
 
     // DJ-Kommentar sprechen und Dynamic Island öffnen
-    await speakDjCommentary(rawSpeech);
+    await speakDjCommentary(speech);
 
     // Wiedergabe starten
     if (vibeTracks.isNotEmpty) {
@@ -710,24 +735,54 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
-  /// Lässt den virtuellen DJ sprechen (TTS & Dynamic Island)
+  int? _preDuckingVolume;
+
+  /// Lässt den virtuellen DJ sprechen (TTS, Ollama, Ducking & Dynamic Island)
   Future<void> speakDjCommentary(String text) async {
     _djSpeechTimer?.cancel();
+    _djSpeechSub?.cancel();
     _isDjSpeaking = true;
     _djSpeechText = text;
     _isDynamicIslandExpanded = true;
     notifyListeners();
 
-    // Sprachausgabe über den aktiven Raum-Lautsprecher via Music Assistant TTS
-    if (_isDjVoiceEnabled && _activePlayer != null) {
-      sendAnnouncement(text);
+    // Ducking: Musiklautstärke absenken während der Ansage
+    if (_djVoiceSettings.enableDucking && _isPlaying && _activePlayer != null) {
+      _preDuckingVolume ??= _activePlayer!.volume;
+      await setVolume(_djVoiceSettings.duckingVolumePercent);
     }
 
-    // Dynamic Island nach 5,5 Sekunden automatisch wieder einklappen
-    _djSpeechTimer = Timer(const Duration(milliseconds: 5500), () {
+    // Sprachausgabe über die konfigurierte Engine
+    if (_isDjVoiceEnabled) {
+      await _djService.speakCommentary(
+        text: text,
+        settings: _djVoiceSettings,
+        activeRemotePlayerId: _activePlayer?.id,
+        onMassAnnounce: (id, msg) => _api.playAnnouncement(id, msg),
+      );
+    }
+
+    void finishSpeech() {
+      _djSpeechTimer?.cancel();
+      _djSpeechSub?.cancel();
       _isDjSpeaking = false;
       _isDynamicIslandExpanded = false;
+      if (_preDuckingVolume != null) {
+        setVolume(_preDuckingVolume!);
+        _preDuckingVolume = null;
+      }
       notifyListeners();
+    }
+
+    // Basierend auf Textlänge berechnen oder auf Event warten
+    final estSeconds = (text.length / 14.0).clamp(4.0, 10.0);
+    _djSpeechTimer = Timer(
+      Duration(milliseconds: (estSeconds * 1000).toInt()),
+      finishSpeech,
+    );
+
+    _djSpeechSub = _djService.onSpeechCompleted.listen((_) {
+      finishSpeech();
     });
   }
 
@@ -1361,6 +1416,9 @@ class MusicProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _djSpeechTimer?.cancel();
+    _djSpeechSub?.cancel();
+    _djService.dispose();
     _downloadService.removeListener(notifyListeners);
     _authSubscription?.cancel();
     _eventsSubscription?.cancel();

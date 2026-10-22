@@ -23,6 +23,7 @@ import ActivityKit
 
     if let controller = window?.rootViewController as? FlutterViewController {
       WatchSessionManager.shared.setup(with: controller.binaryMessenger)
+      NativeTtsManager.shared.setup(with: controller.binaryMessenger)
       #if canImport(ActivityKit)
       if #available(iOS 16.1, *) {
         LiveActivityManager.shared.setup(with: controller.binaryMessenger)
@@ -37,6 +38,9 @@ import ActivityKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "WatchSessionManager") {
       WatchSessionManager.shared.setup(with: registrar.messenger())
+    }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NativeTtsManager") {
+      NativeTtsManager.shared.setup(with: registrar.messenger())
     }
     #if canImport(ActivityKit)
     if #available(iOS 16.1, *) {
@@ -134,6 +138,123 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     DispatchQueue.main.async { [weak self] in
       self?.channel?.invokeMethod("onWatchAction", arguments: message)
       replyHandler(["status": "ok"])
+    }
+  }
+}
+
+// MARK: - Native iOS Neural TTS Manager (Siri / AVSpeechSynthesizer)
+
+class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
+  static let shared = NativeTtsManager()
+
+  private var channel: FlutterMethodChannel?
+  private let synthesizer = AVSpeechSynthesizer()
+  private var isConfigured = false
+
+  private override init() {
+    super.init()
+    synthesizer.delegate = self
+  }
+
+  func setup(with messenger: FlutterBinaryMessenger) {
+    if isConfigured { return }
+    isConfigured = true
+
+    channel = FlutterMethodChannel(name: "de.timm.musicAssistantApp/native_tts", binaryMessenger: messenger)
+    channel?.setMethodCallHandler { [weak self] (call, result) in
+      self?.handleMethodCall(call, result: result)
+    }
+  }
+
+  private func handleMethodCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "getVoices":
+      let voices = AVSpeechSynthesisVoice.speechVoices()
+        .filter { $0.language.hasPrefix("de") }
+        .map { v -> [String: Any] in
+          var qualityStr = "default"
+          if #available(iOS 16.0, *) {
+            if v.quality == .premium { qualityStr = "premium" }
+            else if v.quality == .enhanced { qualityStr = "enhanced" }
+          }
+          let genderStr: String
+          switch v.gender {
+          case .male: genderStr = "male"
+          case .female: genderStr = "female"
+          default: genderStr = "unspecified"
+          }
+          return [
+            "identifier": v.identifier,
+            "name": v.name,
+            "language": v.language,
+            "quality": qualityStr,
+            "gender": genderStr
+          ]
+        }
+      result(voices)
+
+    case "speak":
+      guard let args = call.arguments as? [String: Any],
+            let text = args["text"] as? String else {
+        result(FlutterError(code: "INVALID_ARGS", message: "text required", details: nil))
+        return
+      }
+
+      let voiceId = args["voiceIdentifier"] as? String
+      let rateMultiplier = (args["rate"] as? Double) ?? 1.0
+      let pitchMultiplier = (args["pitch"] as? Double) ?? 1.0
+      let volume = (args["volume"] as? Double) ?? 1.0
+
+      if synthesizer.isSpeaking {
+        synthesizer.stopSpeaking(at: .immediate)
+      }
+
+      let utterance = AVSpeechUtterance(string: text)
+      if let id = voiceId, !id.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: id) {
+        utterance.voice = voice
+      } else {
+        utterance.voice = AVSpeechSynthesisVoice(language: "de-DE")
+      }
+
+      utterance.rate = AVSpeechUtteranceDefaultSpeechRate * Float(rateMultiplier)
+      utterance.pitchMultiplier = Float(pitchMultiplier)
+      utterance.volume = Float(volume)
+
+      do {
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers, .mixWithOthers])
+        try AVAudioSession.sharedInstance().setActive(true)
+      } catch {
+        print("[NativeTtsManager] AudioSession error: \(error)")
+      }
+
+      synthesizer.speak(utterance)
+      result(true)
+
+    case "stop":
+      if synthesizer.isSpeaking {
+        synthesizer.stopSpeaking(at: .immediate)
+      }
+      result(true)
+
+    case "isSpeaking":
+      result(synthesizer.isSpeaking)
+
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  // MARK: - AVSpeechSynthesizerDelegate
+
+  func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    DispatchQueue.main.async { [weak self] in
+      self?.channel?.invokeMethod("onSpeechFinished", nil)
+    }
+  }
+
+  func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+    DispatchQueue.main.async { [weak self] in
+      self?.channel?.invokeMethod("onSpeechCancelled", nil)
     }
   }
 }

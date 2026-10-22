@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/apple_watch_remote_sheet.dart';
+import '../widgets/dj_voice_settings_sheet.dart';
 import '../widgets/downloads_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
 import '../widgets/profile_avatar.dart';
@@ -468,6 +469,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Section: Spotify KI-DJ & Sprachmodell
+          _sectionTitle('SPOTIFY KI-DJ & SPRACHMODELL'),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            tileColor: SpotifyColors.surfaceElevated,
+            leading: const Icon(Icons.record_voice_over_rounded, color: Color(0xFF1DB954), size: 28),
+            title: const Text('DJ Stimme & KI-Modell',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            subtitle: Text(
+                '${prov.djVoiceSettings.voiceName} • ${prov.djVoiceSettings.enableOllamaLlm ? "Ollama (${prov.djVoiceSettings.ollamaModel})" : "Smart Radio"}',
+                style: const TextStyle(color: SpotifyColors.textSecondary, fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right, color: SpotifyColors.textMuted),
+            onTap: () {
+              HapticFeedback.lightImpact();
+              DjVoiceSettingsSheet.show(context);
+            },
           ),
 
           const SizedBox(height: 24),
