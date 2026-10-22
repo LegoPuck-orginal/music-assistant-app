@@ -6,6 +6,7 @@ import '../models/dsp_models.dart';
 import '../models/equalizer_settings.dart';
 import '../models/player_device.dart';
 import '../models/playlist.dart';
+import '../models/recommendation.dart';
 import '../models/track.dart';
 import '../models/user_profile.dart';
 import '../services/mass_api_service.dart';
@@ -61,10 +62,16 @@ class MusicProvider extends ChangeNotifier {
   bool _isSearching = false;
   String _lastSearchQuery = '';
 
+  // Recommendations
+  List<RecommendationRow> _recommendations = [];
+  bool _isLoadingRecommendations = false;
+
   List<Playlist> get playlists => _playlists;
   List<Playlist> get podcasts => _podcasts;
   List<Playlist> get albums => _albums;
   List<Playlist> get artists => _artists;
+  List<RecommendationRow> get recommendations => _recommendations;
+  bool get isLoadingRecommendations => _isLoadingRecommendations;
   List<Track> get searchResultsTracks => _searchResultsTracks;
   List<Playlist> get searchResultsPlaylists => _searchResultsPlaylists;
   List<Playlist> get searchResultsAlbums => _searchResultsAlbums;
@@ -440,10 +447,47 @@ class MusicProvider extends ChangeNotifier {
         loadDspForPlayer(_activePlayer!.id);
       }
 
+      // 3. Fetch awesome recommendations (Last.fm, Most Played, Forgotten Tracks)
+      loadRecommendations();
+
       notifyListeners();
     } catch (e) {
       debugPrint('[MusicProvider] refreshServerData error: $e');
     }
+  }
+
+  /// Lädt personalisierte Empfehlungen vom Music Assistant Server
+  Future<void> loadRecommendations() async {
+    _isLoadingRecommendations = true;
+    notifyListeners();
+
+    try {
+      final rows = await _api.fetchFullRecommendations();
+      if (rows.isNotEmpty) {
+        _recommendations = rows;
+      }
+    } catch (e) {
+      debugPrint('[MusicProvider] loadRecommendations error: $e');
+    } finally {
+      _isLoadingRecommendations = false;
+      notifyListeners();
+    }
+  }
+
+  /// Spielt einen empfohlenen Titel ab und reiht die restlichen Empfehlungen ein
+  Future<void> playRecommendationItem(
+    RecommendationItem item, {
+    List<RecommendationItem>? contextItems,
+  }) async {
+    final track = item.toTrack();
+    List<Track>? newQueue;
+    if (contextItems != null && contextItems.isNotEmpty) {
+      newQueue = contextItems
+          .where((i) => i.mediaType == 'track' || i.mediaType.isEmpty)
+          .map((i) => i.toTrack())
+          .toList();
+    }
+    await playTrack(track, newQueue: newQueue);
   }
 
   Future<void> playTrack(Track track, {List<Track>? newQueue}) async {

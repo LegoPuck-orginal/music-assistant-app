@@ -6,6 +6,7 @@ import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/album_card.dart';
+import '../widgets/recommendation_card.dart';
 import '../widgets/update_dialog.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
@@ -20,11 +21,24 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _selectedFilter = 'Alle';
 
-  String _getGreeting() {
+  String _getGreeting(MusicProvider prov) {
     final hour = DateTime.now().hour;
-    if (hour < 12) return 'Guten Morgen';
-    if (hour < 18) return 'Guten Tag';
-    return 'Guten Abend';
+    String greeting;
+    if (hour < 5) {
+      greeting = 'Gute Nacht';
+    } else if (hour < 12) {
+      greeting = 'Guten Morgen';
+    } else if (hour < 18) {
+      greeting = 'Guten Tag';
+    } else {
+      greeting = 'Guten Abend';
+    }
+
+    final name = prov.currentUser?.effectiveName;
+    if (name != null && name.isNotEmpty && name != 'Gast-Hörer') {
+      return '$greeting, ${name.split(' ').first}';
+    }
+    return greeting;
   }
 
   @override
@@ -48,7 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
             backgroundColor: SpotifyColors.pureBlack,
             elevation: 0,
             title: Text(
-              _getGreeting(),
+              _getGreeting(prov),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 22,
@@ -240,13 +254,76 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Section 1
+            // Dynamic Recommendation Rows (Last.fm, Most Played, Similar Artists, Forgotten Tracks)
+            if (_selectedFilter != 'Podcasts' && prov.recommendations.isNotEmpty) ...[
+              for (final row in prov.recommendations) ...[
+                SliverToBoxAdapter(
+                  child: _buildRecommendationSectionHeader(
+                    context,
+                    row.title,
+                    row.subtitle,
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: row.items.isNotEmpty &&
+                            row.items.first.mediaType == 'artist'
+                        ? 165
+                        : 210,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: row.items.length,
+                      itemBuilder: (context, index) {
+                        final item = row.items[index];
+                        return RecommendationCard(
+                          item: item,
+                          contextItems: row.items,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ] else if (_selectedFilter != 'Podcasts' && prov.isLoadingRecommendations) ...[
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                SpotifyColors.green),
+                          ),
+                        ),
+                        SizedBox(width: 10),
+                        Text(
+                          'Lade Empfehlungen aus deinem Hörverlauf...',
+                          style: TextStyle(
+                            color: SpotifyColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+
+            // Section: Deine Mediathek (Playlists & Alben)
             SliverToBoxAdapter(
               child: _buildSectionHeader(
                 context,
                 _selectedFilter == 'Podcasts'
-                    ? 'Deine Podcasts & Shows'
-                    : 'Für dich zusammengestellt',
+                    ? 'Deine Podcasts & Shows (${prov.podcasts.length})'
+                    : 'Deine Playlists & Favoriten',
               ),
             ),
             SliverToBoxAdapter(
@@ -273,38 +350,37 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Section 2
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(
-                context,
-                _selectedFilter == 'Podcasts'
-                    ? 'Alle Podcasts'
-                    : 'Wieder reinhören',
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 215,
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: filteredPlaylists.reversed.length,
-                  itemBuilder: (context, index) {
-                    final p = filteredPlaylists.reversed.toList()[index];
-                    return AlbumCard(
-                      playlist: p,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => PlaylistDetailScreen(playlist: p),
-                          ),
-                        );
-                      },
-                    );
-                  },
+            if (_selectedFilter != 'Podcasts' && prov.albums.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: _buildSectionHeader(
+                  context,
+                  'Alben in deiner Mediathek',
                 ),
               ),
-            ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 215,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: prov.albums.length,
+                    itemBuilder: (context, index) {
+                      final p = prov.albums[index];
+                      return AlbumCard(
+                        playlist: p,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PlaylistDetailScreen(playlist: p),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
           ],
 
           // Space for bottom MiniPlayer
@@ -413,6 +489,39 @@ class _HomeScreenState extends State<HomeScreen> {
           fontWeight: FontWeight.w800,
           letterSpacing: -0.4,
         ),
+      ),
+    );
+  }
+
+  Widget _buildRecommendationSectionHeader(
+      BuildContext context, String title, [String? subtitle]) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (subtitle != null && subtitle.isNotEmpty) ...[
+            Text(
+              subtitle.toUpperCase(),
+              style: const TextStyle(
+                color: SpotifyColors.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.0,
+              ),
+            ),
+            const SizedBox(height: 2),
+          ],
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+          ),
+        ],
       ),
     );
   }

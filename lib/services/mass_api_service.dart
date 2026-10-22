@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/player_device.dart';
 import '../models/playlist.dart';
+import '../models/recommendation.dart';
 import '../models/track.dart';
 
 class MassApiService {
@@ -902,6 +903,134 @@ class MassApiService {
             'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&q=80',
       ),
     ];
+  }
+
+  /// Ruft alle Empfehlungskategorien von Music Assistant ab
+  Future<List<Map<String, dynamic>>> fetchRecommendationCategories() async {
+    try {
+      final res = await sendCommand('music/recommendations');
+      if (res is List) {
+        return res
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchRecommendationCategories error: $e');
+    }
+    return [];
+  }
+
+  /// Ruft die Inhalte (Titel, Alben, Künstler) einer bestimmten Empfehlungszeile ab
+  Future<List<Map<String, dynamic>>> fetchRecommendationItems(
+      String provider, String itemId) async {
+    try {
+      final res = await sendCommand('music/recommendations/items', {
+        'provider': provider,
+        'item_id': itemId,
+      });
+      if (res is List) {
+        return res
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchRecommendationItems ($itemId) error: $e');
+    }
+    return [];
+  }
+
+  /// Lädt die Top-Empfehlungsreihen inklusive aller Inhalte parallel
+  Future<List<RecommendationRow>> fetchFullRecommendations() async {
+    final categories = await fetchRecommendationCategories();
+    if (categories.isEmpty) return [];
+
+    final preferredOrder = [
+      'lastfm_recommendations_similar_tracks',
+      'most_played_tracks',
+      'lastfm_recommendations_similar_artists',
+      'forgotten_tracks',
+      'recently_played',
+      'lastfm_recommendations_chart_top_tracks',
+      'lastfm_recommendations_chart_top_artists',
+    ];
+
+    String translateTitle(String id, String defaultTitle) {
+      switch (id) {
+        case 'lastfm_recommendations_similar_tracks':
+          return 'Ähnlich wie deine Favoriten';
+        case 'most_played_tracks':
+          return 'Deine Allzeit-Favoriten';
+        case 'lastfm_recommendations_similar_artists':
+          return 'Künstler für deinen Geschmack';
+        case 'forgotten_tracks':
+          return 'Vergessene Schätze wiederentdecken';
+        case 'recently_played':
+          return 'Kürzlich gehört';
+        case 'lastfm_recommendations_chart_top_tracks':
+          return 'Globale Top-Hits';
+        case 'lastfm_recommendations_chart_top_artists':
+          return 'Beliebteste Künstler weltweit';
+        default:
+          return defaultTitle;
+      }
+    }
+
+    String? translateSubtitle(String id, String? defaultSub) {
+      switch (id) {
+        case 'lastfm_recommendations_similar_tracks':
+          return 'Basierend auf deinen meistgehörten Titeln';
+        case 'most_played_tracks':
+          return 'Deine meistgestreamten Tracks';
+        case 'lastfm_recommendations_similar_artists':
+          return 'Inspiriert von deinen Lieblings-Künstlern';
+        case 'forgotten_tracks':
+          return 'Lange nicht mehr gehört – Zeit für ein Wiederhören';
+        case 'recently_played':
+          return 'Dort weitermachen, wo du aufgehört hast';
+        case 'lastfm_recommendations_chart_top_tracks':
+          return 'Aktuelle weltweite Chartstürmer';
+        default:
+          return defaultSub;
+      }
+    }
+
+    final selectedCategories = <Map<String, dynamic>>[];
+    for (final prefId in preferredOrder) {
+      final match = categories.firstWhere(
+        (c) => c['item_id'] == prefId,
+        orElse: () => const {},
+      );
+      if (match.isNotEmpty) {
+        selectedCategories.add(match);
+      }
+    }
+
+    final rowsWithItems = await Future.wait(
+      selectedCategories.take(5).map((cat) async {
+        final itemId = cat['item_id']?.toString() ?? '';
+        final provider = cat['provider']?.toString() ?? '';
+        final rawTitle = cat['name']?.toString() ?? 'Empfehlungen';
+        final rawSub = cat['subtitle']?.toString();
+        final icon = cat['icon']?.toString();
+
+        final rawItems = await fetchRecommendationItems(provider, itemId);
+        final items = rawItems
+            .map((itemJson) => RecommendationItem.fromJson(itemJson))
+            .where((item) => item.name.isNotEmpty)
+            .toList();
+
+        return RecommendationRow(
+          id: itemId,
+          provider: provider,
+          title: translateTitle(itemId, rawTitle),
+          subtitle: translateSubtitle(itemId, rawSub),
+          icon: icon,
+          items: items,
+        );
+      }),
+    );
+
+    return rowsWithItems.where((row) => row.items.isNotEmpty).toList();
   }
 
   void dispose() {
