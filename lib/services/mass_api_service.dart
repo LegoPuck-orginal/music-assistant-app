@@ -226,6 +226,60 @@ class MassApiService {
     return [];
   }
 
+  /// Ruft echte Podcasts aus der Music Assistant Bibliothek ab
+  Future<List<Playlist>> fetchLibraryPodcasts({int limit = 50}) async {
+    try {
+      final res = await sendCommand('music/podcasts/library_items', {
+        'limit': limit,
+      });
+      if (res is List) {
+        return res
+            .map((p) => _parsePodcast(p as Map<String, dynamic>,
+                defaultProvider: 'library'))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchLibraryPodcasts error: $e');
+    }
+    return [];
+  }
+
+  /// Ruft echte Alben aus der Music Assistant Bibliothek ab
+  Future<List<Playlist>> fetchLibraryAlbums({int limit = 50}) async {
+    try {
+      final res = await sendCommand('music/albums/library_items', {
+        'limit': limit,
+      });
+      if (res is List) {
+        return res
+            .map((a) => _parsePlaylist(a as Map<String, dynamic>,
+                defaultType: 'album', defaultProvider: 'library'))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchLibraryAlbums error: $e');
+    }
+    return [];
+  }
+
+  /// Ruft echte Künstler aus der Music Assistant Bibliothek ab
+  Future<List<Playlist>> fetchLibraryArtists({int limit = 50}) async {
+    try {
+      final res = await sendCommand('music/artists/library_items', {
+        'limit': limit,
+      });
+      if (res is List) {
+        return res
+            .map((a) => _parsePlaylist(a as Map<String, dynamic>,
+                defaultType: 'artist', defaultProvider: 'library'))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchLibraryArtists error: $e');
+    }
+    return [];
+  }
+
   /// Ruft Audio Preview Stream URL ab (für lokale iPhone Wiedergabe)
   Future<String?> fetchTrackPreviewUrl(Track track) async {
     try {
@@ -244,12 +298,19 @@ class MassApiService {
     return null;
   }
 
-  /// Ruft echte Songs einer Playlist oder eines Albums ab
+  /// Ruft echte Songs einer Playlist, eines Albums oder Podcasts ab
   Future<List<Track>> fetchPlaylistTracks(Playlist playlist) async {
     try {
-      final isAlbum = (playlist.type == 'album');
-      final cmd =
-          isAlbum ? 'music/albums/album_tracks' : 'music/playlists/playlist_tracks';
+      final String cmd;
+      if (playlist.type == 'album') {
+        cmd = 'music/albums/album_tracks';
+      } else if (playlist.type == 'podcast') {
+        cmd = 'music/podcasts/podcast_episodes';
+      } else if (playlist.type == 'artist') {
+        cmd = 'music/artists/artist_tracks';
+      } else {
+        cmd = 'music/playlists/playlist_tracks';
+      }
       final provider = playlist.provider ?? 'library';
       final res = await sendCommand(cmd, {
         'item_id': playlist.id,
@@ -273,7 +334,8 @@ class MassApiService {
       return {
         'tracks': <Track>[],
         'playlists': <Playlist>[],
-        'albums': <Playlist>[]
+        'albums': <Playlist>[],
+        'podcasts': <Playlist>[],
       };
     }
     try {
@@ -307,10 +369,19 @@ class MassApiService {
           }
         }
 
+        final podcastsList = <Playlist>[];
+        if (res['podcasts'] is List) {
+          for (final pod in res['podcasts'] as List) {
+            podcastsList.add(_parsePodcast(pod as Map<String, dynamic>,
+                defaultProvider: 'spotify'));
+          }
+        }
+
         return {
           'tracks': tracksList,
           'playlists': playlistsList,
           'albums': albumsList,
+          'podcasts': podcastsList,
         };
       }
     } catch (e) {
@@ -319,9 +390,14 @@ class MassApiService {
     return {
       'tracks': <Track>[],
       'playlists': <Playlist>[],
-      'albums': <Playlist>[]
+      'albums': <Playlist>[],
+      'podcasts': <Playlist>[],
     };
   }
+
+  Track parseTrack(Map<String, dynamic> map,
+          {String defaultProvider = 'library'}) =>
+      _parseTrack(map, defaultProvider: defaultProvider);
 
   Track _parseTrack(Map<String, dynamic> map,
       {String defaultProvider = 'library'}) {
@@ -334,6 +410,10 @@ class MassApiService {
           .map((a) => a['name']?.toString() ?? '')
           .where((s) => s.isNotEmpty)
           .join(', ');
+    } else if (map['podcast'] is Map) {
+      final pod = map['podcast'] as Map<String, dynamic>;
+      artistName =
+          pod['name']?.toString() ?? pod['publisher']?.toString() ?? 'Podcast';
     }
 
     String albumName = '';
@@ -344,18 +424,31 @@ class MassApiService {
       if (albumMap['image'] is Map) {
         imageUrl = albumMap['image']['path']?.toString();
       }
+    } else if (map['podcast'] is Map) {
+      final pod = map['podcast'] as Map<String, dynamic>;
+      albumName = pod['name']?.toString() ?? '';
+      if (pod['metadata'] is Map) {
+        final meta = pod['metadata'] as Map<String, dynamic>;
+        if (meta['images'] is List && (meta['images'] as List).isNotEmpty) {
+          imageUrl = (meta['images'] as List).first['path']?.toString();
+        }
+      }
     }
 
+    String? previewUrl;
     if (imageUrl == null && map['metadata'] is Map) {
       final meta = map['metadata'] as Map<String, dynamic>;
       if (meta['images'] is List && (meta['images'] as List).isNotEmpty) {
         imageUrl = (meta['images'] as List).first['path']?.toString();
       }
+      previewUrl = meta['preview']?.toString();
     }
 
     final duration = (map['duration'] as num?)?.toInt() ?? 180;
     final isLiked = map['favorite'] as bool? ?? false;
-    final uri = map['uri']?.toString();
+    final uri = previewUrl != null && previewUrl.startsWith('http')
+        ? previewUrl
+        : map['uri']?.toString();
     final provider = map['provider']?.toString() ?? defaultProvider;
 
     return Track(
@@ -368,6 +461,35 @@ class MassApiService {
       uri: uri,
       provider: provider,
       isLiked: isLiked,
+    );
+  }
+
+  Playlist _parsePodcast(Map<String, dynamic> map,
+      {String defaultProvider = 'library'}) {
+    final id = map['item_id']?.toString() ?? map['uri']?.toString() ?? '';
+    final name = map['name']?.toString() ?? '';
+    final owner = map['publisher']?.toString() ?? 'Podcast';
+    final tracksCount = (map['total_episodes'] as num?)?.toInt() ?? 0;
+
+    String? imageUrl;
+    final metadata = map['metadata'] as Map<String, dynamic>?;
+    if (metadata != null && metadata['images'] is List) {
+      final images = metadata['images'] as List;
+      if (images.isNotEmpty) {
+        imageUrl = images.first['path']?.toString();
+      }
+    }
+
+    final provider = map['provider']?.toString() ?? defaultProvider;
+
+    return Playlist(
+      id: id,
+      name: name.isNotEmpty ? name : 'Podcast $id',
+      owner: owner,
+      trackCount: tracksCount,
+      imageUrl: imageUrl,
+      type: 'podcast',
+      provider: provider,
     );
   }
 

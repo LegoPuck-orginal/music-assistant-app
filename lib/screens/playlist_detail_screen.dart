@@ -106,14 +106,22 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                                   widget.playlist.imageUrl!,
                                   fit: BoxFit.cover,
                                   errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(
-                                    Icons.album,
+                                      Icon(
+                                    widget.playlist.type == 'podcast'
+                                        ? Icons.podcasts
+                                        : widget.playlist.type == 'artist'
+                                            ? Icons.person
+                                            : Icons.album,
                                     size: 80,
                                     color: SpotifyColors.textSecondary,
                                   ),
                                 )
-                              : const Icon(
-                                  Icons.album,
+                              : Icon(
+                                  widget.playlist.type == 'podcast'
+                                      ? Icons.podcasts
+                                      : widget.playlist.type == 'artist'
+                                          ? Icons.person
+                                          : Icons.album,
                                   size: 80,
                                   color: SpotifyColors.textSecondary,
                                 ),
@@ -133,7 +141,11 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${widget.playlist.owner} • ${tracks.length} Songs',
+                        widget.playlist.type == 'podcast'
+                            ? '${widget.playlist.owner} • ${tracks.isNotEmpty ? tracks.length : widget.playlist.trackCount} Folgen'
+                            : widget.playlist.type == 'artist'
+                                ? 'Künstler • ${tracks.length} Titel'
+                                : '${widget.playlist.owner} • ${tracks.length} Songs',
                         style: const TextStyle(
                           color: SpotifyColors.textSecondary,
                           fontSize: 13,

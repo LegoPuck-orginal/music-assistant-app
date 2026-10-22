@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:music_assistant_app/models/equalizer_settings.dart';
 import 'package:music_assistant_app/models/player_device.dart';
@@ -7,6 +8,16 @@ import 'package:music_assistant_app/providers/music_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+    const MethodChannel('xyz.luan/audioplayers.global'),
+    (MethodCall methodCall) async => 1,
+  );
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+    const MethodChannel('xyz.luan/audioplayers'),
+    (MethodCall methodCall) async => 1,
+  );
 
   group('Music Assistant Model & Provider Tests', () {
     test('Track model formatting & copyWith', () {
@@ -102,7 +113,34 @@ void main() {
       expect(prov.searchResultsTracks, isEmpty);
       expect(prov.searchResultsPlaylists, isEmpty);
       expect(prov.searchResultsAlbums, isEmpty);
+      expect(prov.searchResultsPodcasts, isEmpty);
       expect(prov.isSearching, false);
+    });
+
+    test('Podcast model and library filtering', () {
+      final podcast = Playlist(
+        id: 'pod_1',
+        name: 'Die drei ??? Podcast',
+        owner: 'Europa',
+        trackCount: 66,
+        type: 'podcast',
+      );
+      final musicPlaylist = Playlist(
+        id: 'pl_1',
+        name: 'Top 50 Hits',
+        owner: 'Spotify',
+        trackCount: 50,
+        type: 'playlist',
+      );
+
+      final all = [podcast, musicPlaylist];
+      final podcastsOnly = all.where((p) => p.type == 'podcast').toList();
+      final musicOnly = all.where((p) => p.type != 'podcast').toList();
+
+      expect(podcastsOnly.length, 1);
+      expect(podcastsOnly.first.name, 'Die drei ??? Podcast');
+      expect(musicOnly.length, 1);
+      expect(musicOnly.first.name, 'Top 50 Hits');
     });
   });
 }

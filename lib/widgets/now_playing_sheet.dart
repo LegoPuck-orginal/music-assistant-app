@@ -7,8 +7,15 @@ import '../theme/spotify_colors.dart';
 import 'device_picker_sheet.dart';
 import 'equalizer_sheet.dart';
 
-class NowPlayingSheet extends StatelessWidget {
+class NowPlayingSheet extends StatefulWidget {
   const NowPlayingSheet({super.key});
+
+  @override
+  State<NowPlayingSheet> createState() => _NowPlayingSheetState();
+}
+
+class _NowPlayingSheetState extends State<NowPlayingSheet> {
+  double? _dragValue;
 
   String _formatDuration(Duration d) {
     final m = d.inMinutes;
@@ -200,11 +207,19 @@ class NowPlayingSheet extends StatelessWidget {
                   trackHeight: 3.5,
                 ),
                 child: Slider(
-                  value: sliderVal,
+                  value: (_dragValue ?? sliderVal).clamp(0.0, totalSeconds),
                   min: 0,
                   max: totalSeconds,
                   onChanged: (val) {
+                    setState(() {
+                      _dragValue = val;
+                    });
+                  },
+                  onChangeEnd: (val) {
                     prov.seekTo(Duration(seconds: val.toInt()));
+                    setState(() {
+                      _dragValue = null;
+                    });
                   },
                 ),
               ),
@@ -216,7 +231,9 @@ class NowPlayingSheet extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      _formatDuration(prov.currentPosition),
+                      _formatDuration(_dragValue != null
+                          ? Duration(seconds: _dragValue!.toInt())
+                          : prov.currentPosition),
                       style: const TextStyle(
                         color: SpotifyColors.textSecondary,
                         fontSize: 12,

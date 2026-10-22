@@ -108,83 +108,131 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // 2x3 Quick Tiles ("Kürzlich gehört")
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 3.0,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
+          if (filteredPlaylists.isEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 60),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(
+                        _selectedFilter == 'Podcasts'
+                            ? Icons.podcasts
+                            : Icons.music_off,
+                        size: 52,
+                        color: SpotifyColors.textMuted,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Keine ${_selectedFilter == 'Podcasts' ? 'Podcasts' : 'Inhalte'} gefunden',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Füge in Music Assistant neue ${_selectedFilter == 'Podcasts' ? 'Podcasts' : 'Musik'} hinzu.',
+                        style: const TextStyle(
+                          color: SpotifyColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                itemCount: filteredPlaylists.take(6).length,
-                itemBuilder: (context, index) {
-                  final p = filteredPlaylists[index];
-                  return _buildQuickTile(context, p, prov);
-                },
+              ),
+            )
+          else ...[
+            // 2x3 Quick Tiles ("Kürzlich gehört")
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 3.0,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
+                  itemCount: filteredPlaylists.take(6).length,
+                  itemBuilder: (context, index) {
+                    final p = filteredPlaylists[index];
+                    return _buildQuickTile(context, p, prov);
+                  },
+                ),
               ),
             ),
-          ),
 
-          // Section 1: Für dich zusammengestellt
-          SliverToBoxAdapter(
-            child: _buildSectionHeader(context, 'Für dich zusammengestellt'),
-          ),
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height: 215,
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                scrollDirection: Axis.horizontal,
-                itemCount: filteredPlaylists.length,
-                itemBuilder: (context, index) {
-                  final p = filteredPlaylists[index];
-                  return AlbumCard(
-                    playlist: p,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => PlaylistDetailScreen(playlist: p),
-                        ),
-                      );
-                    },
-                  );
-                },
+            // Section 1
+            SliverToBoxAdapter(
+              child: _buildSectionHeader(
+                context,
+                _selectedFilter == 'Podcasts'
+                    ? 'Deine Podcasts & Shows'
+                    : 'Für dich zusammengestellt',
               ),
             ),
-          ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 215,
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: filteredPlaylists.length,
+                  itemBuilder: (context, index) {
+                    final p = filteredPlaylists[index];
+                    return AlbumCard(
+                      playlist: p,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PlaylistDetailScreen(playlist: p),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
 
-          // Section 2: Kürzlich gehört
-          SliverToBoxAdapter(
-            child: _buildSectionHeader(context, 'Wieder reinhören'),
-          ),
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height: 215,
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                scrollDirection: Axis.horizontal,
-                itemCount: filteredPlaylists.reversed.length,
-                itemBuilder: (context, index) {
-                  final p = filteredPlaylists.reversed.toList()[index];
-                  return AlbumCard(
-                    playlist: p,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => PlaylistDetailScreen(playlist: p),
-                        ),
-                      );
-                    },
-                  );
-                },
+            // Section 2
+            SliverToBoxAdapter(
+              child: _buildSectionHeader(
+                context,
+                _selectedFilter == 'Podcasts'
+                    ? 'Alle Podcasts'
+                    : 'Wieder reinhören',
               ),
             ),
-          ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 215,
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: filteredPlaylists.reversed.length,
+                  itemBuilder: (context, index) {
+                    final p = filteredPlaylists.reversed.toList()[index];
+                    return AlbumCard(
+                      playlist: p,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PlaylistDetailScreen(playlist: p),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
 
           // Space for bottom MiniPlayer
           const SliverToBoxAdapter(

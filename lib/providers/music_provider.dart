@@ -23,6 +23,9 @@ class MusicProvider extends ChangeNotifier {
   List<Track> _queue = [];
   int _queueIndex = 0;
   List<Playlist> _playlists = [];
+  List<Playlist> _podcasts = [];
+  List<Playlist> _albums = [];
+  List<Playlist> _artists = [];
   List<PlayerDevice> _players = [];
   PlayerDevice? _activePlayer;
   Set<String> _likedTrackIds = {};
@@ -37,12 +40,18 @@ class MusicProvider extends ChangeNotifier {
   List<Track> _searchResultsTracks = [];
   List<Playlist> _searchResultsPlaylists = [];
   List<Playlist> _searchResultsAlbums = [];
+  List<Playlist> _searchResultsPodcasts = [];
   bool _isSearching = false;
   String _lastSearchQuery = '';
 
+  List<Playlist> get playlists => _playlists;
+  List<Playlist> get podcasts => _podcasts;
+  List<Playlist> get albums => _albums;
+  List<Playlist> get artists => _artists;
   List<Track> get searchResultsTracks => _searchResultsTracks;
   List<Playlist> get searchResultsPlaylists => _searchResultsPlaylists;
   List<Playlist> get searchResultsAlbums => _searchResultsAlbums;
+  List<Playlist> get searchResultsPodcasts => _searchResultsPodcasts;
   bool get isSearching => _isSearching;
   String get lastSearchQuery => _lastSearchQuery;
 
@@ -66,7 +75,6 @@ class MusicProvider extends ChangeNotifier {
   bool get isShuffle => _isShuffle;
   int get repeatMode => _repeatMode;
   List<Track> get queue => _queue;
-  List<Playlist> get playlists => _playlists;
   List<PlayerDevice> get players => _players;
   PlayerDevice? get activePlayer => _activePlayer;
   bool get isServerConnected => _api.isConnected;
@@ -201,6 +209,28 @@ class MusicProvider extends ChangeNotifier {
           notifyListeners();
         }
       }
+
+      if (eventName == 'queue_updated' && data != null) {
+        final queueId = data['queue_id']?.toString();
+        if (_activePlayer != null && _activePlayer!.id == queueId) {
+          final currentItem = data['current_item'] as Map<String, dynamic>?;
+          if (currentItem != null) {
+            final mediaItem = currentItem['media_item'] as Map<String, dynamic>? ?? currentItem;
+            _currentTrack = _api.parseTrack(mediaItem, defaultProvider: 'library');
+            final dur = (currentItem['duration'] as num?)?.toInt() ?? _currentTrack!.durationSeconds;
+            _totalDuration = Duration(seconds: dur);
+          }
+          final state = data['state']?.toString();
+          if (state != null) {
+            _isPlaying = (state == 'playing');
+          }
+          final elapsedTime = (data['elapsed_time'] as num?)?.toInt();
+          if (elapsedTime != null) {
+            _currentPosition = Duration(seconds: elapsedTime);
+          }
+          notifyListeners();
+        }
+      }
     } catch (e) {
       debugPrint('[MusicProvider] Event handler error: $e');
     }
@@ -232,11 +262,31 @@ class MusicProvider extends ChangeNotifier {
         p.isSelected = (p.id == _activePlayer!.id);
       }
 
-      // 2. Fetch real library tracks
-      final libraryTracks = await _api.fetchLibraryTracks(limit: 100);
+      // 2. Fetch real library tracks, playlists, podcasts, albums, artists in parallel
+      final results = await Future.wait([
+        _api.fetchLibraryPlaylists(limit: 50),
+        _api.fetchLibraryPodcasts(limit: 50),
+        _api.fetchLibraryAlbums(limit: 50),
+        _api.fetchLibraryArtists(limit: 50),
+        _api.fetchLibraryTracks(limit: 100),
+      ]);
 
-      // 3. Fetch real library playlists
-      final libraryPlaylists = await _api.fetchLibraryPlaylists(limit: 50);
+      final libraryPlaylists = results[0] as List<Playlist>;
+      final libraryPodcasts = results[1] as List<Playlist>;
+      final libraryAlbums = results[2] as List<Playlist>;
+      final libraryArtists = results[3] as List<Playlist>;
+      final libraryTracks = results[4] as List<Track>;
+
+      _podcasts = libraryPodcasts;
+      _albums = libraryAlbums;
+      _artists = libraryArtists;
+
+      _playlists = [
+        ...libraryPlaylists,
+        ...libraryPodcasts,
+        ...libraryAlbums,
+        ...libraryArtists,
+      ];
 
       if (libraryTracks.isNotEmpty) {
         for (final t in libraryTracks) {
@@ -245,28 +295,6 @@ class MusicProvider extends ChangeNotifier {
         _queue = libraryTracks;
         _currentTrack ??= libraryTracks.first;
         _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
-      }
-
-      if (libraryPlaylists.isNotEmpty) {
-        // Attach tracks to playlists if empty
-        for (final p in libraryPlaylists) {
-          if (p.tracks.isEmpty) {
-            p.tracks.addAll(libraryTracks.take(15));
-          }
-        }
-        _playlists = libraryPlaylists;
-      } else if (libraryTracks.isNotEmpty) {
-        // Create a default playlist from all tracks
-        _playlists = [
-          Playlist(
-            id: 'all_tracks',
-            name: 'Deine Mediathek',
-            owner: 'Music Assistant',
-            trackCount: libraryTracks.length,
-            imageUrl: libraryTracks.first.imageUrl,
-            tracks: libraryTracks,
-          ),
-        ];
       }
 
       notifyListeners();
@@ -597,6 +625,7 @@ class MusicProvider extends ChangeNotifier {
       _searchResultsTracks = [];
       _searchResultsPlaylists = [];
       _searchResultsAlbums = [];
+      _searchResultsPodcasts = [];
       _isSearching = false;
       notifyListeners();
       return;
@@ -610,6 +639,7 @@ class MusicProvider extends ChangeNotifier {
       _searchResultsTracks = (res['tracks'] as List<Track>?) ?? [];
       _searchResultsPlaylists = (res['playlists'] as List<Playlist>?) ?? [];
       _searchResultsAlbums = (res['albums'] as List<Playlist>?) ?? [];
+      _searchResultsPodcasts = (res['podcasts'] as List<Playlist>?) ?? [];
     } catch (e) {
       debugPrint('[MusicProvider] search error: $e');
     } finally {

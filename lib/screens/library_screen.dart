@@ -34,7 +34,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     // Filter by category
     var filteredPlaylists = _selectedFilter == 'Playlists'
-        ? allPlaylists
+        ? allPlaylists.where((p) => p.type == 'playlist').toList()
         : _selectedFilter == 'Alben'
             ? allPlaylists.where((p) => p.type == 'album').toList()
             : _selectedFilter == 'Künstler'

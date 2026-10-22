@@ -35,17 +35,25 @@ class AlbumCard extends StatelessWidget {
                     ? Image.network(
                         playlist.imageUrl!,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => const Center(
+                        errorBuilder: (context, error, stackTrace) => Center(
                           child: Icon(
-                            Icons.album,
+                            playlist.type == 'podcast'
+                                ? Icons.podcasts
+                                : playlist.type == 'artist'
+                                    ? Icons.person
+                                    : Icons.album,
                             color: SpotifyColors.textSecondary,
                             size: 48,
                           ),
                         ),
                       )
-                    : const Center(
+                    : Center(
                         child: Icon(
-                          Icons.album,
+                          playlist.type == 'podcast'
+                              ? Icons.podcasts
+                              : playlist.type == 'artist'
+                                  ? Icons.person
+                                  : Icons.album,
                           color: SpotifyColors.textSecondary,
                           size: 48,
                         ),

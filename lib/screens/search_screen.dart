@@ -63,7 +63,9 @@ class _SearchScreenState extends State<SearchScreen> {
     final tracks = prov.searchResultsTracks;
     final playlists = prov.searchResultsPlaylists;
     final albums = prov.searchResultsAlbums;
-    final hasResults = tracks.isNotEmpty || playlists.isNotEmpty || albums.isNotEmpty;
+    final podcasts = prov.searchResultsPodcasts;
+    final hasResults =
+        tracks.isNotEmpty || playlists.isNotEmpty || albums.isNotEmpty || podcasts.isNotEmpty;
 
     return Scaffold(
       backgroundColor: SpotifyColors.pureBlack,
@@ -157,6 +159,8 @@ class _SearchScreenState extends State<SearchScreen> {
                       _categoryChip('Playlists (${playlists.length})'),
                       const SizedBox(width: 8),
                       _categoryChip('Alben (${albums.length})'),
+                      const SizedBox(width: 8),
+                      _categoryChip('Podcasts (${podcasts.length})'),
                     ],
                   ),
                 ),
@@ -276,6 +280,51 @@ class _SearchScreenState extends State<SearchScreen> {
                                 MaterialPageRoute(
                                   builder: (_) =>
                                       PlaylistDetailScreen(playlist: a),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // Podcasts Row
+                if ((_selectedCategory == 'Alle' ||
+                        _selectedCategory.startsWith('Podcasts')) &&
+                    podcasts.isNotEmpty) ...[
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
+                      child: Text(
+                        'Podcasts & Shows',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 195,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: podcasts.length,
+                        itemBuilder: (context, index) {
+                          final pod = podcasts[index];
+                          return AlbumCard(
+                            playlist: pod,
+                            size: 140,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      PlaylistDetailScreen(playlist: pod),
                                 ),
                               );
                             },
