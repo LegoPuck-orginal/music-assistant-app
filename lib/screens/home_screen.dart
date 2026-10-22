@@ -6,9 +6,11 @@ import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/album_card.dart';
+import '../widgets/downloads_sheet.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_edit_dialog.dart';
 import '../widgets/recommendation_card.dart';
+import '../widgets/track_tile.dart';
 import '../widgets/update_dialog.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
@@ -198,7 +200,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Filter Chips
           SliverToBoxAdapter(
-            child: Padding(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
@@ -207,19 +210,179 @@ class _HomeScreenState extends State<HomeScreen> {
                   _buildChip('Musik'),
                   const SizedBox(width: 8),
                   _buildChip('Podcasts'),
+                  const SizedBox(width: 8),
+                  _buildChip('Heruntergeladen'),
                 ],
               ),
             ),
           ),
 
-          // Spotify Virtual AI DJ Card
-          if (_selectedFilter != 'Podcasts')
+          // Heruntergeladen View vs Regular Content
+          if (_selectedFilter == 'Heruntergeladen') ...[
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                child: _buildVirtualDjBanner(context, prov),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: SpotifyColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: prov.isOfflineMode
+                          ? SpotifyColors.green
+                          : SpotifyColors.borderSubtle,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: SpotifyColors.green.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          prov.isOfflineMode ? Icons.cloud_off : Icons.download_done,
+                          color: SpotifyColors.green,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              prov.isOfflineMode
+                                  ? 'Offline-Modus aktiv'
+                                  : 'Offline-Downloads bereit',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '${prov.downloadedTracks.length} Titel • ${prov.formattedDownloadedSize} belegt',
+                              style: const TextStyle(
+                                color: SpotifyColors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          foregroundColor: SpotifyColors.green,
+                        ),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => const DownloadsSheet(),
+                          );
+                        },
+                        child: const Text('Verwalten',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
+            if (prov.downloadedTracks.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 60),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.download_for_offline_outlined,
+                          size: 54,
+                          color: SpotifyColors.textMuted.withValues(alpha: 0.6),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Keine Offline-Titel gefunden',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 40),
+                          child: Text(
+                            'Lade Musik in Playlists oder Titeln herunter, um sie offline zu hören.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: SpotifyColors.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: SpotifyColors.green,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        icon: const Icon(Icons.shuffle, size: 16),
+                        label: const Text('Zufallswiedergabe',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                        onPressed: () {
+                          HapticFeedback.mediumImpact();
+                          prov.playTrack(prov.downloadedTracks.first,
+                              newQueue: prov.downloadedTracks);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final track = prov.downloadedTracks[index];
+                    return TrackTile(
+                      track: track,
+                      index: index + 1,
+                      onTap: () {
+                        prov.playTrack(track, newQueue: prov.downloadedTracks);
+                      },
+                    );
+                  },
+                  childCount: prov.downloadedTracks.length,
+                ),
+              ),
+            ],
+          ] else ...[
+            // Spotify Virtual AI DJ Card
+            if (_selectedFilter != 'Podcasts')
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: _buildVirtualDjBanner(context, prov),
+                ),
+              ),
 
           if (filteredPlaylists.isEmpty)
             SliverToBoxAdapter(
@@ -408,6 +571,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ],
+        ],
 
           // Space for bottom MiniPlayer
           const SliverToBoxAdapter(

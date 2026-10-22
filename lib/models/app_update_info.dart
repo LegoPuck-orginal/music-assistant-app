@@ -1,3 +1,4 @@
+/// Repräsentiert Versions- und Download-Informationen für In-App-Updates
 class AppUpdateInfo {
   final String currentVersion;
   final String latestVersion;
@@ -19,6 +20,11 @@ class AppUpdateInfo {
     required this.hasUpdate,
   });
 
+  /// Direktes Apple iOS Over-The-Air Installationsprotokoll (funktioniert ohne Drittanbieter-App)
+  String get directOtaUrl =>
+      'itms-services://?action=download-manifest&url=https://raw.githubusercontent.com/LegoPuck-orginal/music-assistant-app/main/ios/ota_manifest.plist';
+
+  // Optionale Drittanbieter-Links für Tests
   String get sideStoreUrl =>
       'sidestore://install?url=${Uri.encodeComponent(downloadUrl)}';
 

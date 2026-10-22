@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/app_update_info.dart';
 
 class UpdateService {
@@ -54,7 +57,7 @@ class UpdateService {
         return AppUpdateInfo.noUpdate(currentVersion: currentVersion);
       }
 
-      // Suche nach dem neuesten versionierten Release (z. B. v1.2.0)
+      // Suche nach dem neuesten versionierten Release (z. B. v1.6.0)
       Map<String, dynamic>? latestRelease;
       for (final r in releases) {
         final map = r as Map<String, dynamic>;
@@ -110,6 +113,56 @@ class UpdateService {
     } catch (e) {
       debugPrint('[UpdateService] Update check exception: $e');
       return AppUpdateInfo.noUpdate(currentVersion: currentVersion);
+    }
+  }
+
+  /// Lädt die Update-IPA Datei direkt in der App herunter (mit Fortschritts-Callback)
+  Future<File?> downloadUpdateIpa(
+    String downloadUrl, {
+    required Function(double progress, int receivedBytes, int totalBytes) onProgress,
+  }) async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final updatesDir = Directory('${docsDir.path}/updates');
+      if (!updatesDir.existsSync()) {
+        updatesDir.createSync(recursive: true);
+      }
+      final targetFile = File('${updatesDir.path}/music-assistant-latest.ipa');
+
+      final request = http.Request('GET', Uri.parse(downloadUrl));
+      final response = await _client.send(request);
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final total = response.contentLength ?? (18 * 1024 * 1024);
+        int received = 0;
+        final sink = targetFile.openWrite();
+
+        await for (final chunk in response.stream) {
+          sink.add(chunk);
+          received += chunk.length;
+          final progress = (received / total).clamp(0.05, 0.99);
+          onProgress(progress, received, total);
+        }
+
+        await sink.flush();
+        await sink.close();
+        onProgress(1.0, received, total);
+        return targetFile;
+      }
+    } catch (e) {
+      debugPrint('[UpdateService] downloadUpdateIpa error: $e');
+    }
+    return null;
+  }
+
+  /// Führt die direkte Apple iOS OTA-Installation aus (ohne externe App)
+  static Future<bool> installDirectOta(String otaUrl) async {
+    final uri = Uri.parse(otaUrl);
+    try {
+      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('[UpdateService] installDirectOta error: $e');
+      return false;
     }
   }
 

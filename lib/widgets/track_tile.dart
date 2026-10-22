@@ -23,6 +23,8 @@ class TrackTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
     final isCurrent = prov.currentTrack?.id == track.id;
+    final isDownloaded = prov.isTrackDownloaded(track.id);
+    final isDownloading = prov.isTrackDownloading(track.id);
 
     return InkWell(
       onTap: () {
@@ -96,14 +98,35 @@ class TrackTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  Text(
-                    track.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: SpotifyColors.textSecondary,
-                      fontSize: 13,
-                    ),
+                  Row(
+                    children: [
+                      if (isDownloaded) ...[
+                        const Icon(Icons.arrow_circle_down,
+                            size: 13, color: SpotifyColors.green),
+                        const SizedBox(width: 4),
+                      ] else if (isDownloading) ...[
+                        const SizedBox(
+                          width: 11,
+                          height: 11,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: SpotifyColors.green,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Expanded(
+                        child: Text(
+                          track.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: SpotifyColors.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -184,6 +207,59 @@ class TrackTile extends StatelessWidget {
                 onTap: () {
                   prov.toggleLike(track);
                   Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: prov.isTrackDownloaded(track.id)
+                    ? const Icon(Icons.download_done, color: SpotifyColors.green)
+                    : prov.isTrackDownloading(track.id)
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: SpotifyColors.green,
+                            ),
+                          )
+                        : const Icon(Icons.download_for_offline_outlined,
+                            color: Colors.white),
+                title: Text(
+                  prov.isTrackDownloaded(track.id)
+                      ? 'Download entfernen'
+                      : prov.isTrackDownloading(track.id)
+                          ? 'Wird heruntergeladen (${((prov.getDownloadProgress(track.id) ?? 0.0) * 100).round()}%)'
+                          : 'Herunterladen (Offline verfügbar)',
+                  style: TextStyle(
+                    color: prov.isTrackDownloaded(track.id)
+                        ? SpotifyColors.green
+                        : Colors.white,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  if (prov.isTrackDownloaded(track.id)) {
+                    await prov.removeDownload(track.id);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Download für "${track.title}" entfernt'),
+                          backgroundColor: SpotifyColors.surfaceElevated,
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    }
+                  } else {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Lade "${track.title}" herunter...'),
+                          backgroundColor: SpotifyColors.surfaceElevated,
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    }
+                    await prov.downloadTrack(track);
+                  }
                 },
               ),
               ListTile(

@@ -20,7 +20,6 @@ class PlaylistDetailScreen extends StatefulWidget {
 
 class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   bool _isLiked = false;
-  bool _isDownloaded = false;
   bool _isLoadingTracks = false;
 
   @override
@@ -44,6 +43,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
     final tracks = widget.playlist.tracks;
+    final allDownloaded = tracks.isNotEmpty && tracks.every((t) => prov.isTrackDownloaded(t.id));
+    final anyDownloading = tracks.any((t) => prov.isTrackDownloading(t.id));
 
     return Scaffold(
       backgroundColor: SpotifyColors.pureBlack,
@@ -202,30 +203,55 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                     },
                   ),
                   IconButton(
-                    icon: Icon(
-                      _isDownloaded
-                          ? Icons.download_done
-                          : Icons.download_for_offline_outlined,
-                      color: _isDownloaded
-                          ? SpotifyColors.green
-                          : SpotifyColors.textSecondary,
-                      size: 24,
-                    ),
-                    tooltip: 'Herunterladen',
-                    onPressed: () {
+                    icon: anyDownloading
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: SpotifyColors.green,
+                            ),
+                          )
+                        : Icon(
+                            allDownloaded
+                                ? Icons.download_done
+                                : Icons.download_for_offline_outlined,
+                            color: allDownloaded
+                                ? SpotifyColors.green
+                                : SpotifyColors.textSecondary,
+                            size: 24,
+                          ),
+                    tooltip: allDownloaded
+                        ? 'Downloads verwalten / entfernen'
+                        : 'Playlist herunterladen',
+                    onPressed: () async {
                       HapticFeedback.lightImpact();
-                      setState(() {
-                        _isDownloaded = !_isDownloaded;
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(_isDownloaded
-                              ? 'Playlist offline verfügbar gemacht'
-                              : 'Offline-Download entfernt'),
-                          duration: const Duration(seconds: 1),
-                          backgroundColor: SpotifyColors.surfaceElevated,
-                        ),
-                      );
+                      if (allDownloaded) {
+                        for (final t in tracks) {
+                          await prov.removeDownload(t.id);
+                        }
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Offline-Downloads für Playlist entfernt'),
+                              duration: Duration(seconds: 1),
+                              backgroundColor: SpotifyColors.surfaceElevated,
+                            ),
+                          );
+                        }
+                      } else {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                  'Lade ${tracks.length} Titel für Offline-Wiedergabe herunter...'),
+                              duration: const Duration(seconds: 2),
+                              backgroundColor: SpotifyColors.surfaceElevated,
+                            ),
+                          );
+                        }
+                        await prov.downloadPlaylist(widget.playlist);
+                      }
                     },
                   ),
                   const Spacer(),

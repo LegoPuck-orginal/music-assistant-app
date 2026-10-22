@@ -37,6 +37,8 @@ void main() {
       expect(info.altStoreUrl, startsWith('altstore://install?url='));
       expect(info.sideStoreUrl, startsWith('sidestore://install?url='));
       expect(info.altStoreUrl, contains('music-assistant.ipa'));
+      expect(info.directOtaUrl, startsWith('itms-services://?action=download-manifest'));
+      expect(info.directOtaUrl, contains('ota_manifest.plist'));
     });
 
     test('UpdateService parses GitHub releases API accurately', () async {

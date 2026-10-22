@@ -71,10 +71,12 @@ jobs:
             * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
             * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
             * **Features & Highlights**:
+              - 🏝️ **Echte Apple Dynamic Island & Live Activities (ActivityKit & WidgetKit)**: Native Hardware-Integration für iPhone 14 Pro, 15 und 16 – zeigt aktive Lautsprecher, pulsierende Soundwaves und DJ-Sprachblasen direkt in der Dynamic Island und auf dem Sperrbildschirm
+              - 📲 **Autarker In-App-Updater (Keine Extra-App nötig)**: One-Tap-Installation und direktes In-App-Update über das native Apple OTA-Protokoll (`itms-services`) ohne SideStore, AltStore oder PC
+              - 💾 **Offline Musik-Downloads & Speicher-Manager**: Lade einzelne Songs oder ganze Playlists herunter und genieße unterbrechungsfreie Musikwiedergabe komplett ohne Internetverbindung
               - ⌚ **Apple Watch Version & Companion App**: Vollständige watchOS-App (`ios/WatchApp`) in SwiftUI mit Now-Playing, Lautstärkeregelung über die Digital Crown, Multiroom-Lautsprecher-Auswahl und Spotify KI-DJ Vibe-Umschaltung direkt am Handgelenk
               - ⌚ **Apple Watch Remote & Live-Vorschau**: Integrierte, fotorealistische Apple Watch Fernbedienung direkt in der iOS-App zur Steuerung aller Multiroom-Speaker
               - 🎧 **Spotify Virtueller KI-DJ ("DJ X")**: Interaktiver DJ mit Sprachansagen (TTS über Music Assistant), 6 Stimmungen (*Allzeit-Favoriten*, *Rock-Klassiker*, *Vergessene Schätze*, *Entdeckungen*, *Party-Modus*, *Late Night*), pulsierendem Orb-Visualizer und automatischer Song-Zusammenstellung
-              - 🏝️ **Apple Dynamic Island Integration**: Elegante, animierte Pille am oberen Bildschirmrand mit pulsierenden Soundwave-Balken, Live-DJ-Sprachblasen und Spring-Animation für erweiterte Schnellsteuerung
               - 👤 **Profil- & Avatar-Verwaltung**: Eigenes Profilbild mit 8 kuratierten Spotify-Presets (DJ Pulse, Vinyl Master, Rock Star, etc.) oder individueller Bild-URL, persistiert im lokalen Speicher
               - 🔊 Automatische Raum-Lautsprecher-Auswahl ("Tim", "Wohnzimmer", Sonos) für volle Songlänge & Hi-Fi
               - 📱 iOS Hintergrund-Wiedergabe & Audio-Session Fix (kein Abbruch mehr beim Sperren des iPhones)
@@ -82,16 +84,16 @@ jobs:
               - 🎙️ Vollständige Podcast-Integration (Shows, Episoden-Browser, Cover & Audio-Previews)
               - 🎚️ Direkte Server-Anbindung an das Music Assistant DSP-System (Presets wie *ARC Daily Punch*, *Airpods*, Preamp, parametrische Bänder)
               - 🌟 Neuer Spotify-Style Welcome & Anmelde-Screen (Benutzername & Passwort statt manueller API-Token)
-              - 📲 Integrierter In-App-Updater (Direkt-Installations-Links für SideStore / AltStore)
               - 👥 Warteschlangen-Management mit Live-WebSocket-Sync
               - 🔊 Multiroom-Lautsprechersteuerung (Sonos, AirPlay, Shield, Chromecast, iPhone)
               - ⏱️ Sleep-Timer & TTS-Sprachansagen
             
             #### 📲 Installation:
-            * **SideStore / AltStore**: Tippe in der App auf *„Mit SideStore / AltStore installieren“* oder lade `music-assistant.ipa` herunter.
+            * **Direktes In-App-Update**: Tippe in den Einstellungen oder im Update-Dialog einfach auf *„Jetzt direkt in der App installieren“*. Keine weitere App erforderlich!
           files: |
             music-assistant.ipa
             music-assistant-v${{ env.APP_VERSION }}.ipa
+            ios/ota_manifest.plist
 
       - name: Update Latest Sideload Release
         uses: softprops/action-gh-release@v2

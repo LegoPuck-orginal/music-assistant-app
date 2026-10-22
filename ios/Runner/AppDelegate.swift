@@ -2,6 +2,9 @@ import Flutter
 import UIKit
 import AVFoundation
 import WatchConnectivity
+#if canImport(ActivityKit)
+import ActivityKit
+#endif
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -20,6 +23,11 @@ import WatchConnectivity
 
     if let controller = window?.rootViewController as? FlutterViewController {
       WatchSessionManager.shared.setup(with: controller.binaryMessenger)
+      #if canImport(ActivityKit)
+      if #available(iOS 16.1, *) {
+        LiveActivityManager.shared.setup(with: controller.binaryMessenger)
+      }
+      #endif
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -30,6 +38,13 @@ import WatchConnectivity
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "WatchSessionManager") {
       WatchSessionManager.shared.setup(with: registrar.messenger())
     }
+    #if canImport(ActivityKit)
+    if #available(iOS 16.1, *) {
+      if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "LiveActivityManager") {
+        LiveActivityManager.shared.setup(with: registrar.messenger())
+      }
+    }
+    #endif
   }
 }
 
@@ -122,3 +137,134 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     }
   }
 }
+
+// MARK: - Apple Dynamic Island & Live Activity (ActivityKit)
+#if canImport(ActivityKit)
+@available(iOS 16.1, *)
+public struct MusicAssistantActivityAttributes: ActivityAttributes {
+  public struct ContentState: Codable, Hashable {
+    public var trackTitle: String
+    public var artist: String
+    public var albumArtUrl: String
+    public var isPlaying: Bool
+    public var speakerName: String
+    public var djVibe: String
+    public var isDjSpeaking: Bool
+    public var djSpeechText: String?
+
+    public init(
+      trackTitle: String,
+      artist: String,
+      albumArtUrl: String,
+      isPlaying: Bool,
+      speakerName: String,
+      djVibe: String,
+      isDjSpeaking: Bool,
+      djSpeechText: String?
+    ) {
+      self.trackTitle = trackTitle
+      self.artist = artist
+      self.albumArtUrl = albumArtUrl
+      self.isPlaying = isPlaying
+      self.speakerName = speakerName
+      self.djVibe = djVibe
+      self.isDjSpeaking = isDjSpeaking
+      self.djSpeechText = djSpeechText
+    }
+  }
+
+  public var appName: String = "Music Assistant"
+
+  public init() {}
+}
+
+@available(iOS 16.1, *)
+class LiveActivityManager: NSObject {
+  static let shared = LiveActivityManager()
+  private var currentActivity: Activity<MusicAssistantActivityAttributes>?
+  private var channel: FlutterMethodChannel?
+  private var isConfigured = false
+
+  private override init() {
+    super.init()
+  }
+
+  func setup(with messenger: FlutterBinaryMessenger) {
+    if isConfigured { return }
+    isConfigured = true
+
+    channel = FlutterMethodChannel(name: "de.timm.musicAssistantApp/live_activity", binaryMessenger: messenger)
+    channel?.setMethodCallHandler { [weak self] (call, result) in
+      self?.handleMethodCall(call, result: result)
+    }
+  }
+
+  private func handleMethodCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "startOrUpdate":
+      if let args = call.arguments as? [String: Any] {
+        startOrUpdateActivity(from: args)
+        result(true)
+      } else {
+        result(FlutterError(code: "INVALID_ARGS", message: "Arguments must be a dictionary", details: nil))
+      }
+    case "endActivity":
+      endActivity()
+      result(true)
+    case "isSupported":
+      result(ActivityAuthorizationInfo().areActivitiesEnabled)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  func startOrUpdateActivity(from dict: [String: Any]) {
+    guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+
+    let trackTitle = dict["trackTitle"] as? String ?? "Keine Wiedergabe"
+    let artist = dict["artist"] as? String ?? "Music Assistant"
+    let albumArtUrl = dict["albumArtUrl"] as? String ?? ""
+    let isPlaying = dict["isPlaying"] as? Bool ?? false
+    let speakerName = dict["speakerName"] as? String ?? "Sonos"
+    let djVibe = dict["djVibe"] as? String ?? "Allzeit-Favoriten"
+    let isDjSpeaking = dict["isDjSpeaking"] as? Bool ?? false
+    let djSpeechText = dict["djSpeechText"] as? String
+
+    let contentState = MusicAssistantActivityAttributes.ContentState(
+      trackTitle: trackTitle,
+      artist: artist,
+      albumArtUrl: albumArtUrl,
+      isPlaying: isPlaying,
+      speakerName: speakerName,
+      djVibe: djVibe,
+      isDjSpeaking: isDjSpeaking,
+      djSpeechText: djSpeechText
+    )
+
+    if let activity = currentActivity {
+      Task {
+        await activity.update(using: contentState)
+      }
+    } else {
+      let attributes = MusicAssistantActivityAttributes()
+      do {
+        currentActivity = try Activity.request(
+          attributes: attributes,
+          contentState: contentState,
+          pushType: nil
+        )
+      } catch {
+        print("[LiveActivityManager] Activity.request error: \(error)")
+      }
+    }
+  }
+
+  func endActivity() {
+    guard let activity = currentActivity else { return }
+    Task {
+      await activity.end(dismissalPolicy: .immediate)
+      self.currentActivity = nil
+    }
+  }
+}
+#endif

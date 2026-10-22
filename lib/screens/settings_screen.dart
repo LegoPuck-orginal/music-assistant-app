@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/apple_watch_remote_sheet.dart';
+import '../widgets/downloads_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_edit_dialog.dart';
@@ -493,6 +494,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 builder: (_) => const AppleWatchRemoteSheet(),
               );
             },
+          ),
+
+          const SizedBox(height: 24),
+
+          // Section: Downloads & Offline-Speicher
+          _sectionTitle('DOWNLOADS & OFFLINE-SPEICHER'),
+          Container(
+            decoration: BoxDecoration(
+              color: SpotifyColors.surfaceElevated,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              children: [
+                _settingRow(
+                  title: 'Offline-Modus',
+                  subtitle: 'Erzwingt Wiedergabe ausschließlich aus lokalen Downloads',
+                  trailing: Switch(
+                    value: prov.isOfflineMode,
+                    activeThumbColor: SpotifyColors.green,
+                    onChanged: (val) {
+                      HapticFeedback.lightImpact();
+                      prov.setOfflineMode(val);
+                    },
+                  ),
+                ),
+                const Divider(color: SpotifyColors.borderSubtle, height: 1),
+                ListTile(
+                  leading: const Icon(Icons.download_done, color: SpotifyColors.green),
+                  title: const Text('Offline-Downloads verwalten',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    '${prov.formattedDownloadedSize} belegt • ${prov.downloadedTracks.length} Titel auf dem Gerät',
+                    style: const TextStyle(color: SpotifyColors.textSecondary, fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.chevron_right, color: SpotifyColors.textMuted),
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => const DownloadsSheet(),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
 
           const SizedBox(height: 24),

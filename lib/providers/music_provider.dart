@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../models/app_update_info.dart';
@@ -10,6 +11,8 @@ import '../models/recommendation.dart';
 import '../models/track.dart';
 import '../models/user_profile.dart';
 import '../models/virtual_dj_vibe.dart';
+import '../services/download_service.dart';
+import '../services/live_activity_service.dart';
 import '../services/mass_api_service.dart';
 import '../services/storage_service.dart';
 import '../services/update_service.dart';
@@ -20,7 +23,9 @@ class MusicProvider extends ChangeNotifier {
   final StorageService _storage = StorageService();
   final AudioPlayer _localAudioPlayer = AudioPlayer();
   final UpdateService _updateService = UpdateService();
+  final DownloadService _downloadService = DownloadService();
 
+  bool _isOfflineMode = false;
   AppUpdateInfo? _updateInfo;
   bool _isCheckingForUpdates = false;
 
@@ -146,6 +151,53 @@ class MusicProvider extends ChangeNotifier {
   bool get isCheckingForUpdates => _isCheckingForUpdates;
   bool get hasUpdate => _updateInfo?.hasUpdate ?? false;
 
+  // Offline Mode & Downloads
+  bool get isOfflineMode => _isOfflineMode;
+  void setOfflineMode(bool enabled) {
+    _isOfflineMode = enabled;
+    notifyListeners();
+  }
+  void toggleOfflineMode() => setOfflineMode(!_isOfflineMode);
+
+  List<Track> get downloadedTracks =>
+      _downloadService.downloadedTracks.map((dt) => dt.toTrack()).toList();
+  bool isTrackDownloaded(String trackId) => _downloadService.isDownloaded(trackId);
+  bool isTrackDownloading(String trackId) => _downloadService.isDownloading(trackId);
+  double? getDownloadProgress(String trackId) => _downloadService.getProgress(trackId);
+  int get totalDownloadedBytes => _downloadService.getTotalSizeBytes();
+  String get formattedDownloadedSize => _downloadService.getFormattedTotalSize();
+
+  Future<bool> downloadTrack(Track track) async {
+    final res = await _downloadService.downloadTrack(
+      track,
+      serverUrl: _serverUrl,
+      token: _authToken,
+    );
+    notifyListeners();
+    return res;
+  }
+
+  Future<void> downloadPlaylist(Playlist playlist) async {
+    await _downloadService.downloadPlaylist(
+      playlist,
+      playlist.tracks,
+      serverUrl: _serverUrl,
+      token: _authToken,
+    );
+    notifyListeners();
+  }
+
+  Future<bool> removeDownload(String trackId) async {
+    final res = await _downloadService.removeDownload(trackId);
+    notifyListeners();
+    return res;
+  }
+
+  Future<void> clearAllDownloads() async {
+    await _downloadService.clearAllDownloads();
+    notifyListeners();
+  }
+
   Future<void> initialize() async {
     try {
       _serverUrl = await _storage.loadServerUrl();
@@ -172,6 +224,14 @@ class MusicProvider extends ChangeNotifier {
       _setupLocalAudioPlayer();
     } catch (e) {
       debugPrint('[MusicProvider] AudioPlayer setup error: $e');
+    }
+
+    // Initialize downloads
+    try {
+      await _downloadService.init();
+      _downloadService.addListener(notifyListeners);
+    } catch (e) {
+      debugPrint('[MusicProvider] DownloadService init error: $e');
     }
 
     _isInitialized = true;
@@ -715,6 +775,26 @@ class MusicProvider extends ChangeNotifier {
     }
 
     notifyListeners();
+
+    // Check if offline mode is active or track is downloaded locally
+    if (_downloadService.isDownloaded(track.id)) {
+      final dt = _downloadService.getDownloadedTrack(track.id);
+      if (dt != null && File(dt.localFilePath).existsSync()) {
+        if (_isOfflineMode || (_activePlayer != null && _activePlayer!.isLocal)) {
+          _positionTimer?.cancel();
+          try {
+            final vol = (_activePlayer?.volume ?? 50) / 100.0;
+            await _localAudioPlayer.setVolume(vol);
+            await _localAudioPlayer.play(DeviceFileSource(dt.localFilePath));
+            return;
+          } catch (e) {
+            debugPrint('[MusicProvider] Offline play error: $e');
+            _startPositionTimer();
+            return;
+          }
+        }
+      }
+    }
 
     // Check if active player is local iPhone or network speaker
     if (_activePlayer != null && _activePlayer!.isLocal) {
@@ -1274,10 +1354,14 @@ class MusicProvider extends ChangeNotifier {
     try {
       WatchService.instance.syncState(this);
     } catch (_) {}
+    try {
+      LiveActivityService.instance.sync(this);
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _downloadService.removeListener(notifyListeners);
     _authSubscription?.cancel();
     _eventsSubscription?.cancel();
     _positionTimer?.cancel();
