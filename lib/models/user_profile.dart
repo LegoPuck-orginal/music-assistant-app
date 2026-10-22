@@ -18,6 +18,22 @@ class UserProfile {
 
   bool get isAdmin => role.toLowerCase() == 'admin';
 
+  UserProfile copyWith({
+    String? userId,
+    String? username,
+    String? displayName,
+    String? role,
+    String? avatarUrl,
+  }) {
+    return UserProfile(
+      userId: userId ?? this.userId,
+      username: username ?? this.username,
+      displayName: displayName ?? this.displayName,
+      role: role ?? this.role,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+    );
+  }
+
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       userId: json['user_id']?.toString() ?? '',

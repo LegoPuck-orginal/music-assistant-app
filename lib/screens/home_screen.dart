@@ -6,10 +6,13 @@ import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/album_card.dart';
+import '../widgets/profile_avatar.dart';
+import '../widgets/profile_edit_dialog.dart';
 import '../widgets/recommendation_card.dart';
 import '../widgets/update_dialog.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
+import 'virtual_dj_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -61,11 +64,25 @@ class _HomeScreenState extends State<HomeScreen> {
             floating: true,
             backgroundColor: SpotifyColors.pureBlack,
             elevation: 0,
+            leadingWidth: 50,
+            leading: Padding(
+              padding: const EdgeInsets.only(left: 14),
+              child: Center(
+                child: ProfileAvatar(
+                  user: prov.currentUser,
+                  radius: 17,
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    ProfileEditDialog.show(context);
+                  },
+                ),
+              ),
+            ),
             title: Text(
               _getGreeting(prov),
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 22,
+                fontSize: 21,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.5,
               ),
@@ -194,6 +211,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+
+          // Spotify Virtual AI DJ Card
+          if (_selectedFilter != 'Podcasts')
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: _buildVirtualDjBanner(context, prov),
+              ),
+            ),
 
           if (filteredPlaylists.isEmpty)
             SliverToBoxAdapter(
@@ -388,6 +414,171 @@ class _HomeScreenState extends State<HomeScreen> {
             child: SizedBox(height: 110),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildVirtualDjBanner(BuildContext context, MusicProvider prov) {
+    final isDjActive = prov.isDjActive;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        if (!isDjActive) {
+          prov.startVirtualDj();
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const VirtualDjScreen()),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFF0F172A),
+              Color(0xFF0D2538),
+              Color(0xFF0B1E19),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(
+            color: isDjActive
+                ? const Color(0xFF00F2FE).withValues(alpha: 0.6)
+                : const Color(0xFF1E3A8A).withValues(alpha: 0.6),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: (isDjActive
+                      ? const Color(0xFF00F2FE)
+                      : const Color(0xFF38BDF8))
+                  .withValues(alpha: 0.18),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Mini Glowing Pulsing DJ Orb Icon
+            Container(
+              width: 50,
+              height: 50,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: SweepGradient(
+                  colors: [
+                    Color(0xFF00F2FE),
+                    Color(0xFF4FACFE),
+                    Color(0xFF7F00FF),
+                    SpotifyColors.green,
+                    Color(0xFF00F2FE),
+                  ],
+                ),
+              ),
+              child: Center(
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFF0A0E17),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      isDjActive ? Icons.graphic_eq : Icons.auto_awesome,
+                      color: const Color(0xFF00F2FE),
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+
+            // Text Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00F2FE).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'KI-DJ',
+                          style: TextStyle(
+                            color: Color(0xFF00F2FE),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        isDjActive
+                            ? 'Vibe: ${prov.currentDjVibe.title}'
+                            : 'Dein persönlicher DJ',
+                        style: const TextStyle(
+                          color: SpotifyColors.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    isDjActive
+                        ? (prov.djSpeechText ?? 'Tippe für Moderation & Vibe')
+                        : 'Bereit für deine Session? Mix & Sprachansage starten',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Green/Cyan Play Button
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF00F2FE), SpotifyColors.green],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF00F2FE).withValues(alpha: 0.4),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.play_arrow,
+                color: Colors.black,
+                size: 22,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

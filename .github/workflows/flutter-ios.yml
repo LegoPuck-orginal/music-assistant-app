@@ -71,6 +71,9 @@ jobs:
             * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
             * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
             * **Features & Highlights**:
+              - 🎧 **Spotify Virtueller KI-DJ ("DJ X")**: Interaktiver DJ mit Sprachansagen (TTS über Music Assistant), 6 Stimmungen (*Allzeit-Favoriten*, *Rock-Klassiker*, *Vergessene Schätze*, *Entdeckungen*, *Party-Modus*, *Late Night*), pulsierendem Orb-Visualizer und automatischer Song-Zusammenstellung
+              - 🏝️ **Apple Dynamic Island Integration**: Elegante, animierte Pille am oberen Bildschirmrand mit pulsierenden Soundwave-Balken, Live-DJ-Sprachblasen und Spring-Animation für erweiterte Schnellsteuerung
+              - 👤 **Profil- & Avatar-Verwaltung**: Eigenes Profilbild mit 8 kuratierten Spotify-Presets (DJ Pulse, Vinyl Master, Rock Star, etc.) oder individueller Bild-URL, persistiert im lokalen Speicher
               - 🔊 Automatische Raum-Lautsprecher-Auswahl ("Tim", "Wohnzimmer", Sonos) für volle Songlänge & Hi-Fi
               - 📱 iOS Hintergrund-Wiedergabe & Audio-Session Fix (kein Abbruch mehr beim Sperren des iPhones)
               - 💡 Intelligente Musik-Empfehlungen direkt auf dem Home Screen (Last.fm Ähnliche Titel & Künstler, Allzeit-Favoriten, Vergessene Schätze)

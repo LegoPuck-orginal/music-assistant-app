@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/equalizer_sheet.dart';
+import '../widgets/profile_avatar.dart';
+import '../widgets/profile_edit_dialog.dart';
 import '../widgets/update_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -88,21 +90,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: SpotifyColors.green,
-                      child: Text(
-                        (prov.currentUser?.effectiveName.isNotEmpty == true)
-                            ? prov.currentUser!.effectiveName[0].toUpperCase()
-                            : 'M',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                        ),
-                      ),
+                    ProfileAvatar(
+                      user: prov.currentUser,
+                      radius: 26,
+                      showEditBadge: true,
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        ProfileEditDialog.show(context);
+                      },
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,6 +166,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 14),
                 Row(
                   children: [
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: SpotifyColors.green,
+                        side: const BorderSide(color: SpotifyColors.green, width: 1),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      icon: const Icon(Icons.edit, size: 16),
+                      label: const Text('Profil & Avatar'),
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        ProfileEditDialog.show(context);
+                      },
+                    ),
+                    const SizedBox(width: 10),
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.redAccent,

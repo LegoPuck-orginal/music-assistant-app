@@ -9,6 +9,7 @@ import '../models/playlist.dart';
 import '../models/recommendation.dart';
 import '../models/track.dart';
 import '../models/user_profile.dart';
+import '../models/virtual_dj_vibe.dart';
 import '../services/mass_api_service.dart';
 import '../services/storage_service.dart';
 import '../services/update_service.dart';
@@ -78,6 +79,32 @@ class MusicProvider extends ChangeNotifier {
   List<Playlist> get searchResultsPodcasts => _searchResultsPodcasts;
   bool get isSearching => _isSearching;
   String get lastSearchQuery => _lastSearchQuery;
+
+  // Virtual DJ & Dynamic Island State
+  bool _isDjActive = false;
+  bool _isDjSpeaking = false;
+  bool _isDjVoiceEnabled = true;
+  DjVibe _currentDjVibe = DjVibe.allVibes.first;
+  String? _djSpeechText;
+  bool _isDynamicIslandExpanded = false;
+  Timer? _djSpeechTimer;
+
+  bool get isDjActive => _isDjActive;
+  bool get isDjSpeaking => _isDjSpeaking;
+  bool get isDjVoiceEnabled => _isDjVoiceEnabled;
+  DjVibe get currentDjVibe => _currentDjVibe;
+  String? get djSpeechText => _djSpeechText;
+  bool get isDynamicIslandExpanded => _isDynamicIslandExpanded;
+
+  void setDynamicIslandExpanded(bool val) {
+    _isDynamicIslandExpanded = val;
+    notifyListeners();
+  }
+
+  void toggleDjVoice() {
+    _isDjVoiceEnabled = !_isDjVoiceEnabled;
+    notifyListeners();
+  }
 
   MusicProvider() {
     // Populate with fallback data immediately so UI never shows a blank screen
@@ -513,6 +540,130 @@ class MusicProvider extends ChangeNotifier {
       _isLoadingRecommendations = false;
       notifyListeners();
     }
+  }
+
+  /// Aktualisiert das Benutzerprofil (Anzeigename & Profilbild/Avatar)
+  Future<void> updateUserProfile({String? displayName, String? avatarUrl}) async {
+    if (_currentUser == null) {
+      _currentUser = UserProfile(
+        userId: 'tim_id',
+        username: 'tim-m',
+        displayName: displayName,
+        avatarUrl: avatarUrl,
+      );
+    } else {
+      _currentUser = _currentUser!.copyWith(
+        displayName: displayName,
+        avatarUrl: avatarUrl,
+      );
+    }
+    await _storage.saveUserProfile(_currentUser!);
+    notifyListeners();
+  }
+
+  /// Startet den virtuellen Spotify KI-DJ
+  Future<void> startVirtualDj({DjVibeCategory? category}) async {
+    _isDjActive = true;
+    final targetCategory = category ?? DjVibeCategory.allTimeFavorites;
+    await switchDjVibe(category: targetCategory, isInitial: true);
+  }
+
+  /// Wechselt die Musikstimmung (Vibe) des virtuellen DJs
+  Future<void> switchDjVibe({DjVibeCategory? category, bool isInitial = false}) async {
+    _isDjActive = true;
+    final vibes = DjVibe.allVibes;
+    final DjVibe chosenVibe;
+
+    if (category != null) {
+      chosenVibe = vibes.firstWhere((v) => v.category == category, orElse: () => vibes.first);
+    } else {
+      final curIdx = vibes.indexWhere((v) => v.category == _currentDjVibe.category);
+      final nextIdx = (curIdx + 1) % vibes.length;
+      chosenVibe = vibes[nextIdx];
+    }
+    _currentDjVibe = chosenVibe;
+
+    // Songs passend zur Stimmung ermitteln
+    List<Track> vibeTracks = [];
+
+    switch (chosenVibe.category) {
+      case DjVibeCategory.allTimeFavorites:
+        final mostPlayedRow = _recommendations.where((r) => r.id.contains('most_played')).firstOrNull;
+        if (mostPlayedRow != null && mostPlayedRow.items.isNotEmpty) {
+          vibeTracks = mostPlayedRow.items.where((i) => i.mediaType == 'track' || i.mediaType.isEmpty).map((i) => i.toTrack()).toList();
+        }
+        break;
+
+      case DjVibeCategory.rockClassics:
+        final rockRow = _recommendations.where((r) => r.id.contains('similar_tracks')).firstOrNull;
+        if (rockRow != null && rockRow.items.isNotEmpty) {
+          vibeTracks = rockRow.items.where((i) => i.mediaType == 'track' || i.mediaType.isEmpty).map((i) => i.toTrack()).toList();
+        }
+        break;
+
+      case DjVibeCategory.forgottenGems:
+        final forgottenRow = _recommendations.where((r) => r.id.contains('forgotten')).firstOrNull;
+        if (forgottenRow != null && forgottenRow.items.isNotEmpty) {
+          vibeTracks = forgottenRow.items.where((i) => i.mediaType == 'track' || i.mediaType.isEmpty).map((i) => i.toTrack()).toList();
+        }
+        break;
+
+      case DjVibeCategory.artistDiscoveries:
+        final discRow = _recommendations.where((r) => r.id.contains('similar_artists')).firstOrNull;
+        if (discRow != null && discRow.items.isNotEmpty) {
+          vibeTracks = discRow.items.where((i) => i.mediaType == 'track' || i.mediaType.isEmpty).map((i) => i.toTrack()).toList();
+        }
+        break;
+
+      case DjVibeCategory.partyVibes:
+        vibeTracks = _queue.where((t) =>
+            t.title.toLowerCase().contains('zipfelbuben') ||
+            t.artist.toLowerCase().contains('feine sahne') ||
+            t.title.toLowerCase().contains('berührt') ||
+            t.durationSeconds < 240).toList();
+        break;
+
+      case DjVibeCategory.lateNightChill:
+        vibeTracks = _queue.reversed.take(15).toList();
+        break;
+    }
+
+    if (vibeTracks.isEmpty && _queue.isNotEmpty) {
+      vibeTracks = List.from(_queue);
+    }
+
+    // Sprachansage formulieren
+    final userName = _currentUser?.effectiveName.split(' ').first ?? 'Tim';
+    final rawSpeech = chosenVibe.introPrompt.replaceAll('{user}', userName);
+
+    // DJ-Kommentar sprechen und Dynamic Island öffnen
+    await speakDjCommentary(rawSpeech);
+
+    // Wiedergabe starten
+    if (vibeTracks.isNotEmpty) {
+      await playTrack(vibeTracks.first, newQueue: vibeTracks);
+    }
+  }
+
+  /// Lässt den virtuellen DJ sprechen (TTS & Dynamic Island)
+  Future<void> speakDjCommentary(String text) async {
+    _djSpeechTimer?.cancel();
+    _isDjSpeaking = true;
+    _djSpeechText = text;
+    _isDynamicIslandExpanded = true;
+    notifyListeners();
+
+    // Sprachausgabe über den aktiven Raum-Lautsprecher via Music Assistant TTS
+    if (_isDjVoiceEnabled && _activePlayer != null) {
+      sendAnnouncement(text);
+    }
+
+    // Dynamic Island nach 5,5 Sekunden automatisch wieder einklappen
+    _djSpeechTimer = Timer(const Duration(milliseconds: 5500), () {
+      _isDjSpeaking = false;
+      _isDynamicIslandExpanded = false;
+      notifyListeners();
+    });
   }
 
   /// Spielt einen empfohlenen Titel ab und reiht die restlichen Empfehlungen ein

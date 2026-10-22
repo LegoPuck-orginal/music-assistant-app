@@ -30,6 +30,8 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Ermöglicht das Auffinden und Steuern von Music Assistant Servern und Lautsprechern im lokalen Netzwerk.</string>
 	<key>NSAppTransportSecurity</key>

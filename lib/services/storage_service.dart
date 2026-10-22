@@ -14,6 +14,7 @@ class StorageService {
   static const String _keyDisplayName = 'mass_display_name';
   static const String _keyUserRole = 'mass_user_role';
   static const String _keyUserId = 'mass_user_id';
+  static const String _keyAvatarUrl = 'mass_avatar_url';
   static const String _keyIsGuest = 'mass_is_guest';
 
   // Default Admin Token from local system
@@ -49,6 +50,7 @@ class StorageService {
       username: username,
       displayName: prefs.getString(_keyDisplayName),
       role: prefs.getString(_keyUserRole) ?? 'user',
+      avatarUrl: prefs.getString(_keyAvatarUrl),
     );
   }
 
@@ -60,6 +62,11 @@ class StorageService {
     }
     await prefs.setString(_keyUserRole, user.role);
     await prefs.setString(_keyUserId, user.userId);
+    if (user.avatarUrl != null) {
+      await prefs.setString(_keyAvatarUrl, user.avatarUrl!);
+    } else {
+      await prefs.remove(_keyAvatarUrl);
+    }
   }
 
   Future<bool> loadIsGuest() async {

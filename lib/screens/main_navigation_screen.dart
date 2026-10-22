@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
+import '../widgets/dynamic_island_overlay.dart';
 import '../widgets/mini_player.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
@@ -46,6 +47,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               bottom: 0,
               child: MiniPlayer(),
             ),
+
+          // Dynamic Island Floating Overlay
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: DynamicIslandOverlay(),
+          ),
         ],
       ),
       bottomNavigationBar: Container(
