@@ -35,6 +35,44 @@ jobs:
       - name: Build iOS Release App (Device / No CodeSign)
         run: flutter build ios --no-codesign --release
 
+      - name: Build Apple Watch Companion App (watchOS)
+        run: |
+          echo "=== Building watchOS Companion App ==="
+          mkdir -p build/watch_derived
+          
+          # 1. Try building with xcodebuild
+          if xcodebuild -project ios/WatchApp/WatchApp.xcodeproj \
+            -scheme WatchApp \
+            -sdk watchos \
+            -configuration Release \
+            -destination 'generic/platform=watchOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath build/watch_derived \
+            build; then
+            echo "WatchApp successfully built with xcodebuild!"
+          else
+            echo "Xcodebuild fallback: compiling watchOS binary directly with swiftc..."
+            WATCH_APP_DIR="build/watch_derived/Build/Products/Release-watchos/WatchApp.app"
+            mkdir -p "$WATCH_APP_DIR"
+            xcrun -sdk watchos swiftc \
+              -target arm64_32-apple-watchos9.0 \
+              -parse-as-library \
+              -emit-executable \
+              -o "$WATCH_APP_DIR/WatchApp" \
+              ios/WatchApp/MusicAssistantWatchApp.swift \
+              ios/WatchApp/WatchContentView.swift \
+              ios/WatchApp/WatchConnectivityManager.swift \
+              ios/WatchApp/Views/WatchNowPlayingView.swift \
+              ios/WatchApp/Views/WatchSpeakersView.swift \
+              ios/WatchApp/Views/WatchDjView.swift
+            cp ios/WatchApp/Info.plist "$WATCH_APP_DIR/Info.plist"
+            echo "APPL????" > "$WATCH_APP_DIR/PkgInfo"
+          fi
+          
+          ls -la build/watch_derived/Build/Products/Release-watchos/WatchApp.app || true
+
       - name: Extract App Version from Pubspec
         run: |
           VERSION=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
@@ -47,6 +85,19 @@ jobs:
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
+          
+          # Embed Apple Watch companion app in Runner.app/Watch/
+          WATCH_BUNDLE="build/watch_derived/Build/Products/Release-watchos/WatchApp.app"
+          if [ -d "$WATCH_BUNDLE" ]; then
+            echo "Embedding Apple Watch app inside Payload/Runner.app/Watch/..."
+            mkdir -p Payload/Runner.app/Watch
+            cp -r "$WATCH_BUNDLE" Payload/Runner.app/Watch/WatchApp.app
+            echo "Watch app successfully embedded:"
+            ls -la Payload/Runner.app/Watch/WatchApp.app
+          else
+            echo "Warning: Watch app bundle not found at $WATCH_BUNDLE"
+          fi
+          
           zip -qr music-assistant.ipa Payload
           cp music-assistant.ipa music-assistant-v${{ env.APP_VERSION }}.ipa
           ls -lh music-assistant*.ipa
