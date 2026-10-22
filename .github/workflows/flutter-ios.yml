@@ -35,12 +35,21 @@ jobs:
       - name: Build iOS Release App (Device / No CodeSign)
         run: flutter build ios --no-codesign --release
 
+      - name: Extract App Version from Pubspec
+        run: |
+          VERSION=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
+          BUILD=$(grep '^version: ' pubspec.yaml | cut -d '+' -f 2)
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "APP_BUILD=$BUILD" >> $GITHUB_ENV
+          echo "Release Version: $VERSION (Build $BUILD)"
+
       - name: Package Unsigned IPA for Sideloading
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -qr music-assistant.ipa Payload
-          ls -lh music-assistant.ipa
+          cp music-assistant.ipa music-assistant-v${{ env.APP_VERSION }}.ipa
+          ls -lh music-assistant*.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
@@ -48,25 +57,44 @@ jobs:
           name: music-assistant-ipa
           path: music-assistant.ipa
 
-      - name: Publish Sideload Release
+      - name: Publish Versioned Sideload Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        with:
+          tag_name: v${{ env.APP_VERSION }}
+          name: "Music Assistant iOS v${{ env.APP_VERSION }} (Build ${{ env.APP_BUILD }})"
+          body: |
+            ### 🎵 Music Assistant iOS v${{ env.APP_VERSION }} (Spotify Edition)
+            Sideload-Release für **SideStore**, **AltStore** und **Sideloadly**.
+            
+            * **Version**: `v${{ env.APP_VERSION }}` (Build `${{ env.APP_BUILD }}`)
+            * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
+            * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
+            * **Features & Highlights**:
+              - 🎙️ Vollständige Podcast-Integration (Shows, Episoden-Browser, Cover & Audio-Previews)
+              - 🎚️ Direkte Server-Anbindung an das Music Assistant DSP-System (Presets wie *ARC Daily Punch*, *Airpods*, Preamp, parametrische Bänder)
+              - 🌟 Neuer Spotify-Style Welcome & Anmelde-Screen (Benutzername & Passwort statt manueller API-Token)
+              - 📲 Integrierter In-App-Updater (Direkt-Installations-Links für SideStore / AltStore)
+              - 👥 Warteschlangen-Management mit Live-WebSocket-Sync
+              - 🔊 Multiroom-Lautsprechersteuerung (Sonos, AirPlay, Shield, Chromecast, iPhone)
+              - ⏱️ Sleep-Timer & TTS-Sprachansagen
+            
+            #### 📲 Installation:
+            * **SideStore / AltStore**: Tippe in der App auf *„Mit SideStore / AltStore installieren“* oder lade `music-assistant.ipa` herunter.
+          files: |
+            music-assistant.ipa
+            music-assistant-v${{ env.APP_VERSION }}.ipa
+
+      - name: Update Latest Sideload Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
           tag_name: latest
-          name: "Music Assistant iOS (Spotify Edition - Latest Sideload Build)"
+          name: "Music Assistant iOS (Latest Sideload Release - v${{ env.APP_VERSION }})"
           body: |
-            ### 🎵 Music Assistant iOS (Spotify Edition) - Sideload Release
-            Diese `.ipa`-Datei ist bereit für die Installation über **SideStore**, **Sideloadly** oder **AltStore**.
+            ### 🎵 Music Assistant iOS (Latest Build - v${{ env.APP_VERSION }})
+            Dieses Release verweist immer auf die **aktuellste Version**.
             
-            * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
-            * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
-            * **Features**:
-              - Persistenter Sticky Mini-Player am unteren Bildschirmrand
-              - Vollbild Now-Playing Sheet mit Scrubber, Cover, Play/Pause/Skip/Shuffle/Repeat
-              - Speaker / Device Picker für Sonos, AirPlay, Chromecast, Snapcast
-              - Lautstärkeregler pro Lautsprecher
-              - Startseite ("Guten Morgen", Kürzlich gehört, Für dich zusammengestellt)
-              - Suche mit Spotify-Genre-Kacheln und Echtzeit-Titelsuche
-              - Deine Bibliothek mit "Lieblingssongs", Playlists und Alben
-              - Background Audio Playback & Offline Cache Support
+            * **Aktuelle Version**: `v${{ env.APP_VERSION }}` (Build `${{ env.APP_BUILD }}`)
+            * **Direkt-Download**: [music-assistant.ipa](https://github.com/LegoPuck-orginal/music-assistant-app/releases/download/latest/music-assistant.ipa)
           files: music-assistant.ipa

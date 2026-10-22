@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/equalizer_sheet.dart';
+import '../widgets/update_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -449,6 +450,130 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     activeThumbColor: SpotifyColors.green,
                     onChanged: (val) {},
                   ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Section: App-Updates & Version
+          _sectionTitle('APP-UPDATES & VERSION'),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: SpotifyColors.surfaceElevated,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: prov.hasUpdate
+                    ? SpotifyColors.green
+                    : SpotifyColors.surfaceHighlight,
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Installierte Version',
+                          style: TextStyle(
+                            color: SpotifyColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'v${prov.updateInfo?.currentVersion ?? "1.2.0"} (Build 6)',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (prov.hasUpdate)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: SpotifyColors.green,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Update: v${prov.updateInfo!.latestVersion}',
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: SpotifyColors.surfaceHighlight,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Aktuell',
+                          style: TextStyle(
+                            color: SpotifyColors.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: prov.hasUpdate
+                        ? SpotifyColors.green
+                        : SpotifyColors.surfaceHighlight,
+                    foregroundColor:
+                        prov.hasUpdate ? Colors.black : Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  icon: prov.isCheckingForUpdates
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Icon(
+                          prov.hasUpdate
+                              ? Icons.system_update_alt
+                              : Icons.refresh,
+                          size: 18,
+                        ),
+                  label: Text(
+                    prov.hasUpdate
+                        ? 'Update jetzt installieren'
+                        : 'Nach Updates suchen',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  onPressed: () async {
+                    HapticFeedback.lightImpact();
+                    final info = await prov.checkForUpdates();
+                    if (context.mounted) {
+                      UpdateDialog.show(context, info);
+                    }
+                  },
                 ),
               ],
             ),

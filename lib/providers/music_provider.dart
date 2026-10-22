@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import '../models/app_update_info.dart';
 import '../models/dsp_models.dart';
 import '../models/equalizer_settings.dart';
 import '../models/player_device.dart';
@@ -9,11 +10,16 @@ import '../models/track.dart';
 import '../models/user_profile.dart';
 import '../services/mass_api_service.dart';
 import '../services/storage_service.dart';
+import '../services/update_service.dart';
 
 class MusicProvider extends ChangeNotifier {
   final MassApiService _api = MassApiService();
   final StorageService _storage = StorageService();
   final AudioPlayer _localAudioPlayer = AudioPlayer();
+  final UpdateService _updateService = UpdateService();
+
+  AppUpdateInfo? _updateInfo;
+  bool _isCheckingForUpdates = false;
 
   Track? _currentTrack;
   bool _isPlaying = false;
@@ -101,6 +107,9 @@ class MusicProvider extends ChangeNotifier {
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
+  AppUpdateInfo? get updateInfo => _updateInfo;
+  bool get isCheckingForUpdates => _isCheckingForUpdates;
+  bool get hasUpdate => _updateInfo?.hasUpdate ?? false;
 
   Future<void> initialize() async {
     try {
@@ -133,10 +142,31 @@ class MusicProvider extends ChangeNotifier {
     _isInitialized = true;
     notifyListeners();
 
+    // Check silently for updates in background
+    checkForUpdates();
+
     // Connect to server and refresh data asynchronously in background
     if (_isAuthenticated && _authToken.isNotEmpty) {
       _connectAndRefresh();
     }
+  }
+
+  /// Prüft GitHub auf verfügbare Updates
+  Future<AppUpdateInfo> checkForUpdates({String? currentVersionOverride}) async {
+    _isCheckingForUpdates = true;
+    notifyListeners();
+
+    try {
+      _updateInfo = await _updateService.checkForUpdate(
+        currentVersionOverride: currentVersionOverride,
+      );
+    } catch (e) {
+      debugPrint('[MusicProvider] checkForUpdates error: $e');
+    } finally {
+      _isCheckingForUpdates = false;
+      notifyListeners();
+    }
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.2.0');
   }
 
   void _connectAndRefresh() {

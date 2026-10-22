@@ -6,6 +6,7 @@ import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/album_card.dart';
+import '../widgets/update_dialog.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
 
@@ -80,17 +81,89 @@ class _HomeScreenState extends State<HomeScreen> {
                   _showHistorySheet(context, prov);
                 },
               ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined, color: Colors.white),
-                tooltip: 'Einstellungen',
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  );
-                },
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined, color: Colors.white),
+                    tooltip: 'Einstellungen',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      );
+                    },
+                  ),
+                  if (prov.hasUpdate)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: SpotifyColors.green,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
+
+          // Update Banner (if an update is available)
+          if (prov.hasUpdate && prov.updateInfo != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    UpdateDialog.show(context, prov.updateInfo!);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: SpotifyColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: SpotifyColors.green.withValues(alpha: 0.6),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.system_update_alt,
+                            color: SpotifyColors.green, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Neues Update: v${prov.updateInfo!.latestVersion}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const Text(
+                          'Installieren',
+                          style: TextStyle(
+                            color: SpotifyColors.green,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.chevron_right,
+                            color: SpotifyColors.green, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // Filter Chips
           SliverToBoxAdapter(
