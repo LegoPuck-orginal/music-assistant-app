@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/equalizer_settings.dart';
+import '../models/user_profile.dart';
 
 class StorageService {
   static const String _keyServerUrl = 'mass_server_url';
@@ -9,6 +10,11 @@ class StorageService {
   static const String _keyEqEnabled = 'mass_eq_enabled';
   static const String _keyEqPreset = 'mass_eq_preset';
   static const String _keyEqBands = 'mass_eq_bands';
+  static const String _keyUsername = 'mass_username';
+  static const String _keyDisplayName = 'mass_display_name';
+  static const String _keyUserRole = 'mass_user_role';
+  static const String _keyUserId = 'mass_user_id';
+  static const String _keyIsGuest = 'mass_is_guest';
 
   // Default Admin Token from local system
   static const String defaultToken =
@@ -24,7 +30,7 @@ class StorageService {
     await prefs.setString(_keyServerUrl, url);
   }
 
-  Future<String> loadAuthToken() async {
+  Future<String?> loadAuthToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_keyAuthToken) ?? defaultToken;
   }
@@ -32,6 +38,48 @@ class StorageService {
   Future<void> saveAuthToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyAuthToken, token);
+  }
+
+  Future<UserProfile?> loadUserProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final username = prefs.getString(_keyUsername);
+    if (username == null || username.isEmpty) return null;
+    return UserProfile(
+      userId: prefs.getString(_keyUserId) ?? '',
+      username: username,
+      displayName: prefs.getString(_keyDisplayName),
+      role: prefs.getString(_keyUserRole) ?? 'user',
+    );
+  }
+
+  Future<void> saveUserProfile(UserProfile user) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyUsername, user.username);
+    if (user.displayName != null) {
+      await prefs.setString(_keyDisplayName, user.displayName!);
+    }
+    await prefs.setString(_keyUserRole, user.role);
+    await prefs.setString(_keyUserId, user.userId);
+  }
+
+  Future<bool> loadIsGuest() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyIsGuest) ?? false;
+  }
+
+  Future<void> saveIsGuest(bool isGuest) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyIsGuest, isGuest);
+  }
+
+  Future<void> clearSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyAuthToken);
+    await prefs.remove(_keyUsername);
+    await prefs.remove(_keyDisplayName);
+    await prefs.remove(_keyUserRole);
+    await prefs.remove(_keyUserId);
+    await prefs.remove(_keyIsGuest);
   }
 
   Future<String?> loadActivePlayerId() async {

@@ -23,15 +23,115 @@ class MassApiService {
   final StreamController<void> _authenticatedController =
       StreamController<void>.broadcast();
 
+  Map<String, dynamic>? _currentUser;
+
   Stream<Map<String, dynamic>> get events => _eventsController.stream;
   Stream<void> get onAuthenticated => _authenticatedController.stream;
   bool get isConnected => _isConnected;
   String get serverUrl => _serverUrl;
+  Map<String, dynamic>? get currentUser => _currentUser;
 
   void configure(String url, String token) {
     _serverUrl = url.trim().replaceAll(RegExp(r'/+$'), '');
     _token = token.trim();
     connectWebSocket();
+  }
+
+  void logout() {
+    _channel?.sink.close();
+    _reconnectTimer?.cancel();
+    _isConnected = false;
+    _token = '';
+    _currentUser = null;
+  }
+
+  /// Meldet sich mit Benutzername und Passwort bei Music Assistant an und liefert
+  /// das Access-Token sowie Benutzerdaten zurück.
+  Future<Map<String, dynamic>> loginWithCredentials({
+    required String serverUrl,
+    required String username,
+    required String password,
+    String deviceName = 'iPhone',
+  }) async {
+    final cleanUrl = serverUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final wsUrl = '${cleanUrl.replaceFirst(RegExp(r'^http'), 'ws')}/ws';
+
+    final completer = Completer<Map<String, dynamic>>();
+    WebSocketChannel? tempChannel;
+
+    try {
+      tempChannel = WebSocketChannel.connect(Uri.parse(wsUrl));
+    } catch (e) {
+      throw Exception('Server unter $serverUrl nicht erreichbar ($e)');
+    }
+
+    final timer = Timer(const Duration(seconds: 10), () {
+      if (!completer.isCompleted) {
+        tempChannel?.sink.close();
+        completer.completeError(
+            Exception('Zeitüberschreitung beim Verbindungsaufbau zum Server'));
+      }
+    });
+
+    final loginMsgId = 'auth_login_${DateTime.now().millisecondsSinceEpoch}';
+
+    tempChannel.stream.listen(
+      (rawData) {
+        try {
+          final json = jsonDecode(rawData as String) as Map<String, dynamic>;
+
+          // Server ready -> auth/login senden
+          if (json.containsKey('server_id')) {
+            tempChannel!.sink.add(jsonEncode({
+              'message_id': loginMsgId,
+              'command': 'auth/login',
+              'args': {
+                'username': username,
+                'password': password,
+                'device_name': deviceName,
+              },
+            }));
+            return;
+          }
+
+          if (json['message_id'] == loginMsgId) {
+            timer.cancel();
+            final res = json['result'] as Map<String, dynamic>? ?? {};
+            if (res['success'] == true && res.containsKey('access_token')) {
+              tempChannel?.sink.close();
+              if (!completer.isCompleted) {
+                completer.complete(res);
+              }
+            } else {
+              tempChannel?.sink.close();
+              if (!completer.isCompleted) {
+                completer.completeError(
+                    Exception(res['error'] ?? 'Ungültiger Benutzername oder Passwort'));
+              }
+            }
+          }
+        } catch (e) {
+          timer.cancel();
+          if (!completer.isCompleted) completer.completeError(e);
+        }
+      },
+      onError: (err) {
+        timer.cancel();
+        if (!completer.isCompleted) {
+          completer.completeError(
+              Exception('Verbindung zum Server fehlgeschlagen ($err)'));
+        }
+      },
+      onDone: () {
+        timer.cancel();
+        if (!completer.isCompleted) {
+          completer.completeError(
+              Exception('Verbindung zum Server wurde vorzeitig beendet.'));
+        }
+      },
+    );
+
+    return completer.future;
   }
 
   void connectWebSocket() {
@@ -103,6 +203,9 @@ class MassApiService {
     }
     sendCommand('auth', {'token': _token}).then((result) {
       debugPrint('[MassApi] Authenticated successfully with Music Assistant!');
+      if (result is Map && result.containsKey('user') && result['user'] is Map) {
+        _currentUser = Map<String, dynamic>.from(result['user'] as Map);
+      }
       _isConnected = true;
       _authenticatedController.add(null);
     }).catchError((err) {

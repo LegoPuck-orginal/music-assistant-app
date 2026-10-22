@@ -6,6 +6,7 @@ import '../models/equalizer_settings.dart';
 import '../models/player_device.dart';
 import '../models/playlist.dart';
 import '../models/track.dart';
+import '../models/user_profile.dart';
 import '../services/mass_api_service.dart';
 import '../services/storage_service.dart';
 
@@ -33,6 +34,11 @@ class MusicProvider extends ChangeNotifier {
   Timer? _positionTimer;
   String _serverUrl = 'http://192.168.188.25:8095';
   String _authToken = StorageService.defaultToken;
+  bool _isInitialized = false;
+  bool _isAuthenticated = false;
+  UserProfile? _currentUser;
+  bool _isLoggingIn = false;
+  String? _loginError;
   EqualizerSettings _equalizerSettings = EqualizerSettings();
   DspConfig? _dspConfig;
   List<DspPreset> _dspPresets = [];
@@ -90,13 +96,29 @@ class MusicProvider extends ChangeNotifier {
   List<DspPreset> get dspPresets => _dspPresets;
   bool get isLoadingDsp => _isLoadingDsp;
   String? get dspError => _dspError;
+  bool get isInitialized => _isInitialized;
+  bool get isAuthenticated => _isAuthenticated;
+  UserProfile? get currentUser => _currentUser;
+  bool get isLoggingIn => _isLoggingIn;
+  String? get loginError => _loginError;
 
   Future<void> initialize() async {
     try {
       _serverUrl = await _storage.loadServerUrl();
-      _authToken = await _storage.loadAuthToken();
+      final token = await _storage.loadAuthToken();
+      _currentUser = await _storage.loadUserProfile();
+      final isGuest = await _storage.loadIsGuest();
       _likedTrackIds = await _storage.loadLikedTrackIds();
       _equalizerSettings = await _storage.loadEqualizerSettings();
+
+      if (token != null && token.isNotEmpty) {
+        _authToken = token;
+        _isAuthenticated = true;
+      } else if (isGuest) {
+        _isAuthenticated = true;
+      } else {
+        _isAuthenticated = false;
+      }
     } catch (e) {
       debugPrint('[MusicProvider] Storage init error: $e');
     }
@@ -108,17 +130,26 @@ class MusicProvider extends ChangeNotifier {
       debugPrint('[MusicProvider] AudioPlayer setup error: $e');
     }
 
+    _isInitialized = true;
     notifyListeners();
 
     // Connect to server and refresh data asynchronously in background
-    _connectAndRefresh();
+    if (_isAuthenticated && _authToken.isNotEmpty) {
+      _connectAndRefresh();
+    }
   }
 
   void _connectAndRefresh() {
     try {
       _authSubscription?.cancel();
       _authSubscription = _api.onAuthenticated.listen((_) {
-        debugPrint('[MusicProvider] Authenticated with Music Assistant! Synchronizing players and library...');
+        debugPrint(
+            '[MusicProvider] Authenticated with Music Assistant! Synchronizing players and library...');
+        if (_api.currentUser != null) {
+          _currentUser = UserProfile.fromJson(_api.currentUser!);
+          _storage.saveUserProfile(_currentUser!);
+          notifyListeners();
+        }
         refreshServerData();
       });
 
@@ -131,6 +162,75 @@ class MusicProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[MusicProvider] Background connect error: $e');
     }
+  }
+
+  /// Meldet sich mit Benutzername und Passwort am Music Assistant Server an
+  Future<bool> login({
+    required String serverUrl,
+    required String username,
+    required String password,
+  }) async {
+    _isLoggingIn = true;
+    _loginError = null;
+    notifyListeners();
+
+    try {
+      final res = await _api.loginWithCredentials(
+        serverUrl: serverUrl,
+        username: username,
+        password: password,
+      );
+
+      final token = res['access_token'] as String;
+      _authToken = token;
+      _serverUrl = serverUrl.trim().replaceAll(RegExp(r'/+$'), '');
+
+      if (res.containsKey('user') && res['user'] is Map) {
+        _currentUser =
+            UserProfile.fromJson(Map<String, dynamic>.from(res['user'] as Map));
+        await _storage.saveUserProfile(_currentUser!);
+      }
+
+      await _storage.saveServerUrl(_serverUrl);
+      await _storage.saveAuthToken(_authToken);
+      await _storage.saveIsGuest(false);
+
+      _isAuthenticated = true;
+      _isLoggingIn = false;
+
+      _connectAndRefresh();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('[MusicProvider] Login error: $e');
+      _loginError = e.toString().replaceFirst('Exception: ', '');
+      _isLoggingIn = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Ermöglicht es, die App als Gast/Offline auszuprobieren
+  Future<void> continueAsGuest() async {
+    _currentUser = const UserProfile(
+      userId: 'guest',
+      username: 'Gast-Hörer',
+      displayName: 'Gast-Hörer',
+      role: 'guest',
+    );
+    _isAuthenticated = true;
+    await _storage.saveIsGuest(true);
+    notifyListeners();
+  }
+
+  /// Meldet das Benutzerkonto ab und löscht gespeicherte Tokens
+  Future<void> logout() async {
+    _api.logout();
+    _isAuthenticated = false;
+    _currentUser = null;
+    _authToken = '';
+    await _storage.clearSession();
+    notifyListeners();
   }
 
   void _setupLocalAudioPlayer() {

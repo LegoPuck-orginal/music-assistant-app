@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/music_provider.dart';
 import 'screens/main_navigation_screen.dart';
+import 'screens/welcome_screen.dart';
+import 'theme/spotify_colors.dart';
 import 'theme/spotify_theme.dart';
 
 void main() {
@@ -36,7 +38,25 @@ class MusicAssistantApp extends StatelessWidget {
       title: 'Music Assistant',
       debugShowCheckedModeBanner: false,
       theme: SpotifyTheme.darkTheme,
-      home: const MainNavigationScreen(),
+      home: Consumer<MusicProvider>(
+        builder: (context, prov, _) {
+          if (!prov.isInitialized) {
+            return const Scaffold(
+              backgroundColor: SpotifyColors.background,
+              body: Center(
+                child: CircularProgressIndicator(
+                  valueColor:
+                      AlwaysStoppedAnimation<Color>(SpotifyColors.green),
+                ),
+              ),
+            );
+          }
+          if (!prov.isAuthenticated) {
+            return const WelcomeScreen();
+          }
+          return const MainNavigationScreen();
+        },
+      ),
     );
   }
 }

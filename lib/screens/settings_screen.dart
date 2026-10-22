@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
@@ -67,8 +68,173 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          // Section: Music Assistant Server
-          _sectionTitle('MUSIC ASSISTANT SERVER & API'),
+          // Section: Benutzerkonto & Anmeldung
+          _sectionTitle('BENUTZERKONTO & SERVER'),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: SpotifyColors.surfaceElevated,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: prov.isServerConnected
+                    ? SpotifyColors.green.withValues(alpha: 0.3)
+                    : SpotifyColors.surfaceHighlight,
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: SpotifyColors.green,
+                      child: Text(
+                        (prov.currentUser?.effectiveName.isNotEmpty == true)
+                            ? prov.currentUser!.effectiveName[0].toUpperCase()
+                            : 'M',
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                prov.currentUser?.effectiveName ??
+                                    (prov.isAuthenticated
+                                        ? 'Angemeldeter Benutzer'
+                                        : 'Nicht angemeldet'),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              if (prov.currentUser?.isAdmin == true) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: SpotifyColors.surfaceHighlight,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'ADMIN',
+                                    style: TextStyle(
+                                      color: SpotifyColors.green,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            prov.serverUrl,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: SpotifyColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: prov.isServerConnected
+                            ? SpotifyColors.green
+                            : Colors.orangeAccent,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.redAccent,
+                        side: const BorderSide(color: Colors.redAccent, width: 1),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      icon: const Icon(Icons.logout, size: 16),
+                      label: const Text('Abmelden'),
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            backgroundColor: SpotifyColors.surfaceElevated,
+                            title: const Text('Abmelden?',
+                                style: TextStyle(color: Colors.white)),
+                            content: const Text(
+                              'Möchtest du dich wirklich von Music Assistant abmelden?',
+                              style: TextStyle(color: SpotifyColors.textSecondary),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text('Abbrechen',
+                                    style: TextStyle(
+                                        color: SpotifyColors.textSecondary)),
+                              ),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.redAccent,
+                                  foregroundColor: Colors.white,
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  prov.logout();
+                                },
+                                child: const Text('Abmelden'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 10),
+                    TextButton.icon(
+                      icon: const Icon(Icons.sync, size: 16),
+                      label: const Text('Neu verbinden'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: SpotifyColors.textSecondary,
+                      ),
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        prov.refreshServerData();
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Section: Music Assistant Server Details
+          _sectionTitle('SERVER-ADRESSE & API-TOKEN'),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
