@@ -19,7 +19,7 @@
 				<key>bundle-identifier</key>
 				<string>de.timm.musicAssistantApp</string>
 				<key>bundle-version</key>
-				<string>1.8.2</string>
+				<string>1.9.0</string>
 				<key>kind</key>
 				<string>software</string>
 				<key>title</key>

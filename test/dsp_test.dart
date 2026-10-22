@@ -1,9 +1,27 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:music_assistant_app/models/adaptive_eq_settings.dart';
 import 'package:music_assistant_app/models/dsp_models.dart';
 import 'package:music_assistant_app/providers/music_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  const MethodChannel channelGlobal =
+      MethodChannel('xyz.luan/audioplayers.global');
+  const MethodChannel channelPlayer = MethodChannel('xyz.luan/audioplayers');
+
+  setUpAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channelGlobal, (MethodCall methodCall) async => 1);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channelPlayer, (MethodCall methodCall) async => 1);
+  });
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
   group('DSP & Equalizer Unit Tests', () {
     test('DspBand formats frequencies correctly', () {
@@ -100,7 +118,7 @@ void main() {
       expect(preset.config.bands.length, 1);
     });
 
-    test('MusicProvider updates DSP band gains and preamp in memory', () {
+    test('MusicProvider updates DSP band gains and preamp in memory', () async {
       final prov = MusicProvider();
 
       // Test gain update
@@ -113,11 +131,41 @@ void main() {
       expect(prov.dspConfig?.preamp, -2.0);
 
       // Test reset to flat
-      prov.resetDspToFlat();
+      await prov.resetDspToFlat();
       for (final band in prov.dspConfig!.bands) {
         expect(band.gain, 0.0);
       }
       expect(prov.dspConfig!.preamp, 0.0);
+      prov.dispose();
+    });
+
+    test('AdaptiveEqSettings calculates dynamic Fletcher-Munson loudness at low volume', () {
+      const adaptive = AdaptiveEqSettings(
+        isEnabled: true,
+        mode: AdaptiveEqMode.dynamicLoudness,
+        intensity: 1.0,
+      );
+
+      // At low volume (20%), bass and treble should be noticeably boosted
+      final lowVolCorrections = adaptive.calculateCorrections(volume: 20);
+      expect(lowVolCorrections[0], greaterThan(2.0)); // Sub-bass boost
+      expect(lowVolCorrections[4], greaterThan(1.5)); // Treble boost
+
+      // At reference volume (80%), loudness curve should be close to flat
+      final refVolCorrections = adaptive.calculateCorrections(volume: 80);
+      expect(refVolCorrections[0].abs(), lessThan(1.0));
+    });
+
+    test('AdaptiveEqSettings night mode dampens sub-bass vibrations', () {
+      const adaptive = AdaptiveEqSettings(
+        isEnabled: true,
+        mode: AdaptiveEqMode.nightComfort,
+        intensity: 1.0,
+      );
+
+      final corrections = adaptive.calculateCorrections(volume: 50);
+      expect(corrections[0], lessThan(-3.0)); // Sub-bass reduced
+      expect(corrections[2], greaterThan(1.0)); // Mids / voice clarity enhanced
     });
   });
 }

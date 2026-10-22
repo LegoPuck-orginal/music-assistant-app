@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/adaptive_eq_settings.dart';
 import '../models/dj_voice_settings.dart';
 import '../models/equalizer_settings.dart';
 import '../models/user_profile.dart';
@@ -151,5 +152,21 @@ class StorageService {
   Future<void> saveDjVoiceSettings(DjVoiceSettings settings) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyDjVoiceSettings, settings.toJsonString());
+  }
+
+  static const String _keyAdaptiveEqSettings = 'mass_adaptive_eq_settings';
+
+  Future<AdaptiveEqSettings> loadAdaptiveEqSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final str = prefs.getString(_keyAdaptiveEqSettings);
+    if (str != null && str.isNotEmpty) {
+      return AdaptiveEqSettings.fromJsonString(str);
+    }
+    return const AdaptiveEqSettings();
+  }
+
+  Future<void> saveAdaptiveEqSettings(AdaptiveEqSettings settings) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyAdaptiveEqSettings, settings.toJsonString());
   }
 }

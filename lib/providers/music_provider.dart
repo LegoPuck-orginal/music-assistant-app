@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import '../models/adaptive_eq_settings.dart';
 import '../models/app_update_info.dart';
 import '../models/dj_voice_settings.dart';
 import '../models/dsp_models.dart';
@@ -56,6 +57,7 @@ class MusicProvider extends ChangeNotifier {
   bool _isLoggingIn = false;
   String? _loginError;
   EqualizerSettings _equalizerSettings = EqualizerSettings();
+  AdaptiveEqSettings _adaptiveEqSettings = const AdaptiveEqSettings();
   DspConfig? _dspConfig;
   List<DspPreset> _dspPresets = [];
   bool _isLoadingDsp = false;
@@ -148,7 +150,15 @@ class MusicProvider extends ChangeNotifier {
   String get serverUrl => _serverUrl;
   String get authToken => _authToken;
   EqualizerSettings get equalizerSettings => _equalizerSettings;
+  AdaptiveEqSettings get adaptiveEqSettings => _adaptiveEqSettings;
   DspConfig? get dspConfig => _dspConfig;
+
+  List<double> get currentAdaptiveDeltas =>
+      _adaptiveEqSettings.calculateCorrections(
+        volume: _activePlayer?.volume ?? 50,
+        currentTrack: _currentTrack,
+        activePlayer: _activePlayer,
+      );
   List<DspPreset> get dspPresets => _dspPresets;
   bool get isLoadingDsp => _isLoadingDsp;
   String? get dspError => _dspError;
@@ -216,6 +226,7 @@ class MusicProvider extends ChangeNotifier {
       final isGuest = await _storage.loadIsGuest();
       _likedTrackIds = await _storage.loadLikedTrackIds();
       _equalizerSettings = await _storage.loadEqualizerSettings();
+      _adaptiveEqSettings = await _storage.loadAdaptiveEqSettings();
       _djVoiceSettings = await _storage.loadDjVoiceSettings();
 
       if (token != null && token.isNotEmpty) {
@@ -822,6 +833,10 @@ class MusicProvider extends ChangeNotifier {
 
     notifyListeners();
 
+    if (_adaptiveEqSettings.isEnabled) {
+      _syncAdaptiveEqWithDsp();
+    }
+
     // Check if offline mode is active or track is downloaded locally
     if (_downloadService.isDownloaded(track.id)) {
       final dt = _downloadService.getDownloadedTrack(track.id);
@@ -1019,6 +1034,9 @@ class MusicProvider extends ChangeNotifier {
         await _api.playerVolume(_activePlayer!.id, _activePlayer!.volume);
       }
       notifyListeners();
+      if (_adaptiveEqSettings.isEnabled) {
+        _syncAdaptiveEqWithDsp();
+      }
     }
   }
 
@@ -1149,6 +1167,37 @@ class MusicProvider extends ChangeNotifier {
     } finally {
       _isLoadingDsp = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> updateAdaptiveEqSettings(AdaptiveEqSettings newSettings) async {
+    _adaptiveEqSettings = newSettings;
+    await _storage.saveAdaptiveEqSettings(newSettings);
+    notifyListeners();
+    _syncAdaptiveEqWithDsp();
+  }
+
+  void _syncAdaptiveEqWithDsp() {
+    if (!_adaptiveEqSettings.isEnabled || _dspConfig == null) return;
+    final deltas = currentAdaptiveDeltas;
+    final peq = _dspConfig!.parametricEqFilter;
+    if (peq == null || peq.bands.isEmpty) return;
+
+    final updatedBands = List<DspBand>.from(peq.bands);
+    for (int i = 0; i < updatedBands.length && i < deltas.length; i++) {
+      final baseGain = (i < _equalizerSettings.bandGains.length)
+          ? _equalizerSettings.bandGains[i]
+          : updatedBands[i].gain;
+      final effectiveGain = (baseGain + deltas[i]).clamp(-12.0, 12.0);
+      updatedBands[i] = updatedBands[i].copyWith(gain: effectiveGain);
+    }
+
+    final updatedFilters = List<DspFilter>.from(_dspConfig!.filters);
+    final peqIndex = updatedFilters.indexWhere((f) => f.type == 'parametric_eq');
+    if (peqIndex != -1) {
+      updatedFilters[peqIndex] = peq.copyWith(bands: updatedBands);
+      _dspConfig = _dspConfig!.copyWith(filters: updatedFilters);
+      saveCurrentDspConfig();
     }
   }
 

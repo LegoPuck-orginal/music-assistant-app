@@ -377,10 +377,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             tileColor: SpotifyColors.surfaceElevated,
             leading: const Icon(Icons.tune, color: SpotifyColors.green),
-            title: const Text('DSP & Equalizer (Server-Sync)',
+            title: const Text('DSP & Adaptiver Equalizer',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
             subtitle: Text(
-              'DSP: ${prov.dspConfig?.enabled == true ? "Aktiv" : "Aus"} • ${prov.dspConfig?.presetId != null ? (prov.dspPresets.where((p) => p.presetId == prov.dspConfig!.presetId).firstOrNull?.name ?? "Preset") : "Individuell"} (${prov.dspConfig?.bands.length ?? 5} Bänder)',
+              'Adaptiv: ${prov.adaptiveEqSettings.isEnabled ? "Aktiv (${prov.adaptiveEqSettings.mode.name})" : "Aus"} • Server-DSP: ${prov.dspConfig?.enabled == true ? "Aktiv" : "Aus"}',
               style: const TextStyle(color: SpotifyColors.textSecondary, fontSize: 12),
             ),
             trailing: const Icon(Icons.chevron_right, color: SpotifyColors.textMuted),
