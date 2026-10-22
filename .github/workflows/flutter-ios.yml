@@ -1,0 +1,72 @@
+name: Flutter iOS Build & Sideload Release
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Sideload IPA & Analyze
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart Code
+        run: flutter analyze
+
+      - name: Run Smoke Tests
+        run: flutter test
+
+      - name: Build iOS Release App (Device / No CodeSign)
+        run: flutter build ios --no-codesign --release
+
+      - name: Package Unsigned IPA for Sideloading
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -qr music-assistant.ipa Payload
+          ls -lh music-assistant.ipa
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-assistant-ipa
+          path: music-assistant.ipa
+
+      - name: Publish Sideload Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        with:
+          tag_name: latest
+          name: "Music Assistant iOS (Spotify Edition - Latest Sideload Build)"
+          body: |
+            ### 🎵 Music Assistant iOS (Spotify Edition) - Sideload Release
+            Diese `.ipa`-Datei ist bereit für die Installation über **SideStore**, **Sideloadly** oder **AltStore**.
+            
+            * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
+            * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
+            * **Features**:
+              - Persistenter Sticky Mini-Player am unteren Bildschirmrand
+              - Vollbild Now-Playing Sheet mit Scrubber, Cover, Play/Pause/Skip/Shuffle/Repeat
+              - Speaker / Device Picker für Sonos, AirPlay, Chromecast, Snapcast
+              - Lautstärkeregler pro Lautsprecher
+              - Startseite ("Guten Morgen", Kürzlich gehört, Für dich zusammengestellt)
+              - Suche mit Spotify-Genre-Kacheln und Echtzeit-Titelsuche
+              - Deine Bibliothek mit "Lieblingssongs", Playlists und Alben
+              - Background Audio Playback & Offline Cache Support
+          files: music-assistant.ipa
