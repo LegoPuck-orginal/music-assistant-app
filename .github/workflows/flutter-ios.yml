@@ -44,6 +44,21 @@ jobs:
           grep -in -C 5 -E "error:|fatal error:|BUILD FAILED|The following build commands failed" build.log || true
           echo "==================== TAIL OF LOG ===================="
           tail -n 120 build.log
+          
+          # Create GitHub Annotation so it's visible in public check-runs API
+          ERR_MSG=$(grep -i "error: " build.log | head -n 5 | tr '\n' ' ' | cut -c 1-500)
+          if [ -n "$ERR_MSG" ]; then
+            echo "::error title=XcodeBuildError::$ERR_MSG"
+          fi
+          
+          # Push full error tail to git branch for direct inspection
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout -b build-log
+          tail -n 400 build.log > build_error_tail.txt
+          git add -f build_error_tail.txt
+          git commit -m "chore: save build failure log" || true
+          git push -f origin build-log || true
 
       - name: Build Apple Watch Companion App (watchOS)
         run: |
