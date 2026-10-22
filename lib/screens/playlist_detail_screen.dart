@@ -21,6 +21,24 @@ class PlaylistDetailScreen extends StatefulWidget {
 class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   bool _isLiked = false;
   bool _isDownloaded = false;
+  bool _isLoadingTracks = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.playlist.tracks.isEmpty) {
+      _isLoadingTracks = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final prov = context.read<MusicProvider>();
+        await prov.loadPlaylistTracks(widget.playlist);
+        if (mounted) {
+          setState(() {
+            _isLoadingTracks = false;
+          });
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,23 +244,59 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
             ),
           ),
 
-          // Track List
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final track = tracks[index];
-                return TrackTile(
-                  track: track,
-                  index: index + 1,
-                  showImage: true,
-                  onTap: () {
-                    prov.playTrack(track, newQueue: tracks);
-                  },
-                );
-              },
-              childCount: tracks.length,
+          // Loading indicator or Empty State or Track List
+          if (_isLoadingTracks)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: SpotifyColors.green,
+                    strokeWidth: 2.5,
+                  ),
+                ),
+              ),
+            )
+          else if (tracks.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.music_off,
+                          size: 48, color: SpotifyColors.textMuted),
+                      SizedBox(height: 12),
+                      Text(
+                        'Keine Titel in dieser Auswahl',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final track = tracks[index];
+                  return TrackTile(
+                    track: track,
+                    index: index + 1,
+                    showImage: true,
+                    onTap: () {
+                      prov.playTrack(track, newQueue: tracks);
+                    },
+                  );
+                },
+                childCount: tracks.length,
+              ),
             ),
-          ),
 
           // Padding at bottom so sticky mini player does not cover content
           const SliverToBoxAdapter(

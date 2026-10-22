@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
+import '../widgets/album_card.dart';
 import '../widgets/track_tile.dart';
+import 'playlist_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -14,7 +17,8 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
-  String _query = '';
+  Timer? _debounceTimer;
+  String _selectedCategory = 'Alle';
 
   static const List<Map<String, dynamic>> _genres = [
     {'name': 'Pop', 'color': Color(0xFFE13300), 'icon': Icons.star},
@@ -31,32 +35,35 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String query, MusicProvider prov) {
+    setState(() {});
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
+      prov.search(query);
+    });
+  }
+
+  void _executeSearch(String query, MusicProvider prov) {
+    _debounceTimer?.cancel();
+    _searchCtrl.text = query;
+    setState(() {});
+    prov.search(query);
   }
 
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
-
-    // Collect all tracks across playlists for search
-    final allTracks = <Track>[];
-    for (final p in prov.playlists) {
-      for (final t in p.tracks) {
-        if (!allTracks.any((x) => x.id == t.id)) {
-          allTracks.add(t);
-        }
-      }
-    }
-
-    final searchResults = _query.trim().isEmpty
-        ? <Track>[]
-        : allTracks.where((t) {
-            final q = _query.toLowerCase();
-            return t.title.toLowerCase().contains(q) ||
-                t.artist.toLowerCase().contains(q) ||
-                t.album.toLowerCase().contains(q);
-          }).toList();
+    final query = prov.lastSearchQuery;
+    final isSearching = prov.isSearching;
+    final tracks = prov.searchResultsTracks;
+    final playlists = prov.searchResultsPlaylists;
+    final albums = prov.searchResultsAlbums;
+    final hasResults = tracks.isNotEmpty || playlists.isNotEmpty || albums.isNotEmpty;
 
     return Scaffold(
       backgroundColor: SpotifyColors.pureBlack,
@@ -66,7 +73,7 @@ class _SearchScreenState extends State<SearchScreen> {
             // Header "Suche"
             const SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 12),
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
                 child: Text(
                   'Suche',
                   style: TextStyle(
@@ -91,22 +98,19 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   child: TextField(
                     controller: _searchCtrl,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (val) => _executeSearch(val, prov),
                     style: const TextStyle(color: Colors.black, fontSize: 15),
-                    onChanged: (val) {
-                      setState(() {
-                        _query = val;
-                      });
-                    },
+                    onChanged: (val) => _onSearchChanged(val, prov),
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.search, color: Colors.black54),
-                      suffixIcon: _query.isNotEmpty
+                      suffixIcon: _searchCtrl.text.isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear, color: Colors.black54),
                               onPressed: () {
                                 _searchCtrl.clear();
-                                setState(() {
-                                  _query = '';
-                                });
+                                setState(() {});
+                                prov.search('');
                               },
                             )
                           : null,
@@ -124,42 +128,63 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
 
-            // Content: Results or Genre Grid
-            if (_query.trim().isNotEmpty) ...[
-              SliverToBoxAdapter(
+            // Loading Indicator
+            if (isSearching)
+              const SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Text(
-                    'Ergebnisse für "$_query" (${searchResults.length})',
-                    style: const TextStyle(
-                      color: SpotifyColors.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(SpotifyColors.green),
                     ),
                   ),
                 ),
+              )
+            // Query Active
+            else if (query.isNotEmpty) ...[
+              // Category Filter Chips
+              SliverToBoxAdapter(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: Row(
+                    children: [
+                      _categoryChip('Alle'),
+                      const SizedBox(width: 8),
+                      _categoryChip('Titel (${tracks.length})'),
+                      const SizedBox(width: 8),
+                      _categoryChip('Playlists (${playlists.length})'),
+                      const SizedBox(width: 8),
+                      _categoryChip('Alben (${albums.length})'),
+                    ],
+                  ),
+                ),
               ),
-              if (searchResults.isEmpty) ...[
-                const SliverToBoxAdapter(
+
+              // No results screen
+              if (!hasResults)
+                SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 60),
+                    padding: const EdgeInsets.symmetric(vertical: 60),
                     child: Center(
                       child: Column(
                         children: [
-                          Icon(Icons.search_off,
-                              size: 48, color: SpotifyColors.textMuted),
-                          SizedBox(height: 12),
+                          const Icon(Icons.search_off,
+                              size: 52, color: SpotifyColors.textMuted),
+                          const SizedBox(height: 12),
                           Text(
-                            'Keine Titel gefunden',
-                            style: TextStyle(
+                            'Keine Ergebnisse für "$query"',
+                            style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 16,
+                              fontSize: 18,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Versuche es mit einem anderen Suchbegriff.',
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Überprüfe die Schreibweise oder versuche einen anderen Begriff.',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               color: SpotifyColors.textSecondary,
                               fontSize: 13,
@@ -169,25 +194,135 @@ class _SearchScreenState extends State<SearchScreen> {
                       ),
                     ),
                   ),
-                ),
-              ] else ...[
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final track = searchResults[index];
-                      return TrackTile(
-                        track: track,
-                        onTap: () {
-                          prov.playTrack(track, newQueue: searchResults);
-                        },
-                      );
-                    },
-                    childCount: searchResults.length,
+                )
+              else ...[
+                // Playlists Row
+                if ((_selectedCategory == 'Alle' ||
+                        _selectedCategory.startsWith('Playlists')) &&
+                    playlists.isNotEmpty) ...[
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
+                      child: Text(
+                        'Playlists',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 195,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: playlists.length,
+                        itemBuilder: (context, index) {
+                          final p = playlists[index];
+                          return AlbumCard(
+                            playlist: p,
+                            size: 140,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      PlaylistDetailScreen(playlist: p),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // Albums Row
+                if ((_selectedCategory == 'Alle' ||
+                        _selectedCategory.startsWith('Alben')) &&
+                    albums.isNotEmpty) ...[
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
+                      child: Text(
+                        'Alben',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 195,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: albums.length,
+                        itemBuilder: (context, index) {
+                          final a = albums[index];
+                          return AlbumCard(
+                            playlist: a,
+                            size: 140,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      PlaylistDetailScreen(playlist: a),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // Tracks List
+                if ((_selectedCategory == 'Alle' ||
+                        _selectedCategory.startsWith('Titel')) &&
+                    tracks.isNotEmpty) ...[
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 18, 16, 8),
+                      child: Text(
+                        'Songs',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final track = tracks[index];
+                        return TrackTile(
+                          track: track,
+                          onTap: () {
+                            prov.playTrack(track, newQueue: tracks);
+                          },
+                        );
+                      },
+                      childCount: tracks.length,
+                    ),
+                  ),
+                ],
               ],
-            ] else ...[
-              // Default: Alles durchsuchen (Genre Grid)
+            ]
+            // Default: Genre Explore Grid
+            else ...[
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(16, 20, 16, 12),
@@ -215,7 +350,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
                       final genre = _genres[index];
-                      return _buildGenreCard(genre);
+                      return _buildGenreCard(genre, prov);
                     },
                     childCount: _genres.length,
                   ),
@@ -232,14 +367,41 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildGenreCard(Map<String, dynamic> genre) {
+  Widget _categoryChip(String title) {
+    final categoryPrefix = title.split(' ').first;
+    final isSelected = _selectedCategory == categoryPrefix;
     return GestureDetector(
       onTap: () {
-        final name = genre['name'] as String;
-        _searchCtrl.text = name;
+        HapticFeedback.lightImpact();
         setState(() {
-          _query = name;
+          _selectedCategory = categoryPrefix;
         });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color:
+              isSelected ? SpotifyColors.green : SpotifyColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? Colors.black : Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGenreCard(Map<String, dynamic> genre, MusicProvider prov) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        final name = genre['name'] as String;
+        _executeSearch(name, prov);
       },
       child: Container(
         decoration: BoxDecoration(

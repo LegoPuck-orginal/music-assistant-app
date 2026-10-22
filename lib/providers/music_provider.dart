@@ -33,6 +33,19 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription? _eventsSubscription;
   StreamSubscription? _authSubscription;
 
+  // Search Results
+  List<Track> _searchResultsTracks = [];
+  List<Playlist> _searchResultsPlaylists = [];
+  List<Playlist> _searchResultsAlbums = [];
+  bool _isSearching = false;
+  String _lastSearchQuery = '';
+
+  List<Track> get searchResultsTracks => _searchResultsTracks;
+  List<Playlist> get searchResultsPlaylists => _searchResultsPlaylists;
+  List<Playlist> get searchResultsAlbums => _searchResultsAlbums;
+  bool get isSearching => _isSearching;
+  String get lastSearchQuery => _lastSearchQuery;
+
   MusicProvider() {
     // Populate with fallback data immediately so UI never shows a blank screen
     _playlists = _api.getFallbackPlaylists();
@@ -479,6 +492,47 @@ class MusicProvider extends ChangeNotifier {
     _api.configure(url, token);
     await refreshServerData();
     notifyListeners();
+  }
+
+  /// Führt eine echte Suche über Music Assistant aus (Spotify, Radios, Mediathek)
+  Future<void> search(String query) async {
+    _lastSearchQuery = query.trim();
+    if (_lastSearchQuery.isEmpty) {
+      _searchResultsTracks = [];
+      _searchResultsPlaylists = [];
+      _searchResultsAlbums = [];
+      _isSearching = false;
+      notifyListeners();
+      return;
+    }
+
+    _isSearching = true;
+    notifyListeners();
+
+    try {
+      final res = await _api.searchMusic(_lastSearchQuery);
+      _searchResultsTracks = (res['tracks'] as List<Track>?) ?? [];
+      _searchResultsPlaylists = (res['playlists'] as List<Playlist>?) ?? [];
+      _searchResultsAlbums = (res['albums'] as List<Playlist>?) ?? [];
+    } catch (e) {
+      debugPrint('[MusicProvider] search error: $e');
+    } finally {
+      _isSearching = false;
+      notifyListeners();
+    }
+  }
+
+  /// Lädt die Tracks einer Playlist oder eines Albums nach, falls noch leer
+  Future<void> loadPlaylistTracks(Playlist playlist) async {
+    if (playlist.tracks.isNotEmpty) return;
+    try {
+      final tracks = await _api.fetchPlaylistTracks(playlist);
+      playlist.tracks.clear();
+      playlist.tracks.addAll(tracks);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[MusicProvider] loadPlaylistTracks error: $e');
+    }
   }
 
   void _startPositionTimer() {
