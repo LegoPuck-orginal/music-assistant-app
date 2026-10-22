@@ -33,7 +33,17 @@ jobs:
         run: flutter test
 
       - name: Build iOS Release App (Device / No CodeSign)
-        run: flutter build ios --no-codesign --release -v
+        run: |
+          set -o pipefail
+          flutter build ios --no-codesign --release -v 2>&1 | tee build.log
+
+      - name: Dump Failure Logs
+        if: failure()
+        run: |
+          echo "==================== XCODEBUILD / FLUTTER ERRORS ===================="
+          grep -in -C 5 -E "error:|fatal error:|BUILD FAILED|The following build commands failed" build.log || true
+          echo "==================== TAIL OF LOG ===================="
+          tail -n 120 build.log
 
       - name: Build Apple Watch Companion App (watchOS)
         run: |
