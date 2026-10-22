@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
+import 'apple_watch_remote_sheet.dart';
 import 'equalizer_sheet.dart';
 
 class DevicePickerSheet extends StatelessWidget {
@@ -64,6 +65,21 @@ class DevicePickerSheet extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.watch,
+                        color: SpotifyColors.textSecondary, size: 22),
+                    tooltip: 'Apple Watch Fernbedienung',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.pop(context);
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => const AppleWatchRemoteSheet(),
+                      );
+                    },
+                  ),
                   IconButton(
                     icon: const Icon(Icons.sync,
                         color: SpotifyColors.green, size: 22),

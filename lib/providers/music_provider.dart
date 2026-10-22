@@ -13,6 +13,7 @@ import '../models/virtual_dj_vibe.dart';
 import '../services/mass_api_service.dart';
 import '../services/storage_service.dart';
 import '../services/update_service.dart';
+import '../services/watch_service.dart';
 
 class MusicProvider extends ChangeNotifier {
   final MassApiService _api = MassApiService();
@@ -174,6 +175,10 @@ class MusicProvider extends ChangeNotifier {
     }
 
     _isInitialized = true;
+    try {
+      WatchService.instance.init(this);
+      WatchService.instance.syncState(this);
+    } catch (_) {}
     notifyListeners();
 
     // Check silently for updates in background
@@ -1261,6 +1266,14 @@ class MusicProvider extends ChangeNotifier {
         }
       }
     });
+  }
+
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    try {
+      WatchService.instance.syncState(this);
+    } catch (_) {}
   }
 
   @override

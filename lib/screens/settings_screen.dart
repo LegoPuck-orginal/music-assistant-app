@@ -4,6 +4,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
+import '../widgets/apple_watch_remote_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_edit_dialog.dart';
@@ -466,6 +467,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Section: Apple Watch & Remote
+          _sectionTitle('APPLE WATCH & REMOTE'),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            tileColor: SpotifyColors.surfaceElevated,
+            leading: const Icon(Icons.watch, color: SpotifyColors.green, size: 28),
+            title: const Text('Apple Watch Fernbedienung',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            subtitle: const Text('watchOS Companion App, Multiroom & Spotify KI-DJ',
+                style: TextStyle(color: SpotifyColors.textSecondary, fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right, color: SpotifyColors.textMuted),
+            onTap: () {
+              HapticFeedback.lightImpact();
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => const AppleWatchRemoteSheet(),
+              );
+            },
           ),
 
           const SizedBox(height: 24),

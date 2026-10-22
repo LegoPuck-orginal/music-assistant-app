@@ -71,6 +71,8 @@ jobs:
             * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
             * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
             * **Features & Highlights**:
+              - ⌚ **Apple Watch Version & Companion App**: Vollständige watchOS-App (`ios/WatchApp`) in SwiftUI mit Now-Playing, Lautstärkeregelung über die Digital Crown, Multiroom-Lautsprecher-Auswahl und Spotify KI-DJ Vibe-Umschaltung direkt am Handgelenk
+              - ⌚ **Apple Watch Remote & Live-Vorschau**: Integrierte, fotorealistische Apple Watch Fernbedienung direkt in der iOS-App zur Steuerung aller Multiroom-Speaker
               - 🎧 **Spotify Virtueller KI-DJ ("DJ X")**: Interaktiver DJ mit Sprachansagen (TTS über Music Assistant), 6 Stimmungen (*Allzeit-Favoriten*, *Rock-Klassiker*, *Vergessene Schätze*, *Entdeckungen*, *Party-Modus*, *Late Night*), pulsierendem Orb-Visualizer und automatischer Song-Zusammenstellung
               - 🏝️ **Apple Dynamic Island Integration**: Elegante, animierte Pille am oberen Bildschirmrand mit pulsierenden Soundwave-Balken, Live-DJ-Sprachblasen und Spring-Animation für erweiterte Schnellsteuerung
               - 👤 **Profil- & Avatar-Verwaltung**: Eigenes Profilbild mit 8 kuratierten Spotify-Presets (DJ Pulse, Vinyl Master, Rock Star, etc.) oder individueller Bild-URL, persistiert im lokalen Speicher
