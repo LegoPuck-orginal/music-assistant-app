@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import 'device_picker_sheet.dart';
+import 'equalizer_sheet.dart';
 
 class NowPlayingSheet extends StatelessWidget {
   const NowPlayingSheet({super.key});
@@ -346,6 +347,25 @@ class NowPlayingSheet extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        icon: Icon(
+                          Icons.tune,
+                          color: prov.equalizerSettings.isEnabled
+                              ? SpotifyColors.green
+                              : SpotifyColors.textSecondary,
+                          size: 21,
+                        ),
+                        tooltip: 'Equalizer',
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => const EqualizerSheet(),
+                          );
+                        },
+                      ),
                       IconButton(
                         icon: const Icon(Icons.share_outlined,
                             color: SpotifyColors.textSecondary, size: 20),

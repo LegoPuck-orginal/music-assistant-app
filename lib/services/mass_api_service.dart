@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/player_device.dart';
 import '../models/playlist.dart';
@@ -8,217 +8,354 @@ import '../models/track.dart';
 
 class MassApiService {
   String _serverUrl = 'http://192.168.188.25:8095';
+  String _token = '';
   WebSocketChannel? _channel;
   bool _isConnected = false;
   int _messageId = 1;
-  final Map<int, Completer<dynamic>> _pendingRequests = {};
+  final Map<String, Completer<dynamic>> _pendingRequests = {};
   Timer? _reconnectTimer;
 
+  // Stream controller for live updates (player state, queue, etc.)
+  final StreamController<Map<String, dynamic>> _eventsController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  Stream<Map<String, dynamic>> get events => _eventsController.stream;
   bool get isConnected => _isConnected;
   String get serverUrl => _serverUrl;
 
-  void configure(String url) {
-    _serverUrl = url.trim().endsWith('/')
-        ? url.trim().substring(0, url.trim().length - 1)
-        : url.trim();
+  void configure(String url, String token) {
+    _serverUrl = url.trim().replaceAll(RegExp(r'/+$'), '');
+    _token = token.trim();
     connectWebSocket();
   }
 
-  /// Stellt die WebSocket-Verbindung zu Music Assistant her
-  void connectWebSocket({Function()? onStateChanged}) {
+  void connectWebSocket() {
     _channel?.sink.close();
-    _isConnected = false;
+    _reconnectTimer?.cancel();
 
-    final wsUrl = _serverUrl.replaceFirst('http://', 'ws://').replaceFirst('https://', 'wss://');
-    final uri = Uri.parse('$wsUrl/ws');
+    final wsUrl = '${_serverUrl.replaceFirst(RegExp(r'^http'), 'ws')}/ws';
+    debugPrint('[MassApi] Connecting to WebSocket: $wsUrl');
 
     try {
-      _channel = WebSocketChannel.connect(uri);
-      _isConnected = true;
-      onStateChanged?.call();
-
+      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
       _channel!.stream.listen(
-        (message) {
-          _handleMessage(message);
-          onStateChanged?.call();
-        },
+        _onMessageReceived,
         onDone: () {
+          debugPrint('[MassApi] WebSocket connection closed.');
           _isConnected = false;
-          onStateChanged?.call();
-          _scheduleReconnect(onStateChanged);
+          _scheduleReconnect();
         },
-        onError: (_) {
+        onError: (err) {
+          debugPrint('[MassApi] WebSocket error: $err');
           _isConnected = false;
-          onStateChanged?.call();
-          _scheduleReconnect(onStateChanged);
+          _scheduleReconnect();
         },
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[MassApi] WebSocket exception: $e');
       _isConnected = false;
-      onStateChanged?.call();
-      _scheduleReconnect(onStateChanged);
+      _scheduleReconnect();
     }
   }
 
-  void _scheduleReconnect(Function()? onStateChanged) {
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 5), () {
-      connectWebSocket(onStateChanged: onStateChanged);
+  void _onMessageReceived(dynamic rawData) {
+    try {
+      final json = jsonDecode(rawData as String) as Map<String, dynamic>;
+
+      // Server welcome message triggers authentication
+      if (json.containsKey('server_id')) {
+        debugPrint('[MassApi] Server info received. Sending auth...');
+        _sendAuth();
+        return;
+      }
+
+      // Check if response matches pending command request
+      final messageId = json['message_id']?.toString();
+      if (messageId != null && _pendingRequests.containsKey(messageId)) {
+        final completer = _pendingRequests.remove(messageId);
+        if (json.containsKey('error_code')) {
+          completer?.completeError(
+              Exception('${json['details']} (code: ${json['error_code']})'));
+        } else {
+          completer?.complete(json['result']);
+        }
+        return;
+      }
+
+      // Broadcast events (player_updated, queue_updated, etc.)
+      if (json.containsKey('event')) {
+        _eventsController.add(json);
+      }
+    } catch (e) {
+      debugPrint('[MassApi] Message parsing error: $e');
+    }
+  }
+
+  void _sendAuth() {
+    if (_token.isEmpty) {
+      debugPrint('[MassApi] No auth token provided, skipping auth.');
+      return;
+    }
+    sendCommand('auth', {'token': _token}).then((result) {
+      debugPrint('[MassApi] Authenticated successfully with Music Assistant!');
+      _isConnected = true;
+    }).catchError((err) {
+      debugPrint('[MassApi] Auth error: $err');
+      _isConnected = false;
     });
   }
 
-  void _handleMessage(dynamic rawMessage) {
-    try {
-      final json = jsonDecode(rawMessage.toString()) as Map<String, dynamic>;
-      final messageId = json['message_id'];
-
-      if (messageId != null && _pendingRequests.containsKey(messageId)) {
-        final completer = _pendingRequests.remove(messageId);
-        completer?.complete(json['result']);
+  void _scheduleReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 4), () {
+      if (!_isConnected) {
+        connectWebSocket();
       }
-    } catch (_) {}
+    });
   }
 
-  /// Sendet ein RPC-Kommando über den WebSocket an Music Assistant
-  Future<dynamic> sendCommand(String cmd, [Map<String, dynamic>? args]) async {
-    final id = _messageId++;
+  /// Sendet ein JSON-RPC-Kommando über den WebSocket an Music Assistant
+  Future<dynamic> sendCommand(String command,
+      [Map<String, dynamic>? args]) async {
+    final id = (_messageId++).toString();
     final payload = {
       'message_id': id,
-      'cmd': cmd,
+      'command': command,
       'args': ?args,
     };
 
     final completer = Completer<dynamic>();
     _pendingRequests[id] = completer;
 
-    if (_channel != null && _isConnected) {
+    if (_channel != null) {
       _channel!.sink.add(jsonEncode(payload));
     } else {
-      completer.complete(null);
+      completer.completeError(Exception('WebSocket is not connected'));
     }
 
-    // Timeout nach 3 Sekunden
-    return completer.future.timeout(
-      const Duration(seconds: 3),
-      onTimeout: () => null,
-    );
+    // Timeout after 6 seconds
+    return completer.future.timeout(const Duration(seconds: 6), onTimeout: () {
+      _pendingRequests.remove(id);
+      throw TimeoutException('Command $command timed out');
+    });
   }
 
-  /// Prüft die HTTP-Erreichbarkeit von Music Assistant
-  Future<bool> checkHealth() async {
-    try {
-      final uri = Uri.parse('$_serverUrl/');
-      final res = await http.get(uri).timeout(const Duration(seconds: 2));
-      return res.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
-  }
+  // --- Real API Endpoints ---
 
-  /// Holt alle Player/Speaker aus Music Assistant
+  /// Ruft alle verfügbaren Player (Sonos, AirPlay, Chromecast etc.) ab
   Future<List<PlayerDevice>> fetchPlayers() async {
     try {
       final res = await sendCommand('players/all');
       if (res is List) {
         return res.map((p) {
           final map = p as Map<String, dynamic>;
+          final playerId = map['player_id']?.toString() ?? '';
+          final name = map['name']?.toString() ?? 'Player';
+          final provider = map['provider']?.toString() ?? 'generic';
+          final state = map['playback_state']?.toString() ??
+              map['state']?.toString() ??
+              'idle';
+          final volume = (map['volume_level'] as num?)?.toInt() ?? 50;
+          final isMuted = map['volume_muted'] as bool? ?? false;
+
           return PlayerDevice(
-            id: map['player_id']?.toString() ?? 'unknown',
-            name: map['name']?.toString() ?? 'Player',
-            type: map['type']?.toString() ?? 'Speaker',
-            volume: (map['volume_level'] as num? ?? 40).toInt(),
-            isMuted: map['powered'] == false,
-            state: map['state']?.toString() ?? 'idle',
+            id: playerId,
+            name: name,
+            type: _formatPlayerType(provider),
+            volume: volume,
+            isMuted: isMuted,
+            state: state,
           );
         }).toList();
       }
-    } catch (_) {}
-
-    // Fallback Mock-Player falls Server noch initialisiert oder offline
-    return [
-      PlayerDevice(id: 'sonos_wohnzimmer', name: 'Wohnzimmer (Sonos Era 300)', type: 'Sonos', volume: 45, isSelected: true),
-      PlayerDevice(id: 'airplay_kueche', name: 'Küche (HomePod Mini)', type: 'AirPlay', volume: 30),
-      PlayerDevice(id: 'chromecast_office', name: 'Büro (Studio Speaker)', type: 'Chromecast', volume: 55),
-      PlayerDevice(id: 'phone_local', name: 'Dieses iPhone (Lautsprecher)', type: 'Local', volume: 70),
-    ];
+    } catch (e) {
+      debugPrint('[MassApi] fetchPlayers error: $e');
+    }
+    return [];
   }
 
-  /// Wiedergabe auf einem Player steuern
-  Future<void> playerPlay(String playerId) async {
-    await sendCommand('players/cmd/play', {'player_id': playerId});
+  /// Ruft echte Playlists aus der Music Assistant Bibliothek ab
+  Future<List<Playlist>> fetchLibraryPlaylists({int limit = 50}) async {
+    try {
+      final res = await sendCommand('music/playlists/library_items', {
+        'limit': limit,
+      });
+      if (res is List) {
+        return res.map((p) {
+          final map = p as Map<String, dynamic>;
+          final id = map['item_id']?.toString() ?? map['uri']?.toString() ?? '';
+          final name = map['name']?.toString() ?? '';
+          final owner = map['owner']?.toString() ?? 'Music Assistant';
+          final tracksCount = (map['track_count'] as num?)?.toInt() ?? 0;
+
+          // Thumbnail image
+          String? imageUrl;
+          final metadata = map['metadata'] as Map<String, dynamic>?;
+          if (metadata != null && metadata['images'] is List) {
+            final images = metadata['images'] as List;
+            if (images.isNotEmpty) {
+              imageUrl = images.first['path']?.toString();
+            }
+          }
+
+          return Playlist(
+            id: id,
+            name: name.isNotEmpty ? name : 'Playlist $id',
+            owner: owner,
+            trackCount: tracksCount,
+            imageUrl: imageUrl,
+            type: 'playlist',
+          );
+        }).toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchLibraryPlaylists error: $e');
+    }
+    return [];
   }
 
-  Future<void> playerPause(String playerId) async {
-    await sendCommand('players/cmd/pause', {'player_id': playerId});
+  /// Ruft echte Songs aus der Music Assistant Bibliothek ab
+  Future<List<Track>> fetchLibraryTracks({int limit = 100}) async {
+    try {
+      final res = await sendCommand('music/tracks/library_items', {
+        'limit': limit,
+      });
+      if (res is List) {
+        return res.map((t) {
+          final map = t as Map<String, dynamic>;
+          final id = map['item_id']?.toString() ?? '';
+          final title = map['name']?.toString() ?? 'Unbekannter Titel';
+
+          // Artist
+          String artistName = 'Unbekannter Künstler';
+          if (map['artists'] is List && (map['artists'] as List).isNotEmpty) {
+            artistName = (map['artists'] as List)
+                .map((a) => a['name']?.toString() ?? '')
+                .where((s) => s.isNotEmpty)
+                .join(', ');
+          }
+
+          // Album
+          String albumName = '';
+          String? imageUrl;
+          if (map['album'] is Map) {
+            final albumMap = map['album'] as Map<String, dynamic>;
+            albumName = albumMap['name']?.toString() ?? '';
+            if (albumMap['image'] is Map) {
+              imageUrl = albumMap['image']['path']?.toString();
+            }
+          }
+
+          if (imageUrl == null && map['metadata'] is Map) {
+            final meta = map['metadata'] as Map<String, dynamic>;
+            if (meta['images'] is List && (meta['images'] as List).isNotEmpty) {
+              imageUrl = (meta['images'] as List).first['path']?.toString();
+            }
+          }
+
+          final duration = (map['duration'] as num?)?.toInt() ?? 180;
+          final isLiked = map['favorite'] as bool? ?? false;
+          final uri = map['uri']?.toString();
+
+          return Track(
+            id: id,
+            title: title,
+            artist: artistName,
+            album: albumName,
+            durationSeconds: duration,
+            imageUrl: imageUrl,
+            uri: uri,
+            isLiked: isLiked,
+          );
+        }).toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchLibraryTracks error: $e');
+    }
+    return [];
   }
 
-  Future<void> playerNext(String playerId) async {
-    await sendCommand('players/cmd/next', {'player_id': playerId});
+  /// Ruft Audio Preview Stream URL ab (für lokale iPhone Wiedergabe)
+  Future<String?> fetchTrackPreviewUrl(Track track) async {
+    try {
+      final res = await sendCommand('music/tracks/preview', {
+        'provider_instance_id_or_domain': 'library',
+        'item_id': track.id,
+      });
+      if (res is String && res.isNotEmpty) {
+        return res;
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchTrackPreviewUrl error: $e');
+    }
+    return null;
   }
 
-  Future<void> playerPrevious(String playerId) async {
-    await sendCommand('players/cmd/previous', {'player_id': playerId});
-  }
+  // --- Real Player Control Commands ---
 
-  Future<void> playerVolume(String playerId, int volume) async {
-    await sendCommand('players/cmd/volume_set', {'player_id': playerId, 'volume_level': volume});
-  }
+  Future<void> playerPlay(String playerId) =>
+      sendCommand('players/cmd/play', {'player_id': playerId});
 
-  /// Initialer Demo/Offline-Katalog mit echter Spotify-Struktur
-  List<Playlist> getSamplePlaylists() {
-    return [
-      Playlist(
-        id: 'top_hits',
-        name: 'Today\'s Top Hits',
-        owner: 'Music Assistant Curated',
-        trackCount: 50,
-        imageUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80',
-        tracks: [
-          Track(id: 't1', title: 'Starboy', artist: 'The Weeknd, Daft Punk', album: 'Starboy', durationSeconds: 230, imageUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&q=80'),
-          Track(id: 't2', title: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours', durationSeconds: 200, imageUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80'),
-          Track(id: 't3', title: 'Midnight City', artist: 'M83', album: 'Hurry Up, We\'re Dreaming', durationSeconds: 243, imageUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&q=80'),
-          Track(id: 't4', title: 'Get Lucky', artist: 'Daft Punk, Pharrell Williams', album: 'Random Access Memories', durationSeconds: 248, imageUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&q=80'),
-          Track(id: 't5', title: 'Stargazing', artist: 'Travis Scott', album: 'ASTROWORLD', durationSeconds: 271, imageUrl: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&q=80'),
-        ],
-      ),
-      Playlist(
-        id: 'electronic_focus',
-        name: 'Deep Techno & Focus',
-        owner: 'Dein Server',
-        trackCount: 38,
-        imageUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=500&q=80',
-        tracks: [
-          Track(id: 't6', title: 'Solaris', artist: 'Kiasmos', album: 'Blurred', durationSeconds: 312, imageUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&q=80'),
-          Track(id: 't7', title: 'Opus', artist: 'Eric Prydz', album: 'Opus', durationSeconds: 558, imageUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&q=80'),
-          Track(id: 't8', title: 'Glue', artist: 'Bicep', album: 'Bicep', durationSeconds: 269, imageUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80'),
-        ],
-      ),
-      Playlist(
-        id: 'rock_classics',
-        name: 'Rock Legends Classics',
-        owner: 'Music Assistant FLAC',
-        trackCount: 42,
-        imageUrl: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=500&q=80',
-        tracks: [
-          Track(id: 't9', title: 'Sultans of Swing', artist: 'Dire Straits', album: 'Dire Straits', durationSeconds: 348, imageUrl: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=300&q=80'),
-          Track(id: 't10', title: 'Comfortably Numb', artist: 'Pink Floyd', album: 'The Wall', durationSeconds: 382, imageUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&q=80'),
-        ],
-      ),
-      Playlist(
-        id: 'chill_beats',
-        name: 'Lofi & Ambient Chill',
-        owner: 'Dein Server',
-        trackCount: 65,
-        imageUrl: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=500&q=80',
-        tracks: [
-          Track(id: 't11', title: 'Snowman', artist: 'Wun Two', album: 'Rio', durationSeconds: 142, imageUrl: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=300&q=80'),
-        ],
-      ),
-    ];
+  Future<void> playerPause(String playerId) =>
+      sendCommand('players/cmd/pause', {'player_id': playerId});
+
+  Future<void> playerPlayPause(String playerId) =>
+      sendCommand('players/cmd/play_pause', {'player_id': playerId});
+
+  Future<void> playerNext(String playerId) =>
+      sendCommand('players/cmd/next', {'player_id': playerId});
+
+  Future<void> playerPrevious(String playerId) =>
+      sendCommand('players/cmd/previous', {'player_id': playerId});
+
+  Future<void> playerSeek(String playerId, int seconds) =>
+      sendCommand('players/cmd/seek', {'player_id': playerId, 'position': seconds});
+
+  Future<void> playerVolume(String playerId, int volume) =>
+      sendCommand('players/cmd/volume_set',
+          {'player_id': playerId, 'volume_level': volume.clamp(0, 100)});
+
+  Future<void> playerMute(String playerId, bool muted) =>
+      sendCommand('players/cmd/volume_mute',
+          {'player_id': playerId, 'muted': muted});
+
+  Future<void> playerShuffle(String playerId, bool shuffle) =>
+      sendCommand('players/cmd/shuffle',
+          {'player_id': playerId, 'shuffle_enabled': shuffle});
+
+  Future<void> playerRepeat(String playerId, String mode) =>
+      sendCommand('players/cmd/repeat',
+          {'player_id': playerId, 'repeat_mode': mode});
+
+  /// Spielt einen Track oder eine Playlist auf einem Music Assistant Player ab
+  Future<void> playMedia(String playerId, String mediaUri) =>
+      sendCommand('player_queues/play_media', {
+        'queue_id': playerId,
+        'media': [mediaUri],
+      });
+
+  /// Equalizer / DSP Preset anwenden
+  Future<void> applyDSPPreset(String playerId, String presetId) =>
+      sendCommand('config/players/dsp/apply_preset', {
+        'player_id': playerId,
+        'preset_id': presetId,
+      });
+
+  String _formatPlayerType(String provider) {
+    final p = provider.toLowerCase();
+    if (p.contains('sonos')) return 'Sonos';
+    if (p.contains('airplay') || p.contains('apple')) return 'AirPlay';
+    if (p.contains('chromecast') || p.contains('cast') || p.contains('shield')) {
+      return 'Chromecast';
+    }
+    if (p.contains('sendspin') || p.contains('companion')) return 'Companion';
+    if (p.contains('universal')) return 'Universal';
+    return provider.toUpperCase();
   }
 
   void dispose() {
     _channel?.sink.close();
     _reconnectTimer?.cancel();
+    _eventsController.close();
   }
 }

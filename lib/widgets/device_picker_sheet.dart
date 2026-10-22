@@ -225,7 +225,9 @@ class DevicePickerSheet extends StatelessWidget {
                         ),
                       ),
                       subtitle: Text(
-                        '${player.type} • Lautstärke ${player.volume}%',
+                        player.isLocal
+                            ? 'Lokaler iPhone-Lautsprecher & Kopfhörer'
+                            : '${player.type} • Lautstärke ${player.volume}%',
                         style: const TextStyle(
                           color: SpotifyColors.textSecondary,
                           fontSize: 12,

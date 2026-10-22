@@ -3,6 +3,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
+import '../widgets/equalizer_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,19 +14,23 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _urlCtrl;
+  late TextEditingController _tokenCtrl;
   bool _isTesting = false;
   String? _statusMessage;
+  bool _obscureToken = true;
 
   @override
   void initState() {
     super.initState();
     final prov = context.read<MusicProvider>();
     _urlCtrl = TextEditingController(text: prov.serverUrl);
+    _tokenCtrl = TextEditingController(text: prov.authToken);
   }
 
   @override
   void dispose() {
     _urlCtrl.dispose();
+    _tokenCtrl.dispose();
     super.dispose();
   }
 
@@ -36,13 +41,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     final prov = context.read<MusicProvider>();
-    await prov.updateServerUrl(_urlCtrl.text.trim());
+    await prov.updateServerSettings(
+      _urlCtrl.text.trim(),
+      _tokenCtrl.text.trim(),
+    );
 
     setState(() {
       _isTesting = false;
       _statusMessage = prov.isServerConnected
-          ? 'Erfolgreich mit Music Assistant verbunden!'
-          : 'Server erreichbar! ${prov.players.length} Player synchronisiert.';
+          ? 'Erfolgreich mit Music Assistant verbunden! ${prov.players.length} Player & ${prov.queue.length} Songs aktiv.'
+          : 'Server erreichbar! Authentifizierung wird aktualisiert.';
     });
   }
 
@@ -60,7 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           // Section: Music Assistant Server
-          _sectionTitle('MUSIC ASSISTANT SERVER'),
+          _sectionTitle('MUSIC ASSISTANT SERVER & API'),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -95,7 +103,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
+                const Text(
+                  'Music Assistant API Token (Long-Lived)',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _tokenCtrl,
+                  obscureText: _obscureToken,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: SpotifyColors.surfaceHighlight,
+                    hintText: 'Music Assistant Access Token (JWT)',
+                    hintStyle: const TextStyle(color: SpotifyColors.textMuted),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureToken ? Icons.visibility_off : Icons.visibility,
+                        color: SpotifyColors.textSecondary,
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscureToken = !_obscureToken;
+                        });
+                      },
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
                 Row(
                   children: [
                     ElevatedButton.icon(
@@ -117,13 +164,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             )
                           : const Icon(Icons.sync, size: 18),
-                      label: const Text('Verbindung testen & Speichern',
+                      label: const Text('Speichern & Synchronisieren',
                           style: TextStyle(fontWeight: FontWeight.w700)),
                     ),
                   ],
                 ),
                 if (_statusMessage != null) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   Text(
                     _statusMessage!,
                     style: const TextStyle(
@@ -135,6 +182,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ],
             ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Section: Equalizer & DSP
+          _sectionTitle('SOUND & EQUALIZER'),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            tileColor: SpotifyColors.surfaceElevated,
+            leading: const Icon(Icons.tune, color: SpotifyColors.green),
+            title: const Text('Equalizer & Klangkurve',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            subtitle: Text(
+              'Preset: ${prov.equalizerSettings.currentPreset} • 5 Frequenzbänder',
+              style: const TextStyle(color: SpotifyColors.textSecondary, fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: SpotifyColors.textMuted),
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => const EqualizerSheet(),
+              );
+            },
           ),
 
           const SizedBox(height: 24),
@@ -173,7 +247,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 24),
 
           // Section: Streaming & Audio
-          _sectionTitle('AUDIOQUALITÄT'),
+          _sectionTitle('AUDIOQUALITÄT & LOKALE WIEDERGABE'),
           Container(
             decoration: BoxDecoration(
               color: SpotifyColors.surfaceElevated,
@@ -182,8 +256,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 _settingRow(
+                  title: 'iPhone Lautsprecher & Kopfhörer',
+                  subtitle: 'Direktes Audio-Streaming auf dem Smartphone erlauben',
+                  trailing: Switch(
+                    value: true,
+                    activeThumbColor: SpotifyColors.green,
+                    onChanged: (val) {},
+                  ),
+                ),
+                const Divider(color: SpotifyColors.borderSubtle, height: 1),
+                _settingRow(
                   title: 'Lossless Streaming (FLAC / Hi-Res)',
-                  subtitle: 'Direktes Bit-perfektes Streaming über lokales WLAN',
+                  subtitle: 'Bit-perfektes Streaming über lokales WLAN',
                   trailing: Switch(
                     value: true,
                     activeThumbColor: SpotifyColors.green,
@@ -196,16 +280,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   subtitle: 'Nahtloser Übergang zwischen Musiktiteln',
                   trailing: Switch(
                     value: true,
-                    activeThumbColor: SpotifyColors.green,
-                    onChanged: (val) {},
-                  ),
-                ),
-                const Divider(color: SpotifyColors.borderSubtle, height: 1),
-                _settingRow(
-                  title: 'Lautstärke-Normalisierung (ReplayGain)',
-                  subtitle: 'Gleiche Lautstärke für alle Songs',
-                  trailing: Switch(
-                    value: false,
                     activeThumbColor: SpotifyColors.green,
                     onChanged: (val) {},
                   ),
@@ -237,7 +311,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'Version 1.0.0 • Entwickelt für Tim Marquardt',
+                  'Version 1.1.0 • Echte Server-API & Equalizer',
                   style: TextStyle(
                     color: SpotifyColors.textSecondary,
                     fontSize: 12,
@@ -245,7 +319,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Verbindet sich direkt mit dem Music Assistant 2.0 Server im lokalen Netzwerk und steuert Multi-Room-Player wie Sonos, AirPlay, Chromecast und Snapcast nahtlos im eleganten Spotify-Design.',
+                  'Steuert echte Music Assistant Multi-Room-Player (Sonos, AirPlay, Chromecast, Shield) und spielt Musik direkt lokal auf dem iPhone ab.',
                   style: TextStyle(
                     color: SpotifyColors.textMuted,
                     fontSize: 12,
