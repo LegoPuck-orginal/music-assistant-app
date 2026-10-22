@@ -173,16 +173,19 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
         .filter { $0.language.hasPrefix("de") }
         .map { v -> [String: Any] in
           var qualityStr = "default"
-          if #available(iOS 16.0, *) {
-            if v.quality == .premium { qualityStr = "premium" }
-            else if v.quality == .enhanced { qualityStr = "enhanced" }
+          if v.quality.rawValue == 3 {
+            qualityStr = "premium"
+          } else if v.quality.rawValue == 2 {
+            qualityStr = "enhanced"
           }
-          let genderStr: String
-          switch v.gender {
-          case .male: genderStr = "male"
-          case .female: genderStr = "female"
-          default: genderStr = "unspecified"
+
+          var genderStr = "unspecified"
+          if v.gender.rawValue == 1 {
+            genderStr = "male"
+          } else if v.gender.rawValue == 2 {
+            genderStr = "female"
           }
+
           return [
             "identifier": v.identifier,
             "name": v.name,
@@ -201,12 +204,12 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
       }
 
       let voiceId = args["voiceIdentifier"] as? String
-      let rateMultiplier = (args["rate"] as? Double) ?? 1.0
-      let pitchMultiplier = (args["pitch"] as? Double) ?? 1.0
-      let volume = (args["volume"] as? Double) ?? 1.0
+      let rateMultiplier = (args["rate"] as? NSNumber)?.doubleValue ?? (args["rate"] as? Double) ?? 1.0
+      let pitchMultiplier = (args["pitch"] as? NSNumber)?.doubleValue ?? (args["pitch"] as? Double) ?? 1.0
+      let volume = (args["volume"] as? NSNumber)?.doubleValue ?? (args["volume"] as? Double) ?? 1.0
 
       if synthesizer.isSpeaking {
-        synthesizer.stopSpeaking(at: .immediate)
+        _ = synthesizer.stopSpeaking(at: .immediate)
       }
 
       let utterance = AVSpeechUtterance(string: text)
@@ -216,9 +219,23 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
         utterance.voice = AVSpeechSynthesisVoice(language: "de-DE")
       }
 
-      utterance.rate = AVSpeechUtteranceDefaultSpeechRate * Float(rateMultiplier)
-      utterance.pitchMultiplier = Float(pitchMultiplier)
-      utterance.volume = Float(volume)
+      var speechRate = AVSpeechUtteranceDefaultSpeechRate * Float(rateMultiplier)
+      if speechRate < AVSpeechUtteranceMinimumSpeechRate {
+        speechRate = AVSpeechUtteranceMinimumSpeechRate
+      } else if speechRate > AVSpeechUtteranceMaximumSpeechRate {
+        speechRate = AVSpeechUtteranceMaximumSpeechRate
+      }
+      utterance.rate = speechRate
+
+      var speechPitch = Float(pitchMultiplier)
+      if speechPitch < 0.5 { speechPitch = 0.5 }
+      if speechPitch > 2.0 { speechPitch = 2.0 }
+      utterance.pitchMultiplier = speechPitch
+
+      var speechVol = Float(volume)
+      if speechVol < 0.0 { speechVol = 0.0 }
+      if speechVol > 1.0 { speechVol = 1.0 }
+      utterance.volume = speechVol
 
       do {
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers, .mixWithOthers])
@@ -232,7 +249,7 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
 
     case "stop":
       if synthesizer.isSpeaking {
-        synthesizer.stopSpeaking(at: .immediate)
+        _ = synthesizer.stopSpeaking(at: .immediate)
       }
       result(true)
 

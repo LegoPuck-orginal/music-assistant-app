@@ -33,7 +33,7 @@ jobs:
         run: flutter test
 
       - name: Build iOS Release App (Device / No CodeSign)
-        run: flutter build ios --no-codesign --release
+        run: flutter build ios --no-codesign --release -v
 
       - name: Build Apple Watch Companion App (watchOS)
         run: |
