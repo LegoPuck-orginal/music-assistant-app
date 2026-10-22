@@ -669,12 +669,50 @@ class MassApiService {
         'queue_id': queueId,
       });
 
-  /// Equalizer / DSP Preset anwenden
-  Future<void> applyDSPPreset(String playerId, String presetId) =>
-      sendCommand('config/players/dsp/apply_preset', {
-        'player_id': playerId,
-        'preset_id': presetId,
-      });
+  /// DSP Presets vom Server abrufen
+  Future<List<Map<String, dynamic>>> fetchDspPresets() async {
+    final res = await sendCommand('config/dsp_presets/get');
+    if (res is List) {
+      return res.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+    }
+    return [];
+  }
+
+  /// DSP Konfiguration für einen bestimmten Player abrufen
+  Future<Map<String, dynamic>?> fetchPlayerDspConfig(String playerId) async {
+    final res =
+        await sendCommand('config/players/dsp/get', {'player_id': playerId});
+    if (res is Map) {
+      return Map<String, dynamic>.from(res);
+    }
+    return null;
+  }
+
+  /// DSP Konfiguration für einen bestimmten Player speichern
+  Future<Map<String, dynamic>?> savePlayerDspConfig(
+      String playerId, Map<String, dynamic> config) async {
+    final res = await sendCommand('config/players/dsp/save', {
+      'player_id': playerId,
+      'config': config,
+    });
+    if (res is Map) {
+      return Map<String, dynamic>.from(res);
+    }
+    return null;
+  }
+
+  /// DSP Preset auf einen Player anwenden
+  Future<Map<String, dynamic>?> applyDSPPreset(
+      String playerId, String presetId) async {
+    final res = await sendCommand('config/players/dsp/apply_preset', {
+      'player_id': playerId,
+      'preset_id': presetId,
+    });
+    if (res is Map) {
+      return Map<String, dynamic>.from(res);
+    }
+    return null;
+  }
 
   String _formatPlayerType(String provider) {
     final p = provider.toLowerCase();

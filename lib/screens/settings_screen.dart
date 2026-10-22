@@ -194,10 +194,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             tileColor: SpotifyColors.surfaceElevated,
             leading: const Icon(Icons.tune, color: SpotifyColors.green),
-            title: const Text('Equalizer & Klangkurve',
+            title: const Text('DSP & Equalizer (Server-Sync)',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
             subtitle: Text(
-              'Preset: ${prov.equalizerSettings.currentPreset} • 5 Frequenzbänder',
+              'DSP: ${prov.dspConfig?.enabled == true ? "Aktiv" : "Aus"} • ${prov.dspConfig?.presetId != null ? (prov.dspPresets.where((p) => p.presetId == prov.dspConfig!.presetId).firstOrNull?.name ?? "Preset") : "Individuell"} (${prov.dspConfig?.bands.length ?? 5} Bänder)',
               style: const TextStyle(color: SpotifyColors.textSecondary, fontSize: 12),
             ),
             trailing: const Icon(Icons.chevron_right, color: SpotifyColors.textMuted),

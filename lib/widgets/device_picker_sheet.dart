@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
+import 'equalizer_sheet.dart';
 
 class DevicePickerSheet extends StatelessWidget {
   const DevicePickerSheet({super.key});
@@ -180,6 +181,19 @@ class DevicePickerSheet extends StatelessWidget {
                               _showAnnouncementDialog(context, prov, active.id);
                             },
                           ),
+                          IconButton(
+                            icon: const Icon(Icons.tune,
+                                color: SpotifyColors.green, size: 20),
+                            tooltip: 'DSP & Equalizer anpassen',
+                            onPressed: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (_) => const EqualizerSheet(),
+                              );
+                            },
+                          ),
                           Text(
                             '${active.volume}%',
                             style: const TextStyle(
@@ -305,6 +319,26 @@ class DevicePickerSheet extends StatelessWidget {
                                 onPressed: () {
                                   HapticFeedback.lightImpact();
                                   prov.togglePlayerPower(player);
+                                },
+                              ),
+                            if (isAvail)
+                              IconButton(
+                                icon: Icon(
+                                  Icons.tune,
+                                  color: isCurrent
+                                      ? SpotifyColors.green
+                                      : SpotifyColors.textSecondary,
+                                  size: 18,
+                                ),
+                                tooltip: 'DSP für ${player.name}',
+                                onPressed: () {
+                                  prov.loadDspForPlayer(player.id);
+                                  showModalBottomSheet(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (_) => const EqualizerSheet(),
+                                  );
                                 },
                               ),
                             if (isCurrent)

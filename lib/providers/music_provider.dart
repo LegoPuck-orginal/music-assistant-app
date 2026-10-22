@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import '../models/dsp_models.dart';
 import '../models/equalizer_settings.dart';
 import '../models/player_device.dart';
 import '../models/playlist.dart';
@@ -33,6 +34,10 @@ class MusicProvider extends ChangeNotifier {
   String _serverUrl = 'http://192.168.188.25:8095';
   String _authToken = StorageService.defaultToken;
   EqualizerSettings _equalizerSettings = EqualizerSettings();
+  DspConfig? _dspConfig;
+  List<DspPreset> _dspPresets = [];
+  bool _isLoadingDsp = false;
+  String? _dspError;
   StreamSubscription? _eventsSubscription;
   StreamSubscription? _authSubscription;
 
@@ -81,6 +86,10 @@ class MusicProvider extends ChangeNotifier {
   String get serverUrl => _serverUrl;
   String get authToken => _authToken;
   EqualizerSettings get equalizerSettings => _equalizerSettings;
+  DspConfig? get dspConfig => _dspConfig;
+  List<DspPreset> get dspPresets => _dspPresets;
+  bool get isLoadingDsp => _isLoadingDsp;
+  String? get dspError => _dspError;
 
   Future<void> initialize() async {
     try {
@@ -297,6 +306,10 @@ class MusicProvider extends ChangeNotifier {
         _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
       }
 
+      if (_activePlayer != null) {
+        loadDspForPlayer(_activePlayer!.id);
+      }
+
       notifyListeners();
     } catch (e) {
       debugPrint('[MusicProvider] refreshServerData error: $e');
@@ -482,6 +495,7 @@ class MusicProvider extends ChangeNotifier {
     _activePlayer = player;
     await _storage.saveActivePlayerId(player.id);
     notifyListeners();
+    loadDspForPlayer(player.id);
   }
 
   Future<void> setVolume(int vol) async {
@@ -578,34 +592,225 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- Equalizer Controls ---
+  // --- DSP & Equalizer Controls (Direct Music Assistant Connection) ---
 
-  Future<void> setEqualizerEnabled(bool enabled) async {
+  Future<void> loadDspForPlayer([String? playerId]) async {
+    final targetId = playerId ?? _activePlayer?.id;
+    if (targetId == null) return;
+
+    _isLoadingDsp = true;
+    _dspError = null;
+    notifyListeners();
+
+    try {
+      // 1. Presets vom Server laden
+      final presetsRaw = await _api.fetchDspPresets();
+      _dspPresets = presetsRaw.map((p) => DspPreset.fromJson(p)).toList();
+
+      // 2. Player DSP Konfiguration laden
+      final configRaw = await _api.fetchPlayerDspConfig(targetId);
+      if (configRaw != null) {
+        _dspConfig = DspConfig.fromJson(configRaw);
+      } else {
+        _dspConfig = DspConfig.defaultFlat();
+      }
+
+      // Sync mit lokalem EqualizerSettings
+      if (_dspConfig != null) {
+        _equalizerSettings.isEnabled = _dspConfig!.enabled;
+        if (_dspConfig!.presetId != null) {
+          final matched = _dspPresets.firstWhere(
+            (p) => p.presetId == _dspConfig!.presetId,
+            orElse: () => DspPreset(
+              presetId: _dspConfig!.presetId!,
+              name: 'Individuell',
+              config: _dspConfig!,
+            ),
+          );
+          _equalizerSettings.currentPreset = matched.name;
+        }
+      }
+    } catch (e) {
+      debugPrint('[MusicProvider] loadDspForPlayer error: $e');
+      _dspError = e.toString();
+      _dspConfig ??= DspConfig.defaultFlat();
+    } finally {
+      _isLoadingDsp = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleDspEnabled(bool enabled) async {
+    _dspConfig ??= DspConfig.defaultFlat();
+    _dspConfig = _dspConfig!.copyWith(enabled: enabled);
     _equalizerSettings.isEnabled = enabled;
     await _storage.saveEqualizerSettings(_equalizerSettings);
-    _syncEqualizerToHardware();
+    notifyListeners();
+
+    if (_activePlayer != null && !_activePlayer!.isLocal) {
+      try {
+        final res = await _api.savePlayerDspConfig(
+            _activePlayer!.id, _dspConfig!.toJson());
+        if (res != null) {
+          _dspConfig = DspConfig.fromJson(res);
+        }
+      } catch (e) {
+        debugPrint('[MusicProvider] toggleDspEnabled error: $e');
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> applyDspPreset(DspPreset preset) async {
+    _isLoadingDsp = true;
+    notifyListeners();
+
+    try {
+      if (_activePlayer != null && !_activePlayer!.isLocal) {
+        final res =
+            await _api.applyDSPPreset(_activePlayer!.id, preset.presetId);
+        if (res != null) {
+          _dspConfig = DspConfig.fromJson(res);
+        } else {
+          final saveRes = await _api.savePlayerDspConfig(
+            _activePlayer!.id,
+            preset.config
+                .copyWith(enabled: true, presetId: preset.presetId)
+                .toJson(),
+          );
+          if (saveRes != null) {
+            _dspConfig = DspConfig.fromJson(saveRes);
+          } else {
+            _dspConfig = preset.config
+                .copyWith(enabled: true, presetId: preset.presetId);
+          }
+        }
+      } else {
+        _dspConfig =
+            preset.config.copyWith(enabled: true, presetId: preset.presetId);
+      }
+      _equalizerSettings.currentPreset = preset.name;
+      _equalizerSettings.isEnabled = true;
+      await _storage.saveEqualizerSettings(_equalizerSettings);
+    } catch (e) {
+      debugPrint('[MusicProvider] applyDspPreset error: $e');
+    } finally {
+      _isLoadingDsp = false;
+      notifyListeners();
+    }
+  }
+
+  void updateDspBandGain(int bandIndex, double gain) {
+    _dspConfig ??= DspConfig.defaultFlat();
+
+    final currentFilters = List<DspFilter>.from(_dspConfig!.filters);
+    final peqIndex =
+        currentFilters.indexWhere((f) => f.type == 'parametric_eq');
+
+    if (peqIndex != -1) {
+      final peq = currentFilters[peqIndex];
+      final bands = List<DspBand>.from(peq.bands);
+      if (bandIndex >= 0 && bandIndex < bands.length) {
+        bands[bandIndex] = bands[bandIndex].copyWith(gain: gain);
+        currentFilters[peqIndex] = peq.copyWith(bands: bands);
+      }
+    } else {
+      final defaultCfg = DspConfig.defaultFlat();
+      final defaultFilter = defaultCfg.parametricEqFilter!;
+      final bands = List<DspBand>.from(defaultFilter.bands);
+      if (bandIndex >= 0 && bandIndex < bands.length) {
+        bands[bandIndex] = bands[bandIndex].copyWith(gain: gain);
+      }
+      currentFilters.add(defaultFilter.copyWith(bands: bands));
+    }
+
+    _dspConfig = _dspConfig!.copyWith(
+      filters: currentFilters,
+      presetId: null,
+    );
     notifyListeners();
   }
 
-  Future<void> setEqualizerPreset(String presetName) async {
-    _equalizerSettings.applyPreset(presetName);
-    await _storage.saveEqualizerSettings(_equalizerSettings);
-    _syncEqualizerToHardware();
+  void updateDspPreamp(double preamp) {
+    _dspConfig ??= DspConfig.defaultFlat();
+
+    final currentFilters = List<DspFilter>.from(_dspConfig!.filters);
+    final peqIndex =
+        currentFilters.indexWhere((f) => f.type == 'parametric_eq');
+
+    if (peqIndex != -1) {
+      currentFilters[peqIndex] =
+          currentFilters[peqIndex].copyWith(preamp: preamp);
+    } else {
+      final defaultCfg = DspConfig.defaultFlat();
+      final defaultFilter = defaultCfg.parametricEqFilter!;
+      currentFilters.add(defaultFilter.copyWith(preamp: preamp));
+    }
+
+    _dspConfig = _dspConfig!.copyWith(
+      filters: currentFilters,
+      presetId: null,
+    );
     notifyListeners();
+  }
+
+  Future<void> saveCurrentDspConfig() async {
+    if (_activePlayer == null || _dspConfig == null || _activePlayer!.isLocal) {
+      return;
+    }
+    try {
+      final res = await _api.savePlayerDspConfig(
+          _activePlayer!.id, _dspConfig!.toJson());
+      if (res != null) {
+        _dspConfig = DspConfig.fromJson(res);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[MusicProvider] saveCurrentDspConfig error: $e');
+    }
+  }
+
+  Future<void> resetDspToFlat() async {
+    _dspConfig ??= DspConfig.defaultFlat();
+
+    final currentFilters = List<DspFilter>.from(_dspConfig!.filters);
+    final peqIndex =
+        currentFilters.indexWhere((f) => f.type == 'parametric_eq');
+
+    if (peqIndex != -1) {
+      final peq = currentFilters[peqIndex];
+      final resetBands = peq.bands.map((b) => b.copyWith(gain: 0.0)).toList();
+      currentFilters[peqIndex] = peq.copyWith(bands: resetBands, preamp: 0.0);
+    }
+
+    _dspConfig = _dspConfig!.copyWith(
+      filters: currentFilters,
+      presetId: null,
+    );
+    _equalizerSettings.applyPreset('Flat');
+    await _storage.saveEqualizerSettings(_equalizerSettings);
+    notifyListeners();
+
+    await saveCurrentDspConfig();
+  }
+
+  Future<void> setEqualizerEnabled(bool enabled) => toggleDspEnabled(enabled);
+
+  Future<void> setEqualizerPreset(String presetName) async {
+    final matchedPreset = _dspPresets.firstWhere(
+      (p) => p.name.toLowerCase() == presetName.toLowerCase(),
+      orElse: () => DspPreset(
+        presetId: presetName.toLowerCase(),
+        name: presetName,
+        config: _dspConfig ?? DspConfig.defaultFlat(),
+      ),
+    );
+    await applyDspPreset(matchedPreset);
   }
 
   Future<void> setEqualizerBandGain(int index, double gain) async {
-    _equalizerSettings.setBandGain(index, gain);
-    await _storage.saveEqualizerSettings(_equalizerSettings);
-    _syncEqualizerToHardware();
-    notifyListeners();
-  }
-
-  void _syncEqualizerToHardware() {
-    if (_activePlayer != null && !_activePlayer!.isLocal) {
-      _api.applyDSPPreset(
-          _activePlayer!.id, _equalizerSettings.currentPreset.toLowerCase());
-    }
+    updateDspBandGain(index, gain);
+    await saveCurrentDspConfig();
   }
 
   Future<void> updateServerSettings(String url, String token) async {
