@@ -4,6 +4,44 @@ import ActivityKit
 
 #if canImport(ActivityKit)
 @available(iOS 16.1, *)
+public struct MusicAssistantActivityAttributes: ActivityAttributes {
+    public struct ContentState: Codable, Hashable {
+        public var trackTitle: String
+        public var artist: String
+        public var albumArtUrl: String
+        public var isPlaying: Bool
+        public var speakerName: String
+        public var djVibe: String
+        public var isDjSpeaking: Bool
+        public var djSpeechText: String?
+
+        public init(
+            trackTitle: String,
+            artist: String,
+            albumArtUrl: String,
+            isPlaying: Bool,
+            speakerName: String,
+            djVibe: String,
+            isDjSpeaking: Bool,
+            djSpeechText: String?
+        ) {
+            self.trackTitle = trackTitle
+            self.artist = artist
+            self.albumArtUrl = albumArtUrl
+            self.isPlaying = isPlaying
+            self.speakerName = speakerName
+            self.djVibe = djVibe
+            self.isDjSpeaking = isDjSpeaking
+            self.djSpeechText = djSpeechText
+        }
+    }
+
+    public var appName: String = "Music Assistant"
+
+    public init() {}
+}
+
+@available(iOS 16.1, *)
 struct MusicAssistantDynamicIslandWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MusicAssistantActivityAttributes.self) { context in

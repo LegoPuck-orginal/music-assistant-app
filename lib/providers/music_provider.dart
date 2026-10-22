@@ -96,7 +96,6 @@ class MusicProvider extends ChangeNotifier {
   bool _isDjVoiceEnabled = true;
   DjVibe _currentDjVibe = DjVibe.allVibes.first;
   String? _djSpeechText;
-  bool _isDynamicIslandExpanded = false;
   Timer? _djSpeechTimer;
   StreamSubscription? _djSpeechSub;
 
@@ -106,12 +105,6 @@ class MusicProvider extends ChangeNotifier {
   bool get isDjVoiceEnabled => _isDjVoiceEnabled;
   DjVibe get currentDjVibe => _currentDjVibe;
   String? get djSpeechText => _djSpeechText;
-  bool get isDynamicIslandExpanded => _isDynamicIslandExpanded;
-
-  void setDynamicIslandExpanded(bool val) {
-    _isDynamicIslandExpanded = val;
-    notifyListeners();
-  }
 
   void toggleDjVoice() {
     _isDjVoiceEnabled = !_isDjVoiceEnabled;
@@ -743,7 +736,6 @@ class MusicProvider extends ChangeNotifier {
     _djSpeechSub?.cancel();
     _isDjSpeaking = true;
     _djSpeechText = text;
-    _isDynamicIslandExpanded = true;
     notifyListeners();
 
     // Ducking: Musiklautstärke absenken während der Ansage
@@ -766,7 +758,6 @@ class MusicProvider extends ChangeNotifier {
       _djSpeechTimer?.cancel();
       _djSpeechSub?.cancel();
       _isDjSpeaking = false;
-      _isDynamicIslandExpanded = false;
       if (_preDuckingVolume != null) {
         setVolume(_preDuckingVolume!);
         _preDuckingVolume = null;
