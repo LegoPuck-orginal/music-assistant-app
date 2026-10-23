@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:music_assistant_app/providers/music_provider.dart';
+import 'package:music_assistant_app/services/apple_now_playing_service.dart';
 import 'package:music_assistant_app/services/watch_service.dart';
 import 'package:music_assistant_app/widgets/apple_watch_remote_sheet.dart';
 
@@ -144,6 +145,85 @@ void main() {
       expect(find.byIcon(Icons.skip_previous), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('Apple Native MediaPlayer & Dynamic Island Tests', () {
+    late MusicProvider provider;
+    final List<MethodCall> nowPlayingCalls = [];
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      nowPlayingCalls.clear();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('de.timm.musicAssistantApp/apple_now_playing'),
+        (MethodCall call) async {
+          nowPlayingCalls.add(call);
+          return true;
+        },
+      );
+
+      provider = MusicProvider();
+      AppleNowPlayingService.instance.initialize(provider);
+    });
+
+    tearDown(() {
+      provider.dispose();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('de.timm.musicAssistantApp/apple_now_playing'),
+        null,
+      );
+    });
+
+    test('AppleNowPlayingService singleton is accessible', () {
+      expect(AppleNowPlayingService.instance, isNotNull);
+      expect(AppleNowPlayingService(), same(AppleNowPlayingService.instance));
+    });
+
+    test('AppleNowPlayingService.sync formats metadata and dispatches updateNowPlaying', () async {
+      await AppleNowPlayingService.instance.sync(provider);
+
+      expect(nowPlayingCalls, isNotEmpty);
+      final updateCall = nowPlayingCalls.firstWhere((c) => c.method == 'updateNowPlaying');
+      expect(updateCall, isNotNull);
+
+      final data = updateCall.arguments as Map;
+      expect(data.containsKey('title'), isTrue);
+      expect(data.containsKey('artist'), isTrue);
+      expect(data.containsKey('album'), isTrue);
+      expect(data.containsKey('durationSeconds'), isTrue);
+      expect(data.containsKey('positionSeconds'), isTrue);
+      expect(data.containsKey('isPlaying'), isTrue);
+    });
+
+    test('AppleNowPlayingService handles remote commands from Dynamic Island & Watch Crown', () async {
+      expect(provider.isPlaying, isFalse);
+
+      // Simulate Play command from Lock Screen / Dynamic Island
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+        'de.timm.musicAssistantApp/apple_now_playing',
+        const StandardMethodCodec().encodeMethodCall(
+          const MethodCall('onRemoteCommand', {'action': 'play'}),
+        ),
+        (ByteData? data) {},
+      );
+
+      expect(provider.isPlaying, isTrue);
+
+      // Simulate Pause command
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+        'de.timm.musicAssistantApp/apple_now_playing',
+        const StandardMethodCodec().encodeMethodCall(
+          const MethodCall('onRemoteCommand', {'action': 'pause'}),
+        ),
+        (ByteData? data) {},
+      );
+
+      expect(provider.isPlaying, isFalse);
     });
   });
 }

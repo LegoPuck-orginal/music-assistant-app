@@ -15,6 +15,7 @@ import '../models/track.dart';
 import '../models/user_profile.dart';
 import '../models/virtual_dj_vibe.dart';
 import '../services/download_service.dart';
+import '../services/apple_now_playing_service.dart';
 import '../services/live_activity_service.dart';
 import '../services/mass_api_service.dart';
 import '../services/storage_service.dart';
@@ -263,6 +264,10 @@ class MusicProvider extends ChangeNotifier {
     try {
       WatchService.instance.init(this);
       WatchService.instance.syncState(this);
+    } catch (_) {}
+    try {
+      AppleNowPlayingService.instance.initialize(this);
+      AppleNowPlayingService.instance.sync(this);
     } catch (_) {}
     notifyListeners();
 
@@ -1463,6 +1468,9 @@ class MusicProvider extends ChangeNotifier {
     try {
       LiveActivityService.instance.sync(this);
     } catch (_) {}
+    try {
+      AppleNowPlayingService.instance.sync(this);
+    } catch (_) {}
   }
 
   @override
@@ -1476,6 +1484,9 @@ class MusicProvider extends ChangeNotifier {
     _positionTimer?.cancel();
     _localAudioPlayer.dispose();
     _api.dispose();
+    try {
+      AppleNowPlayingService.instance.clear();
+    } catch (_) {}
     super.dispose();
   }
 }

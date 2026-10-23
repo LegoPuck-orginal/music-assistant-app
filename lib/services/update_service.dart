@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -82,20 +83,32 @@ class UpdateService {
       final publishedAt =
           publishedStr != null ? DateTime.tryParse(publishedStr) : null;
 
-      // Finde den .ipa Download-Link in den Assets
+      // Finde den optimalen .ipa Download-Link in den Assets
+      // Priorität 1: Standalone 'music-assistant.ipa' (garantiert ohne Companion-ID-Konflikt)
+      // Priorität 2: IPA ohne 'with-watch'
+      // Priorität 3: Jede beliebige IPA
       String downloadUrl =
-          'https://github.com/$repoOwner/$repoName/releases/download/latest/music-assistant.ipa';
+          'https://github.com/$repoOwner/$repoName/releases/latest/download/music-assistant.ipa';
       final assets = (latestRelease['assets'] as List<dynamic>?) ?? [];
+      String? fallbackIpaUrl;
+
       for (final a in assets) {
         final assetMap = a as Map<String, dynamic>;
         final name = assetMap['name']?.toString() ?? '';
-        if (name.endsWith('.ipa')) {
-          final browserUrl = assetMap['browser_download_url']?.toString();
-          if (browserUrl != null && browserUrl.isNotEmpty) {
-            downloadUrl = browserUrl;
-            break;
-          }
+        final browserUrl = assetMap['browser_download_url']?.toString();
+        if (browserUrl == null || browserUrl.isEmpty) continue;
+
+        if (name == 'music-assistant.ipa') {
+          downloadUrl = browserUrl;
+          break;
+        } else if (name.endsWith('.ipa') && !name.contains('with-watch')) {
+          fallbackIpaUrl ??= browserUrl;
+        } else if (name.endsWith('.ipa')) {
+          fallbackIpaUrl ??= browserUrl;
         }
+      }
+      if (downloadUrl.contains('latest/download') && fallbackIpaUrl != null) {
+        downloadUrl = fallbackIpaUrl;
       }
 
       final hasUpdate = isVersionNewer(currentVersion, cleanRemoteVersion);
@@ -130,17 +143,21 @@ class UpdateService {
       final targetFile = File('${updatesDir.path}/music-assistant-latest.ipa');
 
       final request = http.Request('GET', Uri.parse(downloadUrl));
+      request.followRedirects = true;
+      request.maxRedirects = 10;
       final response = await _client.send(request);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        final total = response.contentLength ?? (18 * 1024 * 1024);
+        final total = response.contentLength ?? (25 * 1024 * 1024);
         int received = 0;
         final sink = targetFile.openWrite();
 
         await for (final chunk in response.stream) {
           sink.add(chunk);
           received += chunk.length;
-          final progress = (received / total).clamp(0.05, 0.99);
+          final progress = total > 0
+              ? (received / total).clamp(0.02, 0.99)
+              : 0.5;
           onProgress(progress, received, total);
         }
 
@@ -148,11 +165,27 @@ class UpdateService {
         await sink.close();
         onProgress(1.0, received, total);
         return targetFile;
+      } else {
+        debugPrint(
+            '[UpdateService] Download failed with status code ${response.statusCode}');
       }
     } catch (e) {
       debugPrint('[UpdateService] downloadUpdateIpa error: $e');
     }
     return null;
+  }
+
+  /// Teilt die heruntergeladene IPA Datei über das native iOS Share Sheet
+  /// (erlaubt 'In Dateien sichern', AirDrop, Öffnen in Sideloadern)
+  static Future<bool> shareFile(String path) async {
+    const channel = MethodChannel('de.timm.musicAssistantApp/native_utils');
+    try {
+      final res = await channel.invokeMethod<bool>('shareFile', {'path': path});
+      return res ?? false;
+    } catch (e) {
+      debugPrint('[UpdateService] shareFile error: $e');
+      return false;
+    }
   }
 
   /// Führt die direkte Apple iOS OTA-Installation aus (ohne externe App)

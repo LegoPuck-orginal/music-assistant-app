@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import AVFoundation
+import MediaPlayer
 import WatchConnectivity
 #if canImport(ActivityKit)
 import ActivityKit
@@ -24,6 +25,8 @@ import ActivityKit
     if let controller = window?.rootViewController as? FlutterViewController {
       WatchSessionManager.shared.setup(with: controller.binaryMessenger)
       NativeTtsManager.shared.setup(with: controller.binaryMessenger)
+      AppleNowPlayingManager.shared.setup(with: controller.binaryMessenger)
+      NativeUtilsManager.shared.setup(with: controller.binaryMessenger)
       #if canImport(ActivityKit)
       if #available(iOS 16.1, *) {
         LiveActivityManager.shared.setup(with: controller.binaryMessenger)
@@ -41,6 +44,12 @@ import ActivityKit
     }
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NativeTtsManager") {
       NativeTtsManager.shared.setup(with: registrar.messenger())
+    }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AppleNowPlayingManager") {
+      AppleNowPlayingManager.shared.setup(with: registrar.messenger())
+    }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NativeUtilsManager") {
+      NativeUtilsManager.shared.setup(with: registrar.messenger())
     }
     #if canImport(ActivityKit)
     if #available(iOS 16.1, *) {
@@ -272,6 +281,229 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
     DispatchQueue.main.async { [weak self] in
       self?.channel?.invokeMethod("onSpeechCancelled", arguments: nil)
+    }
+  }
+}
+
+// MARK: - Native Apple MediaPlayer (Dynamic Island, Apple Watch, Lock Screen, Control Center)
+
+class AppleNowPlayingManager: NSObject {
+  static let shared = AppleNowPlayingManager()
+
+  private var channel: FlutterMethodChannel?
+  private var isConfigured = false
+  private var currentArtworkUrl: String?
+  private var cachedArtwork: MPMediaItemArtwork?
+
+  private override init() {
+    super.init()
+  }
+
+  func setup(with messenger: FlutterBinaryMessenger) {
+    if isConfigured { return }
+    isConfigured = true
+
+    channel = FlutterMethodChannel(name: "de.timm.musicAssistantApp/apple_now_playing", binaryMessenger: messenger)
+    channel?.setMethodCallHandler { [weak self] (call, result) in
+      self?.handleMethodCall(call, result: result)
+    }
+
+    setupRemoteCommandCenter()
+  }
+
+  private func setupRemoteCommandCenter() {
+    let commandCenter = MPRemoteCommandCenter.shared()
+
+    commandCenter.playCommand.isEnabled = true
+    commandCenter.playCommand.removeTarget(nil)
+    commandCenter.playCommand.addTarget { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.channel?.invokeMethod("onRemoteCommand", arguments: ["action": "play"])
+      }
+      return .success
+    }
+
+    commandCenter.pauseCommand.isEnabled = true
+    commandCenter.pauseCommand.removeTarget(nil)
+    commandCenter.pauseCommand.addTarget { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.channel?.invokeMethod("onRemoteCommand", arguments: ["action": "pause"])
+      }
+      return .success
+    }
+
+    commandCenter.togglePlayPauseCommand.isEnabled = true
+    commandCenter.togglePlayPauseCommand.removeTarget(nil)
+    commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.channel?.invokeMethod("onRemoteCommand", arguments: ["action": "togglePlayPause"])
+      }
+      return .success
+    }
+
+    commandCenter.nextTrackCommand.isEnabled = true
+    commandCenter.nextTrackCommand.removeTarget(nil)
+    commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.channel?.invokeMethod("onRemoteCommand", arguments: ["action": "next"])
+      }
+      return .success
+    }
+
+    commandCenter.previousTrackCommand.isEnabled = true
+    commandCenter.previousTrackCommand.removeTarget(nil)
+    commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.channel?.invokeMethod("onRemoteCommand", arguments: ["action": "previous"])
+      }
+      return .success
+    }
+
+    commandCenter.changePlaybackPositionCommand.isEnabled = true
+    commandCenter.changePlaybackPositionCommand.removeTarget(nil)
+    commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+      guard let posEvent = event as? MPChangePlaybackPositionCommandEvent else {
+        return .commandFailed
+      }
+      let targetSeconds = posEvent.positionTime
+      DispatchQueue.main.async {
+        self?.channel?.invokeMethod("onRemoteCommand", arguments: [
+          "action": "seek",
+          "positionSeconds": targetSeconds
+        ])
+      }
+      return .success
+    }
+
+    commandCenter.skipForwardCommand.preferredIntervals = [15]
+    commandCenter.skipForwardCommand.isEnabled = true
+    commandCenter.skipForwardCommand.removeTarget(nil)
+    commandCenter.skipForwardCommand.addTarget { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.channel?.invokeMethod("onRemoteCommand", arguments: ["action": "skipForward", "interval": 15])
+      }
+      return .success
+    }
+
+    commandCenter.skipBackwardCommand.preferredIntervals = [15]
+    commandCenter.skipBackwardCommand.isEnabled = true
+    commandCenter.skipBackwardCommand.removeTarget(nil)
+    commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.channel?.invokeMethod("onRemoteCommand", arguments: ["action": "skipBackward", "interval": 15])
+      }
+      return .success
+    }
+  }
+
+  private func handleMethodCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "updateNowPlaying":
+      if let args = call.arguments as? [String: Any] {
+        updateNowPlayingInfo(args)
+        result(true)
+      } else {
+        result(FlutterError(code: "INVALID_ARGS", message: "Arguments must be a dictionary", details: nil))
+      }
+    case "clearNowPlaying":
+      clearNowPlayingInfo()
+      result(true)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  func updateNowPlayingInfo(_ info: [String: Any]) {
+    var nowPlayingInfo = [String: Any]()
+
+    let title = info["title"] as? String ?? ""
+    let artist = info["artist"] as? String ?? ""
+    let album = info["album"] as? String ?? ""
+    let duration = (info["durationSeconds"] as? NSNumber)?.doubleValue ?? 0.0
+    let position = (info["positionSeconds"] as? NSNumber)?.doubleValue ?? 0.0
+    let isPlaying = info["isPlaying"] as? Bool ?? false
+    let rate: Double = isPlaying ? 1.0 : 0.0
+    let artworkUrl = info["artworkUrl"] as? String
+
+    nowPlayingInfo[MPMediaItemPropertyTitle] = title
+    nowPlayingInfo[MPMediaItemPropertyArtist] = artist
+    nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = album
+    nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
+    nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = position
+    nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = rate
+    nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+
+    if let art = cachedArtwork, currentArtworkUrl == artworkUrl {
+      nowPlayingInfo[MPMediaItemPropertyArtwork] = art
+    }
+
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+
+    if let urlStr = artworkUrl, !urlStr.isEmpty, urlStr != currentArtworkUrl, let url = URL(string: urlStr) {
+      currentArtworkUrl = urlStr
+      URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+        guard let self = self, let data = data, let image = UIImage(data: data) else { return }
+        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        self.cachedArtwork = artwork
+        DispatchQueue.main.async {
+          if var current = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+            current[MPMediaItemPropertyArtwork] = artwork
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = current
+          }
+        }
+      }.resume()
+    }
+  }
+
+  func clearNowPlayingInfo() {
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+  }
+}
+
+// MARK: - Native iOS Utilities (Share Sheet, File Handling)
+
+class NativeUtilsManager: NSObject {
+  static let shared = NativeUtilsManager()
+  private var channel: FlutterMethodChannel?
+  private var isConfigured = false
+
+  private override init() {
+    super.init()
+  }
+
+  func setup(with messenger: FlutterBinaryMessenger) {
+    if isConfigured { return }
+    isConfigured = true
+
+    channel = FlutterMethodChannel(name: "de.timm.musicAssistantApp/native_utils", binaryMessenger: messenger)
+    channel?.setMethodCallHandler { (call, result) in
+      if call.method == "shareFile" {
+        guard let args = call.arguments as? [String: Any],
+              let filePath = args["path"] as? String else {
+          result(FlutterError(code: "INVALID_ARGS", message: "path required", details: nil))
+          return
+        }
+        let url = URL(fileURLWithPath: filePath)
+        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        
+        let rootVC = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController
+          ?? UIApplication.shared.keyWindow?.rootViewController
+
+        if let controller = rootVC {
+          if let popover = activityVC.popoverPresentationController {
+            popover.sourceView = controller.view
+            popover.sourceRect = CGRect(x: controller.view.bounds.midX, y: controller.view.bounds.midY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+          }
+          controller.present(activityVC, animated: true) {
+            result(true)
+          }
+        } else {
+          result(false)
+        }
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
     }
   }
 }

@@ -28,30 +28,18 @@ class _UpdateDialogState extends State<UpdateDialog> {
   double _progress = 0.0;
   String _progressText = '';
   bool _isFinished = false;
+  String? _downloadedPath;
 
   Future<void> _startDirectUpdate() async {
     setState(() {
       _isDownloading = true;
-      _progress = 0.05;
-      _progressText = 'Update wird vorbereitet...';
+      _progress = 0.02;
+      _progressText = 'Update wird heruntergeladen...';
     });
 
     final updater = UpdateService();
     try {
-      // 1. Direktes OTA Protokoll versuchen
-      final launched = await UpdateService.installDirectOta(widget.updateInfo.directOtaUrl);
-
-      if (launched) {
-        setState(() {
-          _isDownloading = false;
-          _isFinished = true;
-          _progressText = 'iOS System-Installation gestartet!';
-        });
-        return;
-      }
-
-      // 2. Fallback: Datei direkt in der App herunterladen
-      await updater.downloadUpdateIpa(
+      final file = await updater.downloadUpdateIpa(
         widget.updateInfo.downloadUrl,
         onProgress: (prog, received, total) {
           if (mounted) {
@@ -66,16 +54,28 @@ class _UpdateDialogState extends State<UpdateDialog> {
         },
       );
 
-      // Nach Abschluss erneut OTA triggern
-      await UpdateService.installDirectOta(widget.updateInfo.directOtaUrl);
-
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-          _isFinished = true;
-          _progressText =
-              'Download fertig! Bestätige das iOS-Installationsfenster.';
-        });
+      if (file != null && await file.exists()) {
+        _downloadedPath = file.path;
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+            _isFinished = true;
+            _progressText =
+                'Download fertig! Die Datei ist bereit zur Installation.';
+          });
+        }
+        // Öffne das native iOS Share Sheet zum direkten Sichern / Sideloaden
+        await UpdateService.shareFile(file.path);
+      } else {
+        // Fallback falls Download fehlschlug: OTA versuchen
+        await UpdateService.installDirectOta(widget.updateInfo.directOtaUrl);
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+            _isFinished = true;
+            _progressText = 'iOS OTA-Installation gestartet.';
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -85,6 +85,16 @@ class _UpdateDialogState extends State<UpdateDialog> {
         });
       }
     }
+  }
+
+  Future<void> _shareFile() async {
+    if (_downloadedPath != null) {
+      await UpdateService.shareFile(_downloadedPath!);
+    }
+  }
+
+  Future<void> _triggerOta() async {
+    await UpdateService.installDirectOta(widget.updateInfo.directOtaUrl);
   }
 
   Future<void> _launchUrl(BuildContext context, String urlStr) async {
@@ -303,6 +313,56 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   ),
                 ),
                 const SizedBox(height: 14),
+
+                if (_downloadedPath != null) ...[
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: SpotifyColors.green,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                    icon: const Icon(Icons.share, size: 20),
+                    label: const Text(
+                      'In "Dateien" sichern / Teilen',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      _shareFile();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: SpotifyColors.borderSubtle),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                  ),
+                  icon: const Icon(Icons.system_update_alt, size: 18),
+                  label: const Text(
+                    'OTA-Installation anstoßen',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    _triggerOta();
+                  },
+                ),
+                const SizedBox(height: 10),
               ],
 
               // Actions

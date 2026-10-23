@@ -188,8 +188,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.8.1;
-				PRODUCT_BUNDLE_IDENTIFIER = de.timm.musicAssistantApp.watchkitapp;
+				MARKETING_VERSION = 1.10.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.timm.musicAssistantApp.MG8WZUURKN.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -204,15 +204,15 @@
 				CODE_SIGN_STYLE = Manual;
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 20;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.8.1;
-				PRODUCT_BUNDLE_IDENTIFIER = de.timm.musicAssistantApp.watchkitapp;
+				MARKETING_VERSION = 1.10.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.timm.musicAssistantApp.MG8WZUURKN.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

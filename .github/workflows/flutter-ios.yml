@@ -106,8 +106,18 @@ jobs:
             echo "Embedding Apple Watch app inside Payload/Runner.app/Watch/..."
             mkdir -p Payload/Runner.app/Watch
             cp -r "$WATCH_BUNDLE" Payload/Runner.app/Watch/WatchApp.app
-            echo "Watch app successfully embedded:"
-            ls -la Payload/Runner.app/Watch/WatchApp.app
+            
+            # Harmonize bundle identifiers with PlistBuddy so isideload matches host & companion
+            RUNNER_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" Payload/Runner.app/Info.plist 2>/dev/null || echo "de.timm.musicAssistantApp.MG8WZUURKN")
+            echo "Detected Runner CFBundleIdentifier: $RUNNER_BUNDLE_ID"
+            
+            /usr/libexec/PlistBuddy -c "Set :WKCompanionAppBundleIdentifier $RUNNER_BUNDLE_ID" Payload/Runner.app/Watch/WatchApp.app/Info.plist 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :WKCompanionAppBundleIdentifier string $RUNNER_BUNDLE_ID" Payload/Runner.app/Watch/WatchApp.app/Info.plist
+            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${RUNNER_BUNDLE_ID}.watchkitapp" Payload/Runner.app/Watch/WatchApp.app/Info.plist 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string ${RUNNER_BUNDLE_ID}.watchkitapp" Payload/Runner.app/Watch/WatchApp.app/Info.plist
+            
+            echo "Verified WatchApp Info.plist:"
+            /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" Payload/Runner.app/Watch/WatchApp.app/Info.plist
+            /usr/libexec/PlistBuddy -c "Print :WKCompanionAppBundleIdentifier" Payload/Runner.app/Watch/WatchApp.app/Info.plist
+            
             zip -qr music-assistant-with-watch.ipa Payload
             cp music-assistant-with-watch.ipa music-assistant-with-watch-v${{ env.APP_VERSION }}.ipa
           fi
