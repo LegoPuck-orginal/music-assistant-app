@@ -1006,9 +1006,15 @@ class MusicProvider extends ChangeNotifier {
   }
 
   /// Startet die Wiedergabe eines Hörbuchs / Hörspiels (z. B. Die drei ???)
-  Future<void> playAudiobook(Audiobook book, {int chapterIndex = 0}) async {
+  /// Spielt ein Hörbuch / Hörspiel ab und reiht alle Kapitel lückenlos in die Warteschlange ein
+  Future<void> playAudiobook(Audiobook book, {int chapterIndex = 0, Track? chapter}) async {
     if (book.chapters.isEmpty) return;
-    final idx = chapterIndex.clamp(0, book.chapters.length - 1);
+    int idx = chapterIndex;
+    if (chapter != null) {
+      final found = book.chapters.indexWhere((c) => c.id == chapter.id);
+      if (found != -1) idx = found;
+    }
+    idx = idx.clamp(0, book.chapters.length - 1);
     final targetChapter = book.chapters[idx];
     await playTrack(targetChapter, newQueue: List<Track>.from(book.chapters));
   }
@@ -1164,6 +1170,15 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> next() async {
+    if (!isLocalPlayback && _activePlayer != null && _api.isConnected) {
+      try {
+        await _api.playerNext(_activePlayer!.id);
+        return;
+      } catch (e) {
+        debugPrint('[MusicProvider] Remote playerNext fallback: $e');
+      }
+    }
+
     if (_queue.isEmpty) return;
     if (_queueIndex < _queue.length - 1) {
       _queueIndex++;
@@ -1184,6 +1199,15 @@ class MusicProvider extends ChangeNotifier {
     if (_currentPosition.inSeconds > 3) {
       seekTo(Duration.zero);
       return;
+    }
+
+    if (!isLocalPlayback && _activePlayer != null && _api.isConnected) {
+      try {
+        await _api.playerPrevious(_activePlayer!.id);
+        return;
+      } catch (e) {
+        debugPrint('[MusicProvider] Remote playerPrevious fallback: $e');
+      }
     }
 
     if (_queue.isEmpty) return;
@@ -1343,6 +1367,17 @@ class MusicProvider extends ChangeNotifier {
         _syncAdaptiveEqWithDsp();
       }
     }
+  }
+
+  /// Setzt die Lautstärke eines spezifischen Lautsprechers (z. B. in einer Multiroom-Gruppe)
+  Future<void> setPlayerVolume(PlayerDevice player, int vol) async {
+    player.volume = vol.clamp(0, 100);
+    if (player.isLocal) {
+      await _localAudioPlayer.setVolume(player.volume / 100.0);
+    } else {
+      await _api.playerVolume(player.id, player.volume);
+    }
+    notifyListeners();
   }
 
   Future<void> toggleMute(PlayerDevice player) async {

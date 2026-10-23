@@ -279,182 +279,230 @@ class DevicePickerSheet extends StatelessWidget {
                   final player = prov.players[index];
                   final isCurrent = active?.id == player.id;
                   final isAvail = player.isAvailable;
+                  final isSynced = (player.syncedTo == active?.id) ||
+                      (active != null && active.groupChilds.contains(player.id));
 
                   return Opacity(
                     opacity: isAvail ? 1.0 : 0.45,
                     child: Material(
                       color: Colors.transparent,
-                      child: ListTile(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        leading: Icon(
-                          _iconForType(player.type),
-                          color: isCurrent
-                              ? SpotifyColors.green
-                              : (isAvail ? SpotifyColors.textSecondary : SpotifyColors.textMuted),
-                          size: 24,
-                        ),
-                        title: Text(
-                          player.name,
-                          style: TextStyle(
-                            color: isCurrent
-                                ? SpotifyColors.green
-                                : (isAvail ? Colors.white : SpotifyColors.textSecondary),
-                            fontSize: 15,
-                            fontWeight:
-                                isCurrent ? FontWeight.w700 : FontWeight.w500,
-                          ),
-                        ),
-                        subtitle: Text(
-                          !isAvail
-                              ? 'Nicht erreichbar (Offline)'
-                              : player.isPlaying && player.hasActiveTrack
-                                  ? '▶️ Spielt: ${player.currentTitle} • ${player.currentArtist ?? ""}'
-                                  : player.syncedTo == active?.id
-                                      ? '🔗 Synchronisiert mit ${active?.name}'
-                                      : player.isGroupLeader
-                                          ? '👑 Gruppenleiter (${player.groupChilds.length} Lautsprecher)'
-                                          : player.isLocal
-                                              ? 'Lokaler iPhone-Lautsprecher (Vorschau / Unterwegs)'
-                                              : '${player.type} • Volle Songlänge • DSP Equalizer',
-                          style: TextStyle(
-                            color: isAvail
-                                ? (player.isPlaying && player.hasActiveTrack
-                                    ? SpotifyColors.orange
-                                    : player.syncedTo == active?.id
-                                        ? SpotifyColors.green
-                                        : player.isLocal
-                                            ? SpotifyColors.textSecondary
-                                            : SpotifyColors.green.withValues(alpha: 0.85))
-                                : SpotifyColors.textMuted,
-                            fontSize: 12,
-                          ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (player.isPlaying && !isCurrent)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 4),
-                                child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: SpotifyColors.orange,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 4),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(6),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            leading: Icon(
+                              _iconForType(player.type),
+                              color: isCurrent
+                                  ? SpotifyColors.green
+                                  : (isAvail ? SpotifyColors.textSecondary : SpotifyColors.textMuted),
+                              size: 24,
+                            ),
+                            title: Text(
+                              player.name,
+                              style: TextStyle(
+                                color: isCurrent
+                                    ? SpotifyColors.green
+                                    : (isAvail ? Colors.white : SpotifyColors.textSecondary),
+                                fontSize: 15,
+                                fontWeight:
+                                    isCurrent ? FontWeight.w700 : FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              !isAvail
+                                  ? 'Nicht erreichbar (Offline)'
+                                  : player.isPlaying && player.hasActiveTrack
+                                      ? '▶️ Spielt: ${player.currentTitle} • ${player.currentArtist ?? ""}'
+                                      : isSynced
+                                          ? '🔗 Synchronisiert mit ${active?.name}'
+                                          : player.isGroupLeader
+                                              ? '👑 Gruppenleiter (${player.groupChilds.length} Lautsprecher)'
+                                              : player.isLocal
+                                                  ? 'Lokaler iPhone-Lautsprecher (Vorschau / Unterwegs)'
+                                                  : '${player.type} • Volle Songlänge • DSP Equalizer',
+                              style: TextStyle(
+                                color: isAvail
+                                    ? (player.isPlaying && player.hasActiveTrack
+                                        ? SpotifyColors.orange
+                                        : isSynced
+                                            ? SpotifyColors.green
+                                            : player.isLocal
+                                                ? SpotifyColors.textSecondary
+                                                : SpotifyColors.green.withValues(alpha: 0.85))
+                                    : SpotifyColors.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (player.isPlaying && !isCurrent)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 4),
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: SpotifyColors.orange,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        minimumSize: Size.zero,
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                      ),
+                                      icon: const Icon(Icons.touch_app, size: 12),
+                                      label: const Text(
+                                        'Steuern',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        HapticFeedback.lightImpact();
+                                        prov.takeOverControl(player);
+                                        Navigator.pop(context);
+                                      },
                                     ),
                                   ),
-                                  icon: const Icon(Icons.touch_app, size: 12),
-                                  label: const Text(
-                                    'Steuern',
-                                    style: TextStyle(
+                                if (!player.isLocal &&
+                                    isAvail &&
+                                    active != null &&
+                                    !active.isLocal &&
+                                    !isCurrent)
+                                  IconButton(
+                                    icon: Icon(
+                                      isSynced ? Icons.link : Icons.link_off,
+                                      color: isSynced
+                                          ? SpotifyColors.green
+                                          : SpotifyColors.textSecondary,
+                                      size: 20,
+                                    ),
+                                    tooltip: isSynced
+                                        ? 'Von ${active.name} trennen'
+                                        : 'Mit ${active.name} synchronisieren (Multiroom)',
+                                    onPressed: () {
+                                      HapticFeedback.lightImpact();
+                                      if (isSynced) {
+                                        prov.unsyncSpeaker(player);
+                                      } else {
+                                        prov.syncSpeakerWithActive(player);
+                                      }
+                                    },
+                                  ),
+                                if (!player.isLocal && isAvail)
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.power_settings_new,
+                                      color: player.state != 'idle'
+                                          ? SpotifyColors.green
+                                          : SpotifyColors.textMuted,
+                                      size: 20,
+                                    ),
+                                    tooltip: 'Power an/aus',
+                                    onPressed: () {
+                                      HapticFeedback.lightImpact();
+                                      prov.togglePlayerPower(player);
+                                    },
+                                  ),
+                                if (isAvail)
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.tune,
+                                      color: isCurrent
+                                          ? SpotifyColors.green
+                                          : SpotifyColors.textSecondary,
+                                      size: 18,
+                                    ),
+                                    tooltip: 'DSP für ${player.name}',
+                                    onPressed: () {
+                                      prov.loadDspForPlayer(player.id);
+                                      showModalBottomSheet(
+                                        context: context,
+                                        isScrollControlled: true,
+                                        backgroundColor: Colors.transparent,
+                                        builder: (_) => const EqualizerSheet(),
+                                      );
+                                    },
+                                  ),
+                                if (isCurrent)
+                                  const Icon(Icons.check_circle,
+                                      color: SpotifyColors.green, size: 20),
+                              ],
+                            ),
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              if (player.isPlaying && !isCurrent) {
+                                prov.takeOverControl(player);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        'Steuerung übernommen für: ${player.name}'),
+                                    duration: const Duration(seconds: 1),
+                                    backgroundColor: SpotifyColors.surfaceElevated,
+                                  ),
+                                );
+                              } else {
+                                prov.setActivePlayer(player);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        'Wiedergabe aktiv auf: ${player.name}'),
+                                    duration: const Duration(seconds: 1),
+                                    backgroundColor: SpotifyColors.surfaceElevated,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                          if (isSynced && !isCurrent)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                  left: 54, right: 16, bottom: 8),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.link,
+                                      size: 14, color: SpotifyColors.orange),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Lautstärke (${player.volume}%):',
+                                    style: const TextStyle(
+                                      color: SpotifyColors.orange,
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                  onPressed: () {
-                                    HapticFeedback.lightImpact();
-                                    prov.takeOverControl(player);
-                                    Navigator.pop(context);
-                                  },
-                                ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        activeTrackColor: SpotifyColors.orange,
+                                        inactiveTrackColor:
+                                            SpotifyColors.sliderInactive,
+                                        thumbColor: Colors.white,
+                                        thumbShape: const RoundSliderThumbShape(
+                                            enabledThumbRadius: 5),
+                                        trackHeight: 2.5,
+                                      ),
+                                      child: Slider(
+                                        value: player.volume.toDouble(),
+                                        min: 0,
+                                        max: 100,
+                                        onChanged: (val) {
+                                          prov.setPlayerVolume(
+                                              player, val.toInt());
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            if (!player.isLocal &&
-                                isAvail &&
-                                active != null &&
-                                !active.isLocal &&
-                                !isCurrent)
-                              IconButton(
-                                icon: Icon(
-                                  player.syncedTo == active.id
-                                      ? Icons.link
-                                      : Icons.link_off,
-                                  color: player.syncedTo == active.id
-                                      ? SpotifyColors.green
-                                      : SpotifyColors.textSecondary,
-                                  size: 20,
-                                ),
-                                tooltip: player.syncedTo == active.id
-                                    ? 'Von ${active.name} trennen'
-                                    : 'Mit ${active.name} synchronisieren (Multiroom)',
-                                onPressed: () {
-                                  HapticFeedback.lightImpact();
-                                  if (player.syncedTo == active.id) {
-                                    prov.unsyncSpeaker(player);
-                                  } else {
-                                    prov.syncSpeakerWithActive(player);
-                                  }
-                                },
-                              ),
-                            if (!player.isLocal && isAvail)
-                              IconButton(
-                                icon: Icon(
-                                  Icons.power_settings_new,
-                                  color: player.state != 'idle'
-                                      ? SpotifyColors.green
-                                      : SpotifyColors.textMuted,
-                                  size: 20,
-                                ),
-                                tooltip: 'Power an/aus',
-                                onPressed: () {
-                                  HapticFeedback.lightImpact();
-                                  prov.togglePlayerPower(player);
-                                },
-                              ),
-                            if (isAvail)
-                              IconButton(
-                                icon: Icon(
-                                  Icons.tune,
-                                  color: isCurrent
-                                      ? SpotifyColors.green
-                                      : SpotifyColors.textSecondary,
-                                  size: 18,
-                                ),
-                                tooltip: 'DSP für ${player.name}',
-                                onPressed: () {
-                                  prov.loadDspForPlayer(player.id);
-                                  showModalBottomSheet(
-                                    context: context,
-                                    isScrollControlled: true,
-                                    backgroundColor: Colors.transparent,
-                                    builder: (_) => const EqualizerSheet(),
-                                  );
-                                },
-                              ),
-                            if (isCurrent)
-                              const Icon(Icons.check_circle,
-                                  color: SpotifyColors.green, size: 20),
-                          ],
-                        ),
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          if (player.isPlaying && !isCurrent) {
-                            prov.takeOverControl(player);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                    'Steuerung übernommen für: ${player.name}'),
-                                duration: const Duration(seconds: 1),
-                                backgroundColor: SpotifyColors.surfaceElevated,
-                              ),
-                            );
-                          } else {
-                            prov.setActivePlayer(player);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                    'Wiedergabe aktiv auf: ${player.name}'),
-                                duration: const Duration(seconds: 1),
-                                backgroundColor: SpotifyColors.surfaceElevated,
-                              ),
-                            );
-                          }
-                        },
+                            ),
+                        ],
                       ),
                     ),
                   );

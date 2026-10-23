@@ -145,8 +145,10 @@ class AudiobookDetailScreen extends StatelessWidget {
                       ),
                       onPressed: () {
                         HapticFeedback.heavyImpact();
-                        if (audiobook.chapters.isNotEmpty) {
-                          prov.playTrack(audiobook.chapters.first);
+                        if (isCurrentAudiobook) {
+                          prov.togglePlayPause();
+                        } else if (audiobook.chapters.isNotEmpty) {
+                          prov.playAudiobook(audiobook);
                         }
                       },
                       icon: Icon(
@@ -339,13 +341,17 @@ class AudiobookDetailScreen extends StatelessWidget {
                       if (isPlayingThisChapter) {
                         prov.togglePlayPause();
                       } else {
-                        prov.playTrack(chapter);
+                        prov.playAudiobook(audiobook, chapter: chapter);
                       }
                     },
                   ),
                   onTap: () {
                     HapticFeedback.lightImpact();
-                    prov.playTrack(chapter);
+                    if (isPlayingThisChapter) {
+                      prov.togglePlayPause();
+                    } else {
+                      prov.playAudiobook(audiobook, chapter: chapter);
+                    }
                   },
                 );
               },
