@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
+import 'audio_waveform_scrubber.dart';
 import 'device_picker_sheet.dart';
 import 'equalizer_sheet.dart';
+import 'lyrics_sheet.dart';
 
 class NowPlayingSheet extends StatefulWidget {
   const NowPlayingSheet({super.key});
@@ -16,6 +18,7 @@ class NowPlayingSheet extends StatefulWidget {
 
 class _NowPlayingSheetState extends State<NowPlayingSheet> {
   double? _dragValue;
+  bool _useWaveform = true;
 
   String _formatDuration(Duration d) {
     final m = d.inMinutes;
@@ -182,6 +185,22 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                   ),
                   IconButton(
                     icon: Icon(
+                      _useWaveform ? Icons.graphic_eq : Icons.linear_scale,
+                      color: _useWaveform ? SpotifyColors.green : SpotifyColors.textSecondary,
+                      size: 24,
+                    ),
+                    tooltip: _useWaveform
+                        ? 'Audio Waveform aktiv (Tippen für Balken)'
+                        : 'Balken aktiv (Tippen für Waveform)',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      setState(() {
+                        _useWaveform = !_useWaveform;
+                      });
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(
                       track.isLiked ? Icons.favorite : Icons.favorite_border,
                       color: track.isLiked ? SpotifyColors.green : Colors.white,
                       size: 28,
@@ -196,61 +215,71 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
               const SizedBox(height: 16),
 
-              // Scrubber / Progress Slider
-              SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  activeTrackColor: Colors.white,
-                  inactiveTrackColor: SpotifyColors.sliderInactive,
-                  thumbColor: Colors.white,
-                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                  trackHeight: 3.5,
-                ),
-                child: Slider(
-                  value: (_dragValue ?? sliderVal).clamp(0.0, totalSeconds),
-                  min: 0,
-                  max: totalSeconds,
-                  onChanged: (val) {
-                    setState(() {
-                      _dragValue = val;
-                    });
+              // Scrubber: Audio Waveform oder Klassischer Progress Slider
+              if (_useWaveform)
+                AudioWaveformScrubber(
+                  currentPosition: prov.currentPosition,
+                  totalDuration: prov.totalDuration,
+                  isPlaying: prov.isPlaying,
+                  trackKey: '${track.id}_${track.title}',
+                  onSeek: (pos) {
+                    prov.seekTo(pos);
                   },
-                  onChangeEnd: (val) {
-                    prov.seekTo(Duration(seconds: val.toInt()));
-                    setState(() {
-                      _dragValue = null;
-                    });
-                  },
+                )
+              else ...[
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: Colors.white,
+                    inactiveTrackColor: SpotifyColors.sliderInactive,
+                    thumbColor: Colors.white,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                    trackHeight: 3.5,
+                  ),
+                  child: Slider(
+                    value: (_dragValue ?? sliderVal).clamp(0.0, totalSeconds),
+                    min: 0,
+                    max: totalSeconds,
+                    onChanged: (val) {
+                      setState(() {
+                        _dragValue = val;
+                      });
+                    },
+                    onChangeEnd: (val) {
+                      prov.seekTo(Duration(seconds: val.toInt()));
+                      setState(() {
+                        _dragValue = null;
+                      });
+                    },
+                  ),
                 ),
-              ),
-
-              // Duration labels (0:00 / -3:20)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _formatDuration(_dragValue != null
-                          ? Duration(seconds: _dragValue!.toInt())
-                          : prov.currentPosition),
-                      style: const TextStyle(
-                        color: SpotifyColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _formatDuration(_dragValue != null
+                            ? Duration(seconds: _dragValue!.toInt())
+                            : prov.currentPosition),
+                        style: const TextStyle(
+                          color: SpotifyColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                    Text(
-                      _formatDuration(prov.totalDuration),
-                      style: const TextStyle(
-                        color: SpotifyColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                      Text(
+                        _formatDuration(prov.totalDuration),
+                        style: const TextStyle(
+                          color: SpotifyColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+              ],
 
               const SizedBox(height: 12),
 
@@ -333,6 +362,72 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
               const Spacer(flex: 1),
 
+              // Spotify-Style Lyrics Preview Banner
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  LyricsSheet.show(context, track);
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: SpotifyColors.borderSubtle,
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: SpotifyColors.green.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.lyrics,
+                          color: SpotifyColors.green,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Songtext & Karaoke',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              'Tippen für Live-Mitlesen & Zeilen-Sprung',
+                              style: TextStyle(
+                                color: SpotifyColors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right,
+                        color: SpotifyColors.textSecondary,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
               // Bottom Row: Device selector on left, Queue on right
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -369,6 +464,15 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.lyrics_outlined,
+                            color: SpotifyColors.textSecondary, size: 21),
+                        tooltip: 'Songtext (Lyrics)',
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          LyricsSheet.show(context, track);
+                        },
+                      ),
                       IconButton(
                         icon: Icon(
                           Icons.tune,

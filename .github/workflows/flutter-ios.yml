@@ -139,6 +139,9 @@ jobs:
               - 📱 **`music-assistant.ipa`** (Empfohlen): Bereinigtes Paket für **isideload**, **SideStore**, **AltStore** und kostenlose Apple-Developer-Zertifikate (verhindert den `InvalidCompanionAppBundleIdentifier`-Fehler).
               - ⌚ **`music-assistant-with-watch.ipa`**: Beinhaltet die eingebettete watchOS Companion App für TrollStore oder bezahlte Entwicklerzertifikate.
             * **Features & Highlights**:
+              - 📚 **Hörbücher & Hörspiele (Die drei ???)**: Eigener Hörspiel-Bereich mit Folgen-Übersicht (Der Super-Papagei, Feuermond, Karpatenhund), detaillierter Kapitel-Liste, Sprecher-Cast und Klappentext
+              - 🎤 **Live Synchronisierte Songtexte (Lyrics)**: Spotify-Style Karaoke-Modus mit automatischem Mitscrollen, aktiver Zeilen-Hervorhebung und direktem Zeilensprung per Fingertipp
+              - 🌊 **Interaktiver Audio-Waveform Scrubber**: 48 dynamische Klangwellen-Balken anstelle des flachen Fortschrittsbalkens mit Live-Pulsieren, Haptik und schwebender Zeitlupe
               - 🎨 **Eigenes App-Icon (Spotify Edition)**: Speziell designtes, hochauflösendes iOS App-Icon mit tiefem OLED-Schwarz, konzentrischen Vinyl-Grooves und leuchtend grünem Spotify-Musik-Emblem
               - 🎛️ **Vollständiger Adaptiver Equalizer**: Fletcher-Munson Dynamic Loudness, Genre-Profiling, Akustik-Kompensation, Echtzeit Bezier-Spline-Visualizer und Server-DSP-Sync
               - 🏝️ **Echte Apple Dynamic Island & Live Activities (ActivityKit & WidgetKit)**: Reines natives Apple-Hardware-Widget für iPhone 14 Pro, 15 und 16

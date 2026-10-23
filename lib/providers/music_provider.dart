@@ -4,6 +4,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../models/adaptive_eq_settings.dart';
 import '../models/app_update_info.dart';
+import '../models/audiobook.dart';
 import '../models/dj_voice_settings.dart';
 import '../models/dsp_models.dart';
 import '../models/equalizer_settings.dart';
@@ -45,6 +46,7 @@ class MusicProvider extends ChangeNotifier {
   List<Playlist> _podcasts = [];
   List<Playlist> _albums = [];
   List<Playlist> _artists = [];
+  final List<Audiobook> _audiobooks = Audiobook.sampleAudiobooks;
   List<PlayerDevice> _players = [];
   PlayerDevice? _activePlayer;
   Set<String> _likedTrackIds = {};
@@ -81,6 +83,7 @@ class MusicProvider extends ChangeNotifier {
   List<Playlist> get podcasts => _podcasts;
   List<Playlist> get albums => _albums;
   List<Playlist> get artists => _artists;
+  List<Audiobook> get audiobooks => _audiobooks;
   List<RecommendationRow> get recommendations => _recommendations;
   bool get isLoadingRecommendations => _isLoadingRecommendations;
   List<Track> get searchResultsTracks => _searchResultsTracks;
@@ -802,6 +805,14 @@ class MusicProvider extends ChangeNotifier {
           .toList();
     }
     await playTrack(track, newQueue: newQueue);
+  }
+
+  /// Startet die Wiedergabe eines Hörbuchs / Hörspiels (z. B. Die drei ???)
+  Future<void> playAudiobook(Audiobook book, {int chapterIndex = 0}) async {
+    if (book.chapters.isEmpty) return;
+    final idx = chapterIndex.clamp(0, book.chapters.length - 1);
+    final targetChapter = book.chapters[idx];
+    await playTrack(targetChapter, newQueue: List<Track>.from(book.chapters));
   }
 
   Future<void> playTrack(Track track, {List<Track>? newQueue}) async {

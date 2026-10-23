@@ -5,6 +5,7 @@ import '../models/playlist.dart';
 import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
+import 'audiobook_detail_screen.dart';
 import 'playlist_detail_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -32,6 +33,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final prov = context.watch<MusicProvider>();
     final allPlaylists = prov.playlists;
 
+    final audiobookPlaylists = prov.audiobooks
+        .map((ab) => Playlist(
+              id: ab.id,
+              name: '${ab.series}: ${ab.title}',
+              owner: ab.formattedEpisode,
+              trackCount: ab.chapters.length,
+              imageUrl: ab.imageUrl,
+              type: 'audiobook',
+              tracks: ab.chapters,
+            ))
+        .toList();
+
     // Filter by category
     var filteredPlaylists = _selectedFilter == 'Playlists'
         ? allPlaylists.where((p) => p.type == 'playlist').toList()
@@ -39,7 +52,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ? allPlaylists.where((p) => p.type == 'album').toList()
             : _selectedFilter == 'Künstler'
                 ? allPlaylists.where((p) => p.type == 'artist').toList()
-                : allPlaylists.where((p) => p.type == 'podcast').toList();
+                : _selectedFilter == 'Hörbücher'
+                    ? audiobookPlaylists
+                    : allPlaylists.where((p) => p.type == 'podcast').toList();
 
     // Filter by search query if active
     if (_searchQuery.trim().isNotEmpty) {
@@ -174,6 +189,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     _filterChip('Playlists'),
                     const SizedBox(width: 8),
                     _filterChip('Podcasts'),
+                    const SizedBox(width: 8),
+                    _filterChip('Hörbücher'),
                     const SizedBox(width: 8),
                     _filterChip('Künstler'),
                     const SizedBox(width: 8),
@@ -319,11 +336,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       final p = filteredPlaylists[index];
                       return GestureDetector(
                         onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => PlaylistDetailScreen(playlist: p),
-                            ),
-                          );
+                          if (p.type == 'audiobook') {
+                            final ab = prov.audiobooks.firstWhere(
+                              (a) => a.id == p.id,
+                              orElse: () => prov.audiobooks.first,
+                            );
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AudiobookDetailScreen(audiobook: ab),
+                              ),
+                            );
+                          } else {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => PlaylistDetailScreen(playlist: p),
+                              ),
+                            );
+                          }
                         },
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,11 +411,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     final p = filteredPlaylists[index];
                     return InkWell(
                       onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => PlaylistDetailScreen(playlist: p),
-                          ),
-                        );
+                        if (p.type == 'audiobook') {
+                          final ab = prov.audiobooks.firstWhere(
+                            (a) => a.id == p.id,
+                            orElse: () => prov.audiobooks.first,
+                          );
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => AudiobookDetailScreen(audiobook: ab),
+                            ),
+                          );
+                        } else {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PlaylistDetailScreen(playlist: p),
+                            ),
+                          );
+                        }
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(

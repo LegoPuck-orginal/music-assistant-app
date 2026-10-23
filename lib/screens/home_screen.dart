@@ -6,12 +6,14 @@ import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/album_card.dart';
+import '../widgets/audiobook_card.dart';
 import '../widgets/downloads_sheet.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_edit_dialog.dart';
 import '../widgets/recommendation_card.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/update_dialog.dart';
+import 'audiobook_detail_screen.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
 import 'virtual_dj_screen.dart';
@@ -55,7 +57,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ? allPlaylists
         : _selectedFilter == 'Musik'
             ? allPlaylists.where((p) => p.type != 'podcast').toList()
-            : allPlaylists.where((p) => p.type == 'podcast').toList();
+            : _selectedFilter == 'Podcasts'
+                ? allPlaylists.where((p) => p.type == 'podcast').toList()
+                : <Playlist>[];
 
     return Scaffold(
       backgroundColor: SpotifyColors.pureBlack,
@@ -210,6 +214,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   _buildChip('Musik'),
                   const SizedBox(width: 8),
                   _buildChip('Podcasts'),
+                  const SizedBox(width: 8),
+                  _buildChip('Hörbücher'),
                   const SizedBox(width: 8),
                   _buildChip('Heruntergeladen'),
                 ],
@@ -506,38 +512,76 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
 
-            // Section: Deine Mediathek (Playlists & Alben)
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(
-                context,
-                _selectedFilter == 'Podcasts'
-                    ? 'Deine Podcasts & Shows (${prov.podcasts.length})'
-                    : 'Deine Playlists & Favoriten',
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 215,
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: filteredPlaylists.length,
-                  itemBuilder: (context, index) {
-                    final p = filteredPlaylists[index];
-                    return AlbumCard(
-                      playlist: p,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => PlaylistDetailScreen(playlist: p),
-                          ),
-                        );
-                      },
-                    );
-                  },
+            // Section: Hörspiele & Hörbücher (Die drei ???)
+            if (_selectedFilter == 'Alle' || _selectedFilter == 'Hörbücher') ...[
+              SliverToBoxAdapter(
+                child: _buildSectionHeader(
+                  context,
+                  'Hörspiel-Klassiker: Die drei ???',
                 ),
               ),
-            ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 235,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: prov.audiobooks.length,
+                    itemBuilder: (context, index) {
+                      final ab = prov.audiobooks[index];
+                      return AudiobookCard(
+                        audiobook: ab,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => AudiobookDetailScreen(audiobook: ab),
+                            ),
+                          );
+                        },
+                        onPlay: () {
+                          prov.playAudiobook(ab);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+
+            // Section: Deine Mediathek (Playlists & Alben)
+            if (_selectedFilter != 'Hörbücher') ...[
+              SliverToBoxAdapter(
+                child: _buildSectionHeader(
+                  context,
+                  _selectedFilter == 'Podcasts'
+                      ? 'Deine Podcasts & Shows (${prov.podcasts.length})'
+                      : 'Deine Playlists & Favoriten',
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 215,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: filteredPlaylists.length,
+                    itemBuilder: (context, index) {
+                      final p = filteredPlaylists[index];
+                      return AlbumCard(
+                        playlist: p,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PlaylistDetailScreen(playlist: p),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
 
             if (_selectedFilter != 'Podcasts' && prov.albums.isNotEmpty) ...[
               SliverToBoxAdapter(
