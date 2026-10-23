@@ -600,7 +600,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'v${prov.updateInfo?.currentVersion ?? "1.2.0"} (Build 6)',
+                          'v${prov.updateInfo?.currentVersion ?? "1.10.3"} (Build 22)',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,

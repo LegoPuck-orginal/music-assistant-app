@@ -115,6 +115,9 @@ class Audiobook {
     );
   }
 
+  static const String defaultSampleStream =
+      'https://stream.rockantenne.hamburg/rockantenne-hamburg/stream/mp3';
+
   /// Beliebte Hörspiele & Klassiker von "Die drei ???"
   static List<Audiobook> get sampleAudiobooks => [
         Audiobook(
@@ -138,6 +141,7 @@ class Audiobook {
               durationSeconds: 310,
               imageUrl:
                   'https://images.unsplash.com/photo-1546527868-ccb7ee7dfa6a?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_1_2',
@@ -147,6 +151,7 @@ class Audiobook {
               durationSeconds: 420,
               imageUrl:
                   'https://images.unsplash.com/photo-1546527868-ccb7ee7dfa6a?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_1_3',
@@ -156,6 +161,7 @@ class Audiobook {
               durationSeconds: 490,
               imageUrl:
                   'https://images.unsplash.com/photo-1546527868-ccb7ee7dfa6a?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_1_4',
@@ -165,6 +171,7 @@ class Audiobook {
               durationSeconds: 520,
               imageUrl:
                   'https://images.unsplash.com/photo-1546527868-ccb7ee7dfa6a?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_1_5',
@@ -174,6 +181,7 @@ class Audiobook {
               durationSeconds: 480,
               imageUrl:
                   'https://images.unsplash.com/photo-1546527868-ccb7ee7dfa6a?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_1_6',
@@ -183,6 +191,7 @@ class Audiobook {
               durationSeconds: 520,
               imageUrl:
                   'https://images.unsplash.com/photo-1546527868-ccb7ee7dfa6a?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
           ],
         ),
@@ -207,6 +216,7 @@ class Audiobook {
               durationSeconds: 410,
               imageUrl:
                   'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_11_2',
@@ -216,6 +226,7 @@ class Audiobook {
               durationSeconds: 530,
               imageUrl:
                   'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_11_3',
@@ -225,6 +236,7 @@ class Audiobook {
               durationSeconds: 610,
               imageUrl:
                   'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_11_4',
@@ -234,6 +246,7 @@ class Audiobook {
               durationSeconds: 640,
               imageUrl:
                   'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_11_5',
@@ -243,6 +256,7 @@ class Audiobook {
               durationSeconds: 700,
               imageUrl:
                   'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
           ],
         ),
@@ -267,6 +281,7 @@ class Audiobook {
               durationSeconds: 460,
               imageUrl:
                   'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_3_2',
@@ -276,6 +291,7 @@ class Audiobook {
               durationSeconds: 580,
               imageUrl:
                   'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_3_3',
@@ -285,6 +301,7 @@ class Audiobook {
               durationSeconds: 610,
               imageUrl:
                   'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_3_4',
@@ -294,6 +311,7 @@ class Audiobook {
               durationSeconds: 680,
               imageUrl:
                   'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_3_5',
@@ -303,6 +321,7 @@ class Audiobook {
               durationSeconds: 650,
               imageUrl:
                   'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
           ],
         ),
@@ -327,6 +346,7 @@ class Audiobook {
               durationSeconds: 980,
               imageUrl:
                   'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_125_2',
@@ -336,6 +356,7 @@ class Audiobook {
               durationSeconds: 1120,
               imageUrl:
                   'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_125_3',
@@ -345,6 +366,7 @@ class Audiobook {
               durationSeconds: 1240,
               imageUrl:
                   'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_125_4',
@@ -354,6 +376,7 @@ class Audiobook {
               durationSeconds: 1380,
               imageUrl:
                   'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
             Track(
               id: 'ddf_125_5',
@@ -363,6 +386,7 @@ class Audiobook {
               durationSeconds: 1480,
               imageUrl:
                   'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=600&auto=format&fit=crop&q=80',
+              uri: defaultSampleStream,
             ),
           ],
         ),

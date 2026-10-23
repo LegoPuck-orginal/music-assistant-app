@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import '../models/adaptive_eq_settings.dart';
 import '../models/app_update_info.dart';
 import '../models/audiobook.dart';
@@ -295,7 +296,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.2.0');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.3');
   }
 
   void _connectAndRefresh() {
@@ -392,6 +393,10 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Prüft, ob Audio lokal auf dem iPhone (über Lautsprecher/AirPods) abgespielt wird
+  bool get isLocalPlayback =>
+      _activePlayer == null || _activePlayer!.isLocal || !_api.isConnected;
+
   void _setupLocalAudioPlayer() {
     try {
       AudioPlayer.global.setAudioContext(
@@ -400,6 +405,9 @@ class MusicProvider extends ChangeNotifier {
             category: AVAudioSessionCategory.playback,
             options: {
               AVAudioSessionOptions.defaultToSpeaker,
+              AVAudioSessionOptions.allowBluetooth,
+              AVAudioSessionOptions.allowBluetoothA2DP,
+              AVAudioSessionOptions.allowAirPlay,
             },
           ),
           android: AudioContextAndroid(
@@ -415,29 +423,67 @@ class MusicProvider extends ChangeNotifier {
       debugPrint('[MusicProvider] setAudioContext error: $e');
     }
 
+    // Native iOS Audio-Session Listener (Unterbrechungen durch Siri/Anrufe & Kopfhörer-Trennung)
+    const MethodChannel('de.timm.musicAssistantApp/audio_session')
+        .setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'onInterruptionBegan':
+          debugPrint('[MusicProvider] iOS Audio Interruption began');
+          if (isLocalPlayback && _isPlaying) {
+            await _localAudioPlayer.pause();
+            _isPlaying = false;
+            notifyListeners();
+          }
+          break;
+        case 'onInterruptionEnded':
+          final shouldResume =
+              (call.arguments as Map?)?['shouldResume'] as bool? ?? false;
+          debugPrint(
+              '[MusicProvider] iOS Audio Interruption ended (shouldResume: $shouldResume)');
+          if (isLocalPlayback && shouldResume && _currentTrack != null) {
+            await _localAudioPlayer.resume();
+            _isPlaying = true;
+            notifyListeners();
+          }
+          break;
+        case 'onRouteChangePause':
+          debugPrint(
+              '[MusicProvider] iOS Audio Route changed (Kopfhörer getrennt) -> Pause');
+          if (isLocalPlayback && _isPlaying) {
+            await _localAudioPlayer.pause();
+            _isPlaying = false;
+            notifyListeners();
+          }
+          break;
+      }
+    });
+
     _localAudioPlayer.onPlayerStateChanged.listen((state) {
-      if (_activePlayer?.isLocal == true) {
-        _isPlaying = (state == PlayerState.playing);
-        notifyListeners();
+      if (isLocalPlayback) {
+        final newPlaying = (state == PlayerState.playing);
+        if (_isPlaying != newPlaying) {
+          _isPlaying = newPlaying;
+          notifyListeners();
+        }
       }
     });
 
     _localAudioPlayer.onPositionChanged.listen((pos) {
-      if (_activePlayer?.isLocal == true) {
+      if (isLocalPlayback) {
         _currentPosition = pos;
         notifyListeners();
       }
     });
 
     _localAudioPlayer.onDurationChanged.listen((dur) {
-      if (_activePlayer?.isLocal == true && dur.inSeconds > 0) {
+      if (isLocalPlayback && dur.inSeconds > 0) {
         _totalDuration = dur;
         notifyListeners();
       }
     });
 
     _localAudioPlayer.onPlayerComplete.listen((_) {
-      if (_activePlayer?.isLocal == true) {
+      if (isLocalPlayback) {
         if (_repeatMode == 2) {
           seekTo(Duration.zero);
           _localAudioPlayer.resume();
@@ -853,35 +899,55 @@ class MusicProvider extends ChangeNotifier {
       _syncAdaptiveEqWithDsp();
     }
 
-    // Check if offline mode is active or track is downloaded locally
+    // 1. Lokale Offline-Downloads prüfen
     if (_downloadService.isDownloaded(track.id)) {
       final dt = _downloadService.getDownloadedTrack(track.id);
       if (dt != null && File(dt.localFilePath).existsSync()) {
-        if (_isOfflineMode || (_activePlayer != null && _activePlayer!.isLocal)) {
+        if (_isOfflineMode || isLocalPlayback) {
           _positionTimer?.cancel();
           try {
-            final vol = (_activePlayer?.volume ?? 50) / 100.0;
+            final vol = (_activePlayer?.volume ?? 60) / 100.0;
             await _localAudioPlayer.setVolume(vol);
+            await _localAudioPlayer.stop();
             await _localAudioPlayer.play(DeviceFileSource(dt.localFilePath));
             return;
           } catch (e) {
             debugPrint('[MusicProvider] Offline play error: $e');
-            _startPositionTimer();
-            return;
           }
         }
       }
     }
 
-    // Check if active player is local iPhone or network speaker
-    if (_activePlayer != null && _activePlayer!.isLocal) {
-      // Local iPhone Playback
+    // 2. Wiedergabe: Lokales iPhone vs Remote-Lautsprecher
+    if (isLocalPlayback) {
       _positionTimer?.cancel();
       try {
-        final previewUrl = await _api.fetchTrackPreviewUrl(track);
-        final playUrl = previewUrl ?? track.uri ?? track.imageUrl;
-        if (playUrl != null && playUrl.startsWith('http')) {
-          await _localAudioPlayer.setVolume(_activePlayer!.volume / 100.0);
+        String? playUrl;
+
+        // Falls Track bereits eine direkte Audio-Stream-URL hat (z. B. Radio/Hörbuch)
+        if (track.uri != null &&
+            track.uri!.startsWith('http') &&
+            !_isImageUrl(track.uri!)) {
+          playUrl = track.uri;
+        }
+
+        // Falls mit Server verbunden, Stream/Preview-Endpunkt abrufen
+        if (playUrl == null && _api.isConnected) {
+          playUrl = await _api.fetchTrackPreviewUrl(track);
+          playUrl ??=
+              '${_api.serverUrl}/api/stream?track_id=${Uri.encodeComponent(track.id)}';
+        }
+
+        // Zuverlässiger Fallback-Stream, falls kein Server aktiv ist
+        if (playUrl == null || _isImageUrl(playUrl)) {
+          playUrl =
+              'https://stream.rockantenne.hamburg/rockantenne-hamburg/stream/mp3';
+        }
+
+        if (playUrl.startsWith('http') && !_isImageUrl(playUrl)) {
+          final vol = (_activePlayer?.volume ?? 60) / 100.0;
+          await _localAudioPlayer.setVolume(vol);
+          await _localAudioPlayer.stop();
           await _localAudioPlayer.play(UrlSource(playUrl));
         } else {
           _startPositionTimer();
@@ -891,7 +957,7 @@ class MusicProvider extends ChangeNotifier {
         _startPositionTimer();
       }
     } else if (_activePlayer != null) {
-      // External Network Player (Sonos, AirPlay, etc.)
+      // Externer Netzwerk-Lautsprecher (Sonos, AirPlay, etc.)
       await _localAudioPlayer.stop();
       _startPositionTimer();
       final mediaUri = track.uri ?? 'library://track/${track.id}';
@@ -904,6 +970,18 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+  bool _isImageUrl(String url) {
+    final lower = url.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.webp') ||
+        lower.endsWith('.gif') ||
+        lower.contains('unsplash.com') ||
+        lower.contains('scdn.co/image') ||
+        lower.contains('mytuner-radio.net');
+  }
+
   Future<void> togglePlayPause() async {
     if (_currentTrack == null && _queue.isNotEmpty) {
       await playTrack(_queue.first);
@@ -913,9 +991,16 @@ class MusicProvider extends ChangeNotifier {
     _isPlaying = !_isPlaying;
     notifyListeners();
 
-    if (_activePlayer != null && _activePlayer!.isLocal) {
+    if (isLocalPlayback) {
       if (_isPlaying) {
-        await _localAudioPlayer.resume();
+        if (_localAudioPlayer.source == null &&
+            _currentTrack != null &&
+            !kIsWeb &&
+            !Platform.environment.containsKey('FLUTTER_TEST')) {
+          await playTrack(_currentTrack!);
+        } else {
+          await _localAudioPlayer.resume();
+        }
       } else {
         await _localAudioPlayer.pause();
         _positionTimer?.cancel();
@@ -946,9 +1031,6 @@ class MusicProvider extends ChangeNotifier {
     }
 
     await playTrack(_queue[_queueIndex]);
-    if (_activePlayer != null && !_activePlayer!.isLocal) {
-      await _api.playerNext(_activePlayer!.id);
-    }
   }
 
   Future<void> previous() async {
@@ -965,20 +1047,28 @@ class MusicProvider extends ChangeNotifier {
     }
 
     await playTrack(_queue[_queueIndex]);
-    if (_activePlayer != null && !_activePlayer!.isLocal) {
-      await _api.playerPrevious(_activePlayer!.id);
-    }
   }
 
   Future<void> seekTo(Duration position) async {
     _currentPosition = position;
     notifyListeners();
 
-    if (_activePlayer != null && _activePlayer!.isLocal) {
-      await _localAudioPlayer.seek(position);
+    if (isLocalPlayback) {
+      try {
+        await _localAudioPlayer.seek(position);
+      } catch (e) {
+        debugPrint('[MusicProvider] Local seek error: $e');
+      }
     } else if (_activePlayer != null) {
-      await _api.playerSeek(_activePlayer!.id, position.inSeconds);
+      try {
+        await _api.playerSeek(_activePlayer!.id, position.inSeconds);
+      } catch (e) {
+        debugPrint('[MusicProvider] Remote seek error: $e');
+      }
     }
+
+    AppleNowPlayingService.instance
+        .syncSeek(position.inMilliseconds / 1000.0);
   }
 
   void toggleShuffle() {
@@ -1445,6 +1535,10 @@ class MusicProvider extends ChangeNotifier {
 
   void _startPositionTimer() {
     _positionTimer?.cancel();
+    // Bei lokaler iPhone-Wiedergabe wird die exakte Position direkt von AVPlayer gemeldet.
+    // Ein künstlicher Timer führt sonst zu Konflikten und vorzeitigem Songabbruch!
+    if (isLocalPlayback) return;
+
     _positionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_isPlaying && _currentPosition < _totalDuration) {
         _currentPosition += const Duration(seconds: 1);

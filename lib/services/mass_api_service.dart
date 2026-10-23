@@ -865,6 +865,8 @@ class MassApiService {
   }
 
   List<Track> getFallbackTracks() {
+    const defaultStream =
+        'https://stream.rockantenne.hamburg/rockantenne-hamburg/stream/mp3';
     return [
       Track(
         id: 'fallback_t1',
@@ -874,6 +876,7 @@ class MassApiService {
         durationSeconds: 184,
         imageUrl:
             'https://i.scdn.co/image/ab67616d0000b273a258468313208cf24cacab81',
+        uri: defaultStream,
       ),
       Track(
         id: 'fallback_t2',
@@ -883,6 +886,7 @@ class MassApiService {
         durationSeconds: 300,
         imageUrl:
             'https://static.mytuner-radio.net/media/tvos_radios/383/rock-antenne-hamburg.81109563.jpg',
+        uri: defaultStream,
       ),
       Track(
         id: 'fallback_t3',
@@ -892,6 +896,7 @@ class MassApiService {
         durationSeconds: 243,
         imageUrl:
             'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80',
+        uri: defaultStream,
       ),
       Track(
         id: 'fallback_t4',
@@ -901,6 +906,7 @@ class MassApiService {
         durationSeconds: 200,
         imageUrl:
             'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&q=80',
+        uri: defaultStream,
       ),
     ];
   }

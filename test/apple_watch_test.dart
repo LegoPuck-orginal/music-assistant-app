@@ -24,6 +24,20 @@ void main() {
         .setMockMethodCallHandler(channelPlayer, (MethodCall methodCall) async {
       return 1;
     });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('de.timm.musicAssistantApp/apple_now_playing'),
+      (MethodCall call) async {
+        return true;
+      },
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('de.timm.musicAssistantApp/live_activity'),
+      (MethodCall call) async {
+        return true;
+      },
+    );
   });
 
   group('Apple Watch & WatchConnectivity Tests', () {

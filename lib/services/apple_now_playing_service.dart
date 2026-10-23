@@ -100,9 +100,10 @@ class AppleNowPlayingService {
 
       final signature =
           '$title-$artist-$album-$isPlaying-${durSeconds.toInt()}';
-      if (signature != _lastSignature) {
-        _lastSignature = signature;
+      if (signature == _lastSignature) {
+        return;
       }
+      _lastSignature = signature;
 
       await _channel.invokeMethod('updateNowPlaying', {
         'title': title,
@@ -116,6 +117,24 @@ class AppleNowPlayingService {
     } catch (e) {
       debugPrint('[AppleNowPlayingService] sync error: $e');
     }
+  }
+
+  /// Synchronisiert eine manuelle Scrubbing/Seek-Position
+  Future<void> syncSeek(double posSeconds) async {
+    final track = _provider?.currentTrack;
+    if (track == null) return;
+    try {
+      await _channel.invokeMethod('updateNowPlaying', {
+        'title': track.title,
+        'artist': track.artist,
+        'album': track.album,
+        'durationSeconds':
+            (_provider?.totalDuration.inMilliseconds ?? 0) / 1000.0,
+        'positionSeconds': posSeconds,
+        'isPlaying': _provider?.isPlaying ?? false,
+        'artworkUrl': track.imageUrl ?? '',
+      });
+    } catch (_) {}
   }
 
   /// Leert die Now-Playing-Anzeige

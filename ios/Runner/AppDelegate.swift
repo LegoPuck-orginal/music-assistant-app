@@ -13,16 +13,12 @@ import ActivityKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Enable background audio session playback
-    do {
-      try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
-      try AVAudioSession.sharedInstance().setActive(true)
-    } catch {
-      print("[AppDelegate] Failed to set AVAudioSession category: \(error)")
-    }
+    // Enable background audio session playback with Bluetooth, AirPlay, and speaker routing
+    AudioSessionManager.shared.configureAudioSession()
     application.beginReceivingRemoteControlEvents()
 
     if let controller = window?.rootViewController as? FlutterViewController {
+      AudioSessionManager.shared.setup(with: controller.binaryMessenger)
       WatchSessionManager.shared.setup(with: controller.binaryMessenger)
       NativeTtsManager.shared.setup(with: controller.binaryMessenger)
       AppleNowPlayingManager.shared.setup(with: controller.binaryMessenger)
@@ -39,6 +35,9 @@ import ActivityKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AudioSessionManager") {
+      AudioSessionManager.shared.setup(with: registrar.messenger())
+    }
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "WatchSessionManager") {
       WatchSessionManager.shared.setup(with: registrar.messenger())
     }
@@ -273,14 +272,128 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
   // MARK: - AVSpeechSynthesizerDelegate
 
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    restoreAudioSession()
     DispatchQueue.main.async { [weak self] in
       self?.channel?.invokeMethod("onSpeechFinished", arguments: nil)
     }
   }
 
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+    restoreAudioSession()
     DispatchQueue.main.async { [weak self] in
       self?.channel?.invokeMethod("onSpeechCancelled", arguments: nil)
+    }
+  }
+
+  private func restoreAudioSession() {
+    AudioSessionManager.shared.configureAudioSession()
+  }
+}
+
+// MARK: - Native iOS Audio Session Manager (Interruption, Route Changes, Bluetooth & AirPods)
+
+class AudioSessionManager: NSObject {
+  static let shared = AudioSessionManager()
+  private var channel: FlutterMethodChannel?
+  private var isConfigured = false
+
+  private override init() {
+    super.init()
+  }
+
+  func setup(with messenger: FlutterBinaryMessenger) {
+    if isConfigured { return }
+    isConfigured = true
+
+    channel = FlutterMethodChannel(name: "de.timm.musicAssistantApp/audio_session", binaryMessenger: messenger)
+    channel?.setMethodCallHandler { (call, result) in
+      if call.method == "activateSession" {
+        self.configureAudioSession()
+        result(true)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    configureAudioSession()
+    setupNotifications()
+  }
+
+  func configureAudioSession() {
+    do {
+      let session = AVAudioSession.sharedInstance()
+      try session.setCategory(
+        .playback,
+        mode: .default,
+        options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay, .defaultToSpeaker]
+      )
+      try session.setActive(true)
+    } catch {
+      print("[AudioSessionManager] configureAudioSession error: \(error)")
+    }
+  }
+
+  private func setupNotifications() {
+    NotificationCenter.default.removeObserver(self)
+
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleInterruption),
+      name: AVAudioSession.interruptionNotification,
+      object: AVAudioSession.sharedInstance()
+    )
+
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleRouteChange),
+      name: AVAudioSession.routeChangeNotification,
+      object: AVAudioSession.sharedInstance()
+    )
+  }
+
+  @objc private func handleInterruption(notification: Notification) {
+    guard let userInfo = notification.userInfo,
+          let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+          let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+      return
+    }
+
+    switch type {
+    case .began:
+      DispatchQueue.main.async { [weak self] in
+        self?.channel?.invokeMethod("onInterruptionBegan", arguments: nil)
+      }
+    case .ended:
+      var shouldResume = false
+      if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+        let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+        shouldResume = options.contains(.shouldResume)
+      }
+      DispatchQueue.main.async { [weak self] in
+        self?.configureAudioSession()
+        self?.channel?.invokeMethod("onInterruptionEnded", arguments: ["shouldResume": shouldResume])
+      }
+    @unknown default:
+      break
+    }
+  }
+
+  @objc private func handleRouteChange(notification: Notification) {
+    guard let userInfo = notification.userInfo,
+          let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+          let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+      return
+    }
+
+    switch reason {
+    case .oldDeviceUnavailable:
+      DispatchQueue.main.async { [weak self] in
+        self?.channel?.invokeMethod("onRouteChangePause", arguments: nil)
+      }
+    case .newDeviceAvailable:
+      configureAudioSession()
+    default:
+      break
     }
   }
 }
