@@ -242,6 +242,9 @@ class DevicePickerSheet extends StatelessWidget {
                                 onChanged: (val) {
                                   prov.setVolume(val.toInt());
                                 },
+                                onChangeEnd: (val) {
+                                  prov.flushVolume(active.id);
+                                },
                               ),
                             ),
                           ),
@@ -495,6 +498,9 @@ class DevicePickerSheet extends StatelessWidget {
                                         onChanged: (val) {
                                           prov.setPlayerVolume(
                                               player, val.toInt());
+                                        },
+                                        onChangeEnd: (val) {
+                                          prov.flushVolume(player.id);
                                         },
                                       ),
                                     ),

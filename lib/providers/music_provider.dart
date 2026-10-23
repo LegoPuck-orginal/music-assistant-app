@@ -54,6 +54,10 @@ class MusicProvider extends ChangeNotifier {
   Set<String> _likedTrackIds = {};
   Timer? _positionTimer;
   Timer? _playerPollTimer;
+  final Map<String, int> _pendingTargetVolumes = {};
+  final Map<String, Timer> _volumeDebounceTimers = {};
+  final Map<String, DateTime> _lastVolumeSentTimes = {};
+  Timer? _adaptiveEqDebounceTimer;
   String _serverUrl = 'http://homeassistant.local:8095';
   String _authToken = '';
   bool _isInitialized = false;
@@ -199,7 +203,7 @@ class MusicProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
   bool get hasCompletedWelcomeGuide => _hasCompletedWelcomeGuide;
-  String get appVersion => '1.10.6';
+  String get appVersion => '1.10.7';
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
@@ -350,7 +354,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.6');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.7');
   }
 
   void _connectAndRefresh() {
@@ -386,6 +390,16 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+  bool _isVolumeRecentlyAdjusted(String playerId) {
+    if (_volumeDebounceTimers.containsKey(playerId)) return true;
+    final lastSent = _lastVolumeSentTimes[playerId];
+    if (lastSent != null &&
+        DateTime.now().difference(lastSent) < const Duration(milliseconds: 500)) {
+      return true;
+    }
+    return false;
+  }
+
   /// Fragt im Hintergrund aktiv den Status aller Lautsprecher ab, um aktive Wiedergabe sofort zu erkennen
   Future<void> _pollPlayersStatus() async {
     try {
@@ -395,23 +409,29 @@ class MusicProvider extends ChangeNotifier {
       bool changed = false;
       for (final rp in remotePlayers) {
         final idx = _players.indexWhere((p) => p.id == rp.id);
+        final isAdjusting = _isVolumeRecentlyAdjusted(rp.id);
+        final effectiveVolume = isAdjusting
+            ? ((idx != -1) ? _players[idx].volume : rp.volume)
+            : rp.volume;
+        final rpEffective = rp.copyWith(volume: effectiveVolume);
+
         if (idx != -1) {
           final existing = _players[idx];
           if (existing.state != rp.state ||
               existing.currentTitle != rp.currentTitle ||
-              existing.volume != rp.volume ||
+              (!isAdjusting && existing.volume != rp.volume) ||
               existing.syncedTo != rp.syncedTo) {
-            _players[idx] = rp.copyWith(isSelected: existing.isSelected);
+            _players[idx] = rpEffective.copyWith(isSelected: existing.isSelected);
             changed = true;
           }
         } else {
-          _players.insert(0, rp);
+          _players.insert(0, rpEffective);
           changed = true;
         }
 
         // Falls dies der aktive Lautsprecher ist, Titel & Position angleichen
         if (_activePlayer?.id == rp.id) {
-          _activePlayer = rp.copyWith(isSelected: true);
+          _activePlayer = rpEffective.copyWith(isSelected: true);
           if (rp.hasActiveTrack && _currentTrack?.title != rp.currentTitle) {
             _currentTrack = Track(
               id: rp.id,
@@ -636,10 +656,12 @@ class MusicProvider extends ChangeNotifier {
         final currentUri = currentMedia?['uri']?.toString();
 
         // Update matching player in list with full playback metadata
+        final isAdjusting = playerId != null && _isVolumeRecentlyAdjusted(playerId);
         for (int i = 0; i < _players.length; i++) {
           if (_players[i].id == playerId) {
+            final effectiveVolume = isAdjusting ? _players[i].volume : (volume ?? _players[i].volume);
             _players[i] = _players[i].copyWith(
-              volume: volume,
+              volume: effectiveVolume,
               state: state,
               syncedTo: syncedTo,
               groupChilds: groupChilds,
@@ -659,8 +681,9 @@ class MusicProvider extends ChangeNotifier {
           if (state != null) {
             _isPlaying = (state == 'playing');
           }
+          final effectiveVolume = isAdjusting ? _activePlayer!.volume : (volume ?? _activePlayer!.volume);
           _activePlayer = _activePlayer!.copyWith(
-            volume: volume,
+            volume: effectiveVolume,
             state: state,
             syncedTo: syncedTo,
             groupChilds: groupChilds,
@@ -1356,28 +1379,81 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> setVolume(int vol) async {
     if (_activePlayer != null) {
-      _activePlayer!.volume = vol.clamp(0, 100);
+      final clamped = vol.clamp(0, 100);
+      _activePlayer!.volume = clamped;
       if (_activePlayer!.isLocal) {
-        await _localAudioPlayer.setVolume(_activePlayer!.volume / 100.0);
+        await _localAudioPlayer.setVolume(clamped / 100.0);
       } else {
-        await _api.playerVolume(_activePlayer!.id, _activePlayer!.volume);
+        _dispatchThrottledVolume(_activePlayer!.id, clamped);
       }
       notifyListeners();
       if (_adaptiveEqSettings.isEnabled) {
-        _syncAdaptiveEqWithDsp();
+        _scheduleAdaptiveEqSync();
       }
     }
   }
 
   /// Setzt die Lautstärke eines spezifischen Lautsprechers (z. B. in einer Multiroom-Gruppe)
   Future<void> setPlayerVolume(PlayerDevice player, int vol) async {
-    player.volume = vol.clamp(0, 100);
+    final clamped = vol.clamp(0, 100);
+    player.volume = clamped;
     if (player.isLocal) {
-      await _localAudioPlayer.setVolume(player.volume / 100.0);
+      await _localAudioPlayer.setVolume(clamped / 100.0);
     } else {
-      await _api.playerVolume(player.id, player.volume);
+      _dispatchThrottledVolume(player.id, clamped);
     }
     notifyListeners();
+  }
+
+  /// Sendet sofort den ausstehenden Lautstärkebefehl (z. B. beim Loslassen des Sliders onChangeEnd)
+  void flushVolume(String playerId) {
+    _volumeDebounceTimers[playerId]?.cancel();
+    _volumeDebounceTimers.remove(playerId);
+    final pending = _pendingTargetVolumes[playerId];
+    if (pending != null) {
+      _sendVolumeCommand(playerId, pending);
+    }
+  }
+
+  void _dispatchThrottledVolume(String playerId, int volume) {
+    _pendingTargetVolumes[playerId] = volume;
+    final now = DateTime.now();
+    final lastSent = _lastVolumeSentTimes[playerId] ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final elapsed = now.difference(lastSent);
+    const throttleWindow = Duration(milliseconds: 80);
+
+    if (elapsed >= throttleWindow) {
+      _volumeDebounceTimers[playerId]?.cancel();
+      _volumeDebounceTimers.remove(playerId);
+      _sendVolumeCommand(playerId, volume);
+    } else {
+      if (_volumeDebounceTimers[playerId] == null) {
+        final waitTime = throttleWindow - elapsed;
+        _volumeDebounceTimers[playerId] = Timer(waitTime, () {
+          _volumeDebounceTimers.remove(playerId);
+          final pending = _pendingTargetVolumes[playerId];
+          if (pending != null) {
+            _sendVolumeCommand(playerId, pending);
+          }
+        });
+      }
+    }
+  }
+
+  void _sendVolumeCommand(String playerId, int volume) {
+    _lastVolumeSentTimes[playerId] = DateTime.now();
+    _api.playerVolume(playerId, volume).catchError((e) {
+      debugPrint('[MusicProvider] sendVolumeCommand error for $playerId: $e');
+    });
+  }
+
+  void _scheduleAdaptiveEqSync() {
+    _adaptiveEqDebounceTimer?.cancel();
+    _adaptiveEqDebounceTimer = Timer(const Duration(milliseconds: 600), () {
+      if (_adaptiveEqSettings.isEnabled) {
+        _syncAdaptiveEqWithDsp();
+      }
+    });
   }
 
   Future<void> toggleMute(PlayerDevice player) async {
@@ -1524,13 +1600,19 @@ class MusicProvider extends ChangeNotifier {
     if (peq == null || peq.bands.isEmpty) return;
 
     final updatedBands = List<DspBand>.from(peq.bands);
+    bool hasMeaningfulGainChange = false;
     for (int i = 0; i < updatedBands.length && i < deltas.length; i++) {
       final baseGain = (i < _equalizerSettings.bandGains.length)
           ? _equalizerSettings.bandGains[i]
           : updatedBands[i].gain;
       final effectiveGain = (baseGain + deltas[i]).clamp(-12.0, 12.0);
+      if ((updatedBands[i].gain - effectiveGain).abs() > 0.05) {
+        hasMeaningfulGainChange = true;
+      }
       updatedBands[i] = updatedBands[i].copyWith(gain: effectiveGain);
     }
+
+    if (!hasMeaningfulGainChange) return;
 
     final updatedFilters = List<DspFilter>.from(_dspConfig!.filters);
     final peqIndex = updatedFilters.indexWhere((f) => f.type == 'parametric_eq');
@@ -1800,6 +1882,11 @@ class MusicProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _adaptiveEqDebounceTimer?.cancel();
+    for (final timer in _volumeDebounceTimers.values) {
+      timer.cancel();
+    }
+    _volumeDebounceTimers.clear();
     _djSpeechTimer?.cancel();
     _djSpeechSub?.cancel();
     _djService.dispose();

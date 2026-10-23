@@ -14,6 +14,9 @@ class WatchService {
   MusicProvider? _provider;
   bool _isInitialized = false;
   String _lastSyncedSignature = '';
+  String _lastNonVolumeSignature = '';
+  Timer? _watchDebounceTimer;
+  DateTime _lastWatchSyncTime = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Registriert den MusicProvider und initialisiert den MethodChannel-Handler
   void init(MusicProvider provider) {
@@ -86,12 +89,47 @@ class WatchService {
       final volume = selectedPlayer?.volume ?? 50;
       final vibeTitle = provider.currentDjVibe.title;
 
-      final signature =
-          '${currentTrack?.uri}_${isPlaying}_${volume}_${selectedPlayer?.id}_$vibeTitle';
-      if (signature == _lastSyncedSignature) {
+      final nonVolumeSignature =
+          '${currentTrack?.uri}_${isPlaying}_${selectedPlayer?.id}_$vibeTitle';
+      final fullSignature = '${nonVolumeSignature}_$volume';
+
+      if (fullSignature == _lastSyncedSignature) {
         return;
       }
-      _lastSyncedSignature = signature;
+
+      // Wenn sich nur die Lautstärke geändert hat, drosseln wir die Übertragung an die Watch auf max. 3x/Sekunde
+      final isOnlyVolumeChange =
+          (nonVolumeSignature == _lastNonVolumeSignature && _lastSyncedSignature.isNotEmpty);
+      _lastNonVolumeSignature = nonVolumeSignature;
+      _lastSyncedSignature = fullSignature;
+
+      if (isOnlyVolumeChange) {
+        final elapsed = DateTime.now().difference(_lastWatchSyncTime);
+        const minInterval = Duration(milliseconds: 350);
+        if (elapsed < minInterval) {
+          _watchDebounceTimer?.cancel();
+          _watchDebounceTimer = Timer(minInterval - elapsed, () {
+            _dispatchSync(provider);
+          });
+          return;
+        }
+      }
+
+      _watchDebounceTimer?.cancel();
+      await _dispatchSync(provider);
+    } catch (_) {
+      // PlatformException auf Simulatoren oder Nicht-iOS Umgebungen ignorieren
+    }
+  }
+
+  Future<void> _dispatchSync(MusicProvider provider) async {
+    try {
+      _lastWatchSyncTime = DateTime.now();
+      final currentTrack = provider.currentTrack;
+      final selectedPlayer = provider.activePlayer;
+      final isPlaying = provider.isPlaying;
+      final volume = selectedPlayer?.volume ?? 50;
+      final vibeTitle = provider.currentDjVibe.title;
 
       final speakersData = provider.players.map((p) => {
         'id': p.id,
