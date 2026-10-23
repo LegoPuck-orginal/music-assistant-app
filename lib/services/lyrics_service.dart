@@ -4,11 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/lyric_line.dart';
 import '../models/track.dart';
+import 'mass_api_service.dart';
 
 /// Service zur Bereitstellung und Synchronisation von Songtexten (Lyrics)
 /// im Spotify-Stil mit zeitgestempelter Zeilen-Hervorhebung (Karaoke / Synced LRC).
-/// Unterstützt echte synchronisierte Songtexte über die offene LRCLIB-API sowie
-/// kuratierte Hörspiel-Inhalte für Die drei ???.
+/// Fragt prioritär den Music Assistant Server ab (metadata/get_track_lyrics),
+/// nutzt LRCLIB als weltweiten Synced-Lyrics-Katalog und verhindert Fake-Texte.
 class LyricsService {
   static final LyricsService _instance = LyricsService._internal();
   factory LyricsService() => _instance;
@@ -31,8 +32,10 @@ class LyricsService {
   }
 
   /// Ruft echte synchronisierte Songtexte für einen Track ab
-  Future<List<LyricLine>> getLyricsForTrack(Track track) async {
-    final cacheKey = '${track.artist.toLowerCase()} - ${track.title.toLowerCase()}';
+  Future<List<LyricLine>> getLyricsForTrack(Track track,
+      {MassApiService? api}) async {
+    final cacheKey =
+        '${track.artist.toLowerCase().trim()} - ${track.title.toLowerCase().trim()}';
     if (_cache.containsKey(cacheKey)) {
       return _cache[cacheKey]!;
     }
@@ -40,7 +43,48 @@ class LyricsService {
     final title = track.title.toLowerCase();
     final artist = track.artist.toLowerCase();
 
-    // 1. Spezieller Hörspiel-Songtext für Die drei ???
+    // 1. Eingebettete Lyrics aus dem Track-Metadata-Objekt des Servers
+    if (track.lrcLyrics != null && track.lrcLyrics!.trim().isNotEmpty) {
+      final lines = parseLrc(track.lrcLyrics!);
+      if (lines.isNotEmpty) {
+        _cache[cacheKey] = lines;
+        return lines;
+      }
+    }
+    if (track.plainLyrics != null && track.plainLyrics!.trim().isNotEmpty) {
+      final lines = _spacePlainLyrics(track.plainLyrics!, track.durationSeconds);
+      if (lines.isNotEmpty) {
+        _cache[cacheKey] = lines;
+        return lines;
+      }
+    }
+
+    // 2. Music Assistant Server API (metadata/get_track_lyrics)
+    if (api != null && api.isConnected) {
+      try {
+        final serverLyrics = await api.fetchTrackLyrics(track);
+        if (serverLyrics != null && serverLyrics.trim().isNotEmpty) {
+          if (serverLyrics.contains('[') &&
+              RegExp(r'\[\d{1,2}:\d{2}').hasMatch(serverLyrics)) {
+            final lines = parseLrc(serverLyrics);
+            if (lines.isNotEmpty) {
+              _cache[cacheKey] = lines;
+              return lines;
+            }
+          }
+          final lines =
+              _spacePlainLyrics(serverLyrics, track.durationSeconds);
+          if (lines.isNotEmpty) {
+            _cache[cacheKey] = lines;
+            return lines;
+          }
+        }
+      } catch (e) {
+        debugPrint('[LyricsService] Mass API get_track_lyrics error: $e');
+      }
+    }
+
+    // 3. Hörspiel-Songtext für Die drei ??? Intro
     if (title.contains('drei ???') ||
         artist.contains('drei ???') ||
         track.album.toLowerCase().contains('drei ???') ||
@@ -51,13 +95,13 @@ class LyricsService {
       return res;
     }
 
-    // 2. Bekannte kuratierte Hits
+    // 4. Bekannte kuratierte Hits
     if (title.contains('bohemian rhapsody') && artist.contains('queen')) {
       _cache[cacheKey] = _bohemianRhapsodyLyrics;
       return _bohemianRhapsodyLyrics;
     }
 
-    // 3. Echte synchronisierte Songtexte von der offenen LRCLIB API abrufen
+    // 5. Echte synchronisierte Songtexte von der offenen LRCLIB API abrufen
     try {
       final realLyrics = await _fetchFromLrclib(track);
       if (realLyrics.isNotEmpty) {
@@ -68,43 +112,64 @@ class LyricsService {
       debugPrint('[LyricsService] LRCLIB fetch error: $e');
     }
 
-    // 4. Fallback: Dynamische musikalisch getaktete Verse
-    final fallback = _generateDynamicLyrics(track);
-    _cache[cacheKey] = fallback;
-    return fallback;
+    // 6. Kein Fake-Text! Wenn keine Lyrics existieren, leere Liste zurückgeben,
+    // damit das UI einen ehrlichen, sauberen Hinweis anzeigt.
+    _cache[cacheKey] = [];
+    return [];
   }
 
   /// Bereinigt Songtitel von störenden Zusätzen wie "(Remastered 2011)" für bessere Trefferquote
   String _cleanTrackTitle(String title) {
     var cleaned = title;
-    cleaned = cleaned.replaceAll(RegExp(r'\s*[\(\[](?:feat\.|ft\.|remastered|live|mono|deluxe|version|edit|explicit)[^\)\]]*[\)\]]', caseSensitive: false), '');
-    cleaned = cleaned.replaceAll(RegExp(r'\s*-\s*(?:remastered|live|radio edit|bonus track).*', caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(
+        RegExp(
+            r'\s*[\(\[](?:feat\.|ft\.|remastered|live|mono|deluxe|version|edit|explicit|radio edit|20\d\d|19\d\d)[^\)\]]*[\)\]]',
+            caseSensitive: false),
+        '');
+    cleaned = cleaned.replaceAll(
+        RegExp(r'\s*-\s*(?:remastered|live|radio edit|bonus track).*',
+            caseSensitive: false),
+        '');
     return cleaned.trim();
+  }
+
+  /// Extrahiert den primären Künstler bei Feature-Songs ("The Weeknd, Daft Punk" -> "The Weeknd")
+  String _getPrimaryArtist(String artist) {
+    final split = artist.split(RegExp(
+        r'[,;&/]|\sfeat\.|\sft\.|\svs\.|\swith\s',
+        caseSensitive: false));
+    return split.isNotEmpty ? split.first.trim() : artist.trim();
   }
 
   /// Fragt die LRCLIB REST-API nach echten synchronisierten Texten ab
   Future<List<LyricLine>> _fetchFromLrclib(Track track) async {
     final cleanTitle = _cleanTrackTitle(track.title);
-    final cleanArtist = track.artist.trim();
-    if (cleanTitle.isEmpty || cleanArtist.isEmpty) return [];
+    final fullArtist = track.artist.trim();
+    final primaryArtist = _getPrimaryArtist(fullArtist);
 
-    const userAgent = 'MusicAssistantApp/1.10.7 (https://github.com/LegoPuck-orginal/music-assistant-app)';
+    if (cleanTitle.isEmpty) return [];
+
+    const userAgent =
+        'MusicAssistantApp/1.10.8 (https://github.com/LegoPuck-orginal/music-assistant-app)';
     final headers = {'User-Agent': userAgent};
 
-    // Versuch 1: Exakte Suche mit /api/get
+    // Versuch 1: Exakte Suche mit /api/get (cleanTitle + primaryArtist)
     try {
-      final queryParams = {
+      final queryParams = <String, String>{
         'track_name': cleanTitle,
-        'artist_name': cleanArtist,
+        if (primaryArtist.isNotEmpty) 'artist_name': primaryArtist,
       };
       if (track.durationSeconds > 0) {
         queryParams['duration'] = track.durationSeconds.toString();
       }
       final uri = Uri.https('lrclib.net', '/api/get', queryParams);
-      final resp = await _client.get(uri, headers: headers).timeout(const Duration(seconds: 4));
+      final resp = await _client
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 4));
 
       if (resp.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+        final data =
+            jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
         final synced = data['syncedLyrics'] as String?;
         if (synced != null && synced.trim().isNotEmpty) {
           final lines = parseLrc(synced);
@@ -118,13 +183,15 @@ class LyricsService {
       }
     } catch (_) {}
 
-    // Versuch 2: Flexible Suche mit /api/search
+    // Versuch 2: Flexible Volltext-Suche mit /api/search?q=
     try {
-      final searchUri = Uri.https('lrclib.net', '/api/search', {
-        'track_name': cleanTitle,
-        'artist_name': cleanArtist,
-      });
-      final resp = await _client.get(searchUri, headers: headers).timeout(const Duration(seconds: 4));
+      final q = primaryArtist.isNotEmpty
+          ? '$cleanTitle $primaryArtist'
+          : cleanTitle;
+      final searchUri = Uri.https('lrclib.net', '/api/search', {'q': q});
+      final resp = await _client
+          .get(searchUri, headers: headers)
+          .timeout(const Duration(seconds: 4));
 
       if (resp.statusCode == 200) {
         final list = jsonDecode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
@@ -150,6 +217,28 @@ class LyricsService {
     } catch (_) {}
 
     return [];
+  }
+
+  /// Manuelle Suche nach Songtexten mit benutzerdefiniertem Titel & Künstler
+  Future<List<LyricLine>> searchLyricsManually(String title, String artist,
+      {int duration = 0}) async {
+    final cleanT = _cleanTrackTitle(title);
+    final cleanA = _getPrimaryArtist(artist);
+    final dummy = Track(
+      id: 'manual_search',
+      title: cleanT,
+      artist: cleanA,
+      album: '',
+      durationSeconds: duration,
+    );
+    final res = await _fetchFromLrclib(dummy);
+    return res;
+  }
+
+  void clearCacheForTrack(Track track) {
+    final cacheKey =
+        '${track.artist.toLowerCase().trim()} - ${track.title.toLowerCase().trim()}';
+    _cache.remove(cacheKey);
   }
 
   /// Parst einen LRC-Text ([mm:ss.xx] Songtext) in strukturierte LyricLine-Objekte
@@ -203,97 +292,79 @@ class LyricsService {
     return lines;
   }
 
-  /// Generiert musikalisch getaktete Verse für jeden beliebigen Song
-  List<LyricLine> _generateDynamicLyrics(Track track) {
-    final dur = track.durationSeconds > 0 ? track.durationSeconds : 180;
-    final step = (dur / 14).clamp(8.0, 20.0);
-
-    return [
-      LyricLine(timestamp: const Duration(seconds: 0), text: '♪ Instrumental Intro ♪'),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 1).toInt()),
-        text: 'Willkommen bei ${track.title}',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 2).toInt()),
-        text: 'Gespielt von ${track.artist}',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 3).toInt()),
-        text: 'Spüre den Rhythmus und lass den Beat wirken',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 4).toInt()),
-        text: 'Die Melodie füllt den Raum mit Sound',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 5).toInt()),
-        text: '♪ Refrain / Hook ♪',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 6).toInt()),
-        text: 'Alles dreht sich um die Musik im Kopf',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 7).toInt()),
-        text: 'Keine Sorgen heute Nacht, nur Harmonie',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 8).toInt()),
-        text: '♪ Solo & Dynamic Transition ♪',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 9).toInt()),
-        text: 'Die Bässe vibrieren durch jeden Lautsprecher',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 10).toInt()),
-        text: 'Gemeinsam im Groove der Lieblingssongs',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 11).toInt()),
-        text: 'Lauter drehen, bis die Funken fliegen',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 12).toInt()),
-        text: '♪ Finale & Outro ♪',
-      ),
-      LyricLine(
-        timestamp: Duration(seconds: (step * 13).toInt()),
-        text: 'Music Assistant – Pure Sound Experience',
-      ),
-    ];
-  }
-
-  // --- Kuratierte Klassiker ---
-
   static const List<LyricLine> _dieDreiFragezeichenIntroLyrics = [
-    LyricLine(timestamp: Duration(seconds: 0), text: '♪ Legendäre Titelmelodie ♪'),
-    LyricLine(timestamp: Duration(seconds: 5), text: 'Die drei ??? – Detektiv-Klassiker'),
-    LyricLine(timestamp: Duration(seconds: 12), text: 'Justus Jonas, Erster Detektiv: Spezialist für Rätsel & Logik'),
-    LyricLine(timestamp: Duration(seconds: 22), text: 'Peter Shaw, Zweiter Detektiv: Schnell, sportlich und zur Stelle'),
-    LyricLine(timestamp: Duration(seconds: 32), text: 'Bob Andrews, Recherchen und Archiv: Wissen & Gedächtnis'),
-    LyricLine(timestamp: Duration(seconds: 44), text: 'Zentrale: Gebrauchtwarencenter T. Jonas, Rocky Beach, Kalifornien'),
-    LyricLine(timestamp: Duration(seconds: 56), text: '„Wir übernehmen jeden Fall!“'),
-    LyricLine(timestamp: Duration(seconds: 68), text: '♪ Ein neues Geheimnis nimmt seinen Lauf... ♪'),
-    LyricLine(timestamp: Duration(seconds: 82), text: 'Höre gespannt zu – jedes Geräusch ist ein Hinweis!'),
-    LyricLine(timestamp: Duration(seconds: 98), text: 'Wer steckt hinter dem mysteriösen Fall?'),
-    LyricLine(timestamp: Duration(seconds: 120), text: 'Justus kombiniert die letzten Beweise...'),
-    LyricLine(timestamp: Duration(seconds: 145), text: 'Fall gelöst! Die drei ??? haben es wieder geschafft.'),
+    LyricLine(
+      timestamp: Duration(seconds: 0),
+      text: '♪ Die drei ??? Titelmelodie & Hörspiel-Intro ♪',
+    ),
+    LyricLine(
+      timestamp: Duration(seconds: 5),
+      text: 'Erster Detektiv: Justus Jonas',
+    ),
+    LyricLine(
+      timestamp: Duration(seconds: 9),
+      text: 'Zweiter Detektiv: Peter Shaw',
+    ),
+    LyricLine(
+      timestamp: Duration(seconds: 13),
+      text: 'Recherchen und Archiv: Bob Andrews',
+    ),
+    LyricLine(
+      timestamp: Duration(seconds: 17),
+      text: 'Zentrale: Gebrauchtwarencenter T. Jonas, Rocky Beach',
+    ),
+    LyricLine(
+      timestamp: Duration(seconds: 22),
+      text: 'Wir übernehmen jeden Fall!',
+    ),
+    LyricLine(
+      timestamp: Duration(seconds: 28),
+      text: 'Die drei Fragezeichen stehen für das Unbekannte, ungelöste Rätsel.',
+    ),
+    LyricLine(
+      timestamp: Duration(seconds: 35),
+      text: '♪ Hörspiel beginnt... ♪',
+    ),
   ];
 
   static const List<LyricLine> _bohemianRhapsodyLyrics = [
-    LyricLine(timestamp: Duration(seconds: 0), text: 'Is this the real life? Is this just fantasy?'),
-    LyricLine(timestamp: Duration(seconds: 14), text: 'Caught in a landslide, no escape from reality'),
-    LyricLine(timestamp: Duration(seconds: 28), text: 'Open your eyes, look up to the skies and see'),
-    LyricLine(timestamp: Duration(seconds: 40), text: 'I\'m just a poor boy, I need no sympathy'),
-    LyricLine(timestamp: Duration(seconds: 49), text: 'Because I\'m easy come, easy go, little high, little low'),
-    LyricLine(timestamp: Duration(seconds: 61), text: 'Any way the wind blows doesn\'t really matter to me, to me'),
-    LyricLine(timestamp: Duration(seconds: 79), text: 'Mama, just killed a man'),
-    LyricLine(timestamp: Duration(seconds: 88), text: 'Put a gun against his head, pulled my trigger, now he\'s dead'),
-    LyricLine(timestamp: Duration(seconds: 104), text: 'Mama, life had just begun'),
-    LyricLine(timestamp: Duration(seconds: 114), text: 'But now I\'ve gone and thrown it all away'),
-    LyricLine(timestamp: Duration(seconds: 128), text: 'Mama, ooh, didn\'t mean to make you cry'),
-    LyricLine(timestamp: Duration(seconds: 142), text: 'If I\'m not back again this time tomorrow, carry on, carry on'),
+    LyricLine(timestamp: Duration(seconds: 0), text: 'Is this the real life?'),
+    LyricLine(timestamp: Duration(seconds: 4), text: 'Is this just fantasy?'),
+    LyricLine(
+        timestamp: Duration(seconds: 8),
+        text: 'Caught in a landslide, no escape from reality'),
+    LyricLine(
+        timestamp: Duration(seconds: 14),
+        text: 'Open your eyes, look up to the skies and see'),
+    LyricLine(
+        timestamp: Duration(seconds: 21),
+        text: "I'm just a poor boy, I need no sympathy"),
+    LyricLine(
+        timestamp: Duration(seconds: 26),
+        text: "Because I'm easy come, easy go, little high, little low"),
+    LyricLine(
+        timestamp: Duration(seconds: 33),
+        text: 'Any way the wind blows doesn\'t really matter to me, to me'),
+    LyricLine(
+        timestamp: Duration(seconds: 49),
+        text: 'Mama, just killed a man'),
+    LyricLine(
+        timestamp: Duration(seconds: 54),
+        text: 'Put a gun against his head, pulled my trigger, now he\'s dead'),
+    LyricLine(
+        timestamp: Duration(seconds: 62),
+        text: 'Mama, life had just begun'),
+    LyricLine(
+        timestamp: Duration(seconds: 68),
+        text: 'But now I\'ve gone and thrown it all away'),
+    LyricLine(
+        timestamp: Duration(seconds: 74),
+        text: 'Mama, ooh, didn\'t mean to make you cry'),
+    LyricLine(
+        timestamp: Duration(seconds: 81),
+        text: 'If I\'m not back again this time tomorrow'),
+    LyricLine(
+        timestamp: Duration(seconds: 86),
+        text: 'Carry on, carry on as if nothing really matters'),
   ];
 }

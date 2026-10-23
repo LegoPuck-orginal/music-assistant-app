@@ -26,22 +26,41 @@ void main() {
       expect(idxAt0, 0);
 
       final idxAt25 = lyricsService.findCurrentLineIndex(lines, const Duration(seconds: 25));
-      expect(idxAt25, 3);
+      expect(idxAt25, 5); // Line at 22s ("Wir übernehmen jeden Fall!")
     });
 
-    test('LyricsService generates dynamic lyrics for regular tracks', () async {
+    test('LyricsService extracts embedded lrcLyrics directly from track', () async {
       final track = Track(
-        id: 'generic_track_1',
-        title: 'Neon Nights',
-        artist: 'Synth Master',
-        album: 'Cyberpunk 2026',
-        durationSeconds: 240,
+        id: 'track_with_meta_lyrics',
+        title: 'Shape of You',
+        artist: 'Ed Sheeran',
+        album: 'Divide',
+        durationSeconds: 233,
+        lrcLyrics: '''
+[00:09.65] The club isn't the best place to find a lover
+[00:12.10] So the bar is where I go
+[01:05.50] I'm in love with the shape of you
+''',
       );
 
       final lines = await lyricsService.getLyricsForTrack(track);
-      expect(lines.length, greaterThan(8));
-      expect(lines[1].text, contains('Neon Nights'));
-      expect(lines[2].text, contains('Synth Master'));
+      expect(lines.length, equals(3));
+      expect(lines[0].text, equals("The club isn't the best place to find a lover"));
+      expect(lines[2].text, equals("I'm in love with the shape of you"));
+    });
+
+    test('LyricsService does not fabricate fake generic lyrics when song has no lyrics', () async {
+      final track = Track(
+        id: 'unknown_local_synth',
+        title: 'Unreleased Track XYZ 999999',
+        artist: 'NonExistentArtistXYZ123456789',
+        album: 'No Album',
+        durationSeconds: 120,
+      );
+
+      final lines = await lyricsService.getLyricsForTrack(track);
+      // Honesty guarantee: No fake "Spüre den Rhythmus" lyrics!
+      expect(lines.isEmpty, isTrue);
     });
 
     test('LyricsService parses standard timestamped LRC format correctly', () {

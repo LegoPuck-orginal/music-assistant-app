@@ -184,6 +184,7 @@ class MusicProvider extends ChangeNotifier {
     await loadServerQueue();
     notifyListeners();
   }
+  MassApiService get api => _api;
   bool get isServerConnected => _api.isConnected;
   String get serverUrl => _serverUrl;
   String get authToken => _authToken;
@@ -203,7 +204,7 @@ class MusicProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
   bool get hasCompletedWelcomeGuide => _hasCompletedWelcomeGuide;
-  String get appVersion => '1.10.7';
+  String get appVersion => '1.10.8';
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
@@ -354,7 +355,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.7');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.8');
   }
 
   void _connectAndRefresh() {

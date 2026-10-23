@@ -7,9 +7,9 @@ import '../providers/music_provider.dart';
 import '../services/lyrics_service.dart';
 import '../theme/spotify_colors.dart';
 
-/// Spotify-Style Karaoke & Synced Lyrics Sheet.
-/// Zeigt zeitgenaue Liedtexte an, scrollt automatisch mit der Musik
-/// und erlaubt das Antippen jeder Zeile, um direkt dorthin zu springen.
+/// Spotify-Style Karaoke & Synced Lyrics Sheet im modernen Adobe-Orange-Design.
+/// Unterstützt zeitgestempeltes Auto-Scrolling, Zeilen-Springen per Fingertipp
+/// und automatische Synchronisation mit dem echten Wiedergabefortschritt.
 class LyricsSheet extends StatefulWidget {
   final Track track;
 
@@ -40,11 +40,17 @@ class _LyricsSheetState extends State<LyricsSheet> {
   int _currentLineIndex = -1;
   bool _userIsScrolling = false;
   String? _lastTrackId;
+  bool _initialLoaded = false;
 
   @override
-  void initState() {
-    super.initState();
-    _loadLyrics(widget.track);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialLoaded) {
+      _initialLoaded = true;
+      final prov = context.read<MusicProvider>();
+      final activeTrack = prov.currentTrack ?? widget.track;
+      _loadLyrics(activeTrack, prov: prov);
+    }
   }
 
   @override
@@ -53,12 +59,13 @@ class _LyricsSheetState extends State<LyricsSheet> {
     super.dispose();
   }
 
-  Future<void> _loadLyrics(Track track) async {
+  Future<void> _loadLyrics(Track track, {MusicProvider? prov}) async {
     _lastTrackId = track.id;
     if (mounted) {
       setState(() => _isLoading = true);
     }
-    final res = await _lyricsService.getLyricsForTrack(track);
+    final api = prov?.api;
+    final res = await _lyricsService.getLyricsForTrack(track, api: api);
     if (mounted) {
       setState(() {
         _lines = res;
@@ -70,7 +77,6 @@ class _LyricsSheetState extends State<LyricsSheet> {
   void _scrollToActiveLine(int index) {
     if (_userIsScrolling || !_scrollController.hasClients || index < 0) return;
 
-    // Jede Zeile ist ca. 56px hoch
     const itemHeight = 60.0;
     final targetOffset = (index * itemHeight) - 180.0;
     final clamped = targetOffset.clamp(
@@ -92,11 +98,12 @@ class _LyricsSheetState extends State<LyricsSheet> {
 
     if (_lastTrackId != null && _lastTrackId != activeTrack.id) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _loadLyrics(activeTrack);
+        if (mounted) _loadLyrics(activeTrack, prov: prov);
       });
     }
 
-    final newIndex = _lyricsService.findCurrentLineIndex(_lines, prov.currentPosition);
+    final newIndex =
+        _lyricsService.findCurrentLineIndex(_lines, prov.currentPosition);
 
     if (newIndex != _currentLineIndex) {
       _currentLineIndex = newIndex;
@@ -108,7 +115,7 @@ class _LyricsSheetState extends State<LyricsSheet> {
     return Container(
       height: MediaQuery.of(context).size.height * 0.92,
       decoration: const BoxDecoration(
-        color: Color(0xFF161616),
+        color: SpotifyColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SafeArea(
@@ -119,90 +126,75 @@ class _LyricsSheetState extends State<LyricsSheet> {
             // Drag-Griff
             Center(
               child: Container(
-                margin: const EdgeInsets.only(top: 10, bottom: 8),
-                width: 36,
-                height: 4,
+                width: 38,
+                height: 4.5,
+                margin: const EdgeInsets.only(top: 10, bottom: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.25),
-                  borderRadius: BorderRadius.circular(2),
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
             ),
 
-            // Header: Songinfo & Karaoke Live Badge
+            // Header mit Track-Info & Schließen
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(20, 0, 16, 12),
               child: Row(
                 children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      color: SpotifyColors.surfaceHighlight,
+                      child: activeTrack.imageUrl != null
+                          ? Image.network(
+                              activeTrack.imageUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => const Icon(
+                                Icons.music_note,
+                                color: SpotifyColors.textSecondary,
+                                size: 22,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.music_note,
+                              color: SpotifyColors.textSecondary,
+                              size: 22,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: SpotifyColors.green.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: SpotifyColors.green.withValues(alpha: 0.5),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 6,
-                                    height: 6,
-                                    decoration: const BoxDecoration(
-                                      color: SpotifyColors.green,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 5),
-                                  const Text(
-                                    'SONGTEXT LIVE',
-                                    style: TextStyle(
-                                      color: SpotifyColors.green,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 0.8,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
                         Text(
                           activeTrack.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           activeTrack.artist,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: SpotifyColors.textSecondary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
                           ),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 24),
+                    icon:
+                        const Icon(Icons.close, color: Colors.white, size: 24),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -216,16 +208,71 @@ class _LyricsSheetState extends State<LyricsSheet> {
               child: _isLoading
                   ? const Center(
                       child: CircularProgressIndicator(
-                        color: SpotifyColors.green,
+                        color: SpotifyColors.orange,
                       ),
                     )
                   : _lines.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Kein Songtext verfügbar',
-                            style: TextStyle(
-                              color: SpotifyColors.textSecondary,
-                              fontSize: 14,
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 64,
+                                  height: 64,
+                                  decoration: BoxDecoration(
+                                    color: SpotifyColors.orange
+                                        .withValues(alpha: 0.12),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.lyrics_outlined,
+                                    color: SpotifyColors.orange,
+                                    size: 32,
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                                const Text(
+                                  'Kein Songtext verfügbar',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Für „${activeTrack.title}“ von „${activeTrack.artist}“ konnte weder auf Music Assistant noch im globalen Lyrics-Katalog ein Songtext gefunden werden.',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: SpotifyColors.textSecondary,
+                                    fontSize: 13,
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 22),
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    _lyricsService
+                                        .clearCacheForTrack(activeTrack);
+                                    _loadLyrics(activeTrack, prov: prov);
+                                  },
+                                  icon: const Icon(Icons.refresh,
+                                      size: 16, color: Colors.white),
+                                  label: const Text('Erneut suchen',
+                                      style: TextStyle(color: Colors.white)),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(
+                                        color: SpotifyColors.borderHighlight),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 10),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         )
@@ -265,9 +312,11 @@ class _LyricsSheetState extends State<LyricsSheet> {
                                   _scrollToActiveLine(index);
                                 },
                                 borderRadius: BorderRadius.circular(8),
-                                splashColor: SpotifyColors.green.withValues(alpha: 0.15),
+                                splashColor: SpotifyColors.orange
+                                    .withValues(alpha: 0.15),
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 10),
                                   child: AnimatedDefaultTextStyle(
                                     duration: const Duration(milliseconds: 250),
                                     style: TextStyle(
@@ -284,26 +333,31 @@ class _LyricsSheetState extends State<LyricsSheet> {
                                       shadows: isActive
                                           ? [
                                               BoxShadow(
-                                                color: SpotifyColors.green.withValues(alpha: 0.35),
+                                                color: SpotifyColors.orange
+                                                    .withValues(alpha: 0.4),
                                                 blurRadius: 16,
                                               ),
                                             ]
                                           : null,
                                     ),
                                     child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         if (isActive)
                                           Container(
                                             width: 4,
                                             height: 24,
-                                            margin: const EdgeInsets.only(right: 12, top: 3),
+                                            margin: const EdgeInsets.only(
+                                                right: 12, top: 3),
                                             decoration: BoxDecoration(
-                                              color: SpotifyColors.green,
-                                              borderRadius: BorderRadius.circular(2),
+                                              color: SpotifyColors.orange,
+                                              borderRadius:
+                                                  BorderRadius.circular(2),
                                               boxShadow: [
                                                 BoxShadow(
-                                                  color: SpotifyColors.green.withValues(alpha: 0.6),
+                                                  color: SpotifyColors.orange
+                                                      .withValues(alpha: 0.6),
                                                   blurRadius: 8,
                                                 ),
                                               ],

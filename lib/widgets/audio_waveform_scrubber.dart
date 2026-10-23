@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/spotify_colors.dart';
 
-/// Interaktiver Audio-Waveform Scrubber & Visualizer im Spotify-Design.
-/// Ersetzt den flachen Fortschrittsbalken durch dynamische Klangwellen-Balken,
-/// die in Echtzeit pulsieren und direkt mit dem Finger gescrubbt werden können.
+/// Interaktiver Audio-Waveform Scrubber & Visualizer im Adobe-Orange/Dark-Design.
+/// Bietet 60/120-FPS butterweiche kontinuierliche Playhead-Interpolation,
+/// dynamisch fließende Klangwellen-Animation und präzises Scrubbing per Finger.
 class AudioWaveformScrubber extends StatefulWidget {
   final Duration currentPosition;
   final Duration totalDuration;
@@ -30,22 +30,29 @@ class AudioWaveformScrubber extends StatefulWidget {
 
 class _AudioWaveformScrubberState extends State<AudioWaveformScrubber>
     with SingleTickerProviderStateMixin {
-  late AnimationController _pulseCtrl;
+  late AnimationController _animCtrl;
   double? _dragFraction;
   int _lastHapticBar = -1;
 
   static const int _barCount = 48;
   late List<double> _waveformHeights;
 
+  Duration _lastKnownPosition = Duration.zero;
+  DateTime _lastPositionSyncTime = DateTime.now();
+
   @override
   void initState() {
     super.initState();
-    _pulseCtrl = AnimationController(
+    _lastKnownPosition = widget.currentPosition;
+    _lastPositionSyncTime = DateTime.now();
+
+    _animCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 2400),
     );
+
     if (widget.isPlaying) {
-      _pulseCtrl.repeat(reverse: true);
+      _animCtrl.repeat();
     }
     _waveformHeights = _generateWaveform(widget.trackKey);
   }
@@ -56,16 +63,26 @@ class _AudioWaveformScrubberState extends State<AudioWaveformScrubber>
     if (oldWidget.trackKey != widget.trackKey) {
       _waveformHeights = _generateWaveform(widget.trackKey);
     }
-    if (widget.isPlaying && !_pulseCtrl.isAnimating) {
-      _pulseCtrl.repeat(reverse: true);
-    } else if (!widget.isPlaying && _pulseCtrl.isAnimating) {
-      _pulseCtrl.stop();
+
+    // Wenn sich die Position um mehr als 1.2s unterscheidet oder Play-Status wechselt,
+    // Basis-Position synchronisieren
+    final posDiff = (widget.currentPosition - _lastKnownPosition).inMilliseconds.abs();
+    if (posDiff > 1200 || widget.isPlaying != oldWidget.isPlaying) {
+      _lastKnownPosition = widget.currentPosition;
+      _lastPositionSyncTime = DateTime.now();
+    }
+
+    if (widget.isPlaying && !_animCtrl.isAnimating) {
+      _lastPositionSyncTime = DateTime.now();
+      _animCtrl.repeat();
+    } else if (!widget.isPlaying && _animCtrl.isAnimating) {
+      _animCtrl.stop();
     }
   }
 
   @override
   void dispose() {
-    _pulseCtrl.dispose();
+    _animCtrl.dispose();
     super.dispose();
   }
 
@@ -77,11 +94,11 @@ class _AudioWaveformScrubberState extends State<AudioWaveformScrubber>
 
     for (int i = 0; i < _barCount; i++) {
       final t = i / _barCount;
-      // Musikalischer Bogen: Leiser Einstieg, Steigerung im Refrain, Outro
       final envelope = math.sin(t * math.pi);
       final noise = rng.nextDouble() * 0.45 + 0.15;
       final harmonic = 0.25 * math.sin(t * 8 * math.pi);
-      final height = (envelope * 0.65 + noise * 0.35 + harmonic).clamp(0.18, 1.0);
+      final height =
+          (envelope * 0.65 + noise * 0.35 + harmonic).clamp(0.18, 1.0);
       list.add(height);
     }
     return list;
@@ -113,8 +130,12 @@ class _AudioWaveformScrubberState extends State<AudioWaveformScrubber>
 
   void _commitSeek() {
     if (_dragFraction != null) {
-      final targetMs = (widget.totalDuration.inMilliseconds * _dragFraction!).round();
-      widget.onSeek(Duration(milliseconds: targetMs));
+      final targetMs =
+          (widget.totalDuration.inMilliseconds * _dragFraction!).round();
+      final targetDur = Duration(milliseconds: targetMs);
+      _lastKnownPosition = targetDur;
+      _lastPositionSyncTime = DateTime.now();
+      widget.onSeek(targetDur);
       HapticFeedback.lightImpact();
       setState(() {
         _dragFraction = null;
@@ -126,42 +147,52 @@ class _AudioWaveformScrubberState extends State<AudioWaveformScrubber>
   @override
   Widget build(BuildContext context) {
     final totalMs = widget.totalDuration.inMilliseconds;
-    final effectiveFraction = _dragFraction ??
-        (totalMs > 0
-            ? (widget.currentPosition.inMilliseconds / totalMs).clamp(0.0, 1.0)
-            : 0.0);
 
-    final displayPos = _dragFraction != null
-        ? Duration(milliseconds: (totalMs * _dragFraction!).round())
-        : widget.currentPosition;
+    return AnimatedBuilder(
+      animation: _animCtrl,
+      builder: (context, child) {
+        // Kontinuierliche 60-FPS-Interpolation für flüssige Playhead-Bewegung
+        final now = DateTime.now();
+        final elapsedMs = widget.isPlaying
+            ? now.difference(_lastPositionSyncTime).inMilliseconds
+            : 0;
+        final currentSmoothMs = totalMs > 0
+            ? (_lastKnownPosition.inMilliseconds + elapsedMs).clamp(0, totalMs)
+            : 0;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Interaktiver Wellenform-Container
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final width = constraints.maxWidth;
-            const height = 48.0;
+        final effectiveFraction = _dragFraction ??
+            (totalMs > 0 ? (currentSmoothMs / totalMs).clamp(0.0, 1.0) : 0.0);
 
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragStart: (details) => _handleSeek(details.localPosition.dx, width),
-              onHorizontalDragUpdate: (details) => _handleSeek(details.localPosition.dx, width),
-              onHorizontalDragEnd: (_) => _commitSeek(),
-              onHorizontalDragCancel: () {
-                setState(() {
-                  _dragFraction = null;
-                });
-              },
-              onTapDown: (details) {
-                _handleSeek(details.localPosition.dx, width);
-                _commitSeek();
-              },
-              child: AnimatedBuilder(
-                animation: _pulseCtrl,
-                builder: (context, child) {
-                  return Stack(
+        final displayPos = _dragFraction != null
+            ? Duration(milliseconds: (totalMs * _dragFraction!).round())
+            : Duration(milliseconds: currentSmoothMs);
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Interaktiver Wellenform-Container
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                const height = 48.0;
+
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragStart: (details) =>
+                      _handleSeek(details.localPosition.dx, width),
+                  onHorizontalDragUpdate: (details) =>
+                      _handleSeek(details.localPosition.dx, width),
+                  onHorizontalDragEnd: (_) => _commitSeek(),
+                  onHorizontalDragCancel: () {
+                    setState(() {
+                      _dragFraction = null;
+                    });
+                  },
+                  onTapDown: (details) {
+                    _handleSeek(details.localPosition.dx, width);
+                    _commitSeek();
+                  },
+                  child: Stack(
                     alignment: Alignment.center,
                     clipBehavior: Clip.none,
                     children: [
@@ -174,9 +205,9 @@ class _AudioWaveformScrubberState extends State<AudioWaveformScrubber>
                             heights: _waveformHeights,
                             progressFraction: effectiveFraction,
                             isPlaying: widget.isPlaying,
-                            pulseValue: _pulseCtrl.value,
-                            activeColor: SpotifyColors.green,
-                            inactiveColor: const Color(0xFF3E3E3E),
+                            pulseValue: _animCtrl.value,
+                            activeColor: SpotifyColors.orange,
+                            inactiveColor: const Color(0xFF262626),
                             cursorColor: Colors.white,
                           ),
                         ),
@@ -185,17 +216,20 @@ class _AudioWaveformScrubberState extends State<AudioWaveformScrubber>
                       // Tooltip-Bubble beim Scrubben mit Finger
                       if (_dragFraction != null)
                         Positioned(
-                          left: (width * effectiveFraction - 28).clamp(0.0, width - 56),
-                          top: -26,
+                          left: (width * effectiveFraction - 28)
+                              .clamp(0.0, width - 56),
+                          top: -28,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3.5),
                             decoration: BoxDecoration(
-                              color: SpotifyColors.green,
+                              color: SpotifyColors.orange,
                               borderRadius: BorderRadius.circular(10),
                               boxShadow: [
                                 BoxShadow(
-                                  color: SpotifyColors.green.withValues(alpha: 0.4),
-                                  blurRadius: 8,
+                                  color: SpotifyColors.orange
+                                      .withValues(alpha: 0.5),
+                                  blurRadius: 10,
                                   offset: const Offset(0, 2),
                                 ),
                               ],
@@ -211,45 +245,21 @@ class _AudioWaveformScrubberState extends State<AudioWaveformScrubber>
                           ),
                         ),
                     ],
-                  );
-                },
-              ),
-            );
-          },
-        ),
+                  ),
+                );
+              },
+            ),
 
-        const SizedBox(height: 8),
+            const SizedBox(height: 8),
 
-        // Zeit-Anzeige (Aktuell / Verbleibend)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _formatDuration(displayPos),
-                style: const TextStyle(
-                  color: SpotifyColors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  fontFeatures: [FontFeature.tabularFigures()],
-                ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+            // Zeit-Anzeige (Aktuell / Verbleibend)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  if (widget.isPlaying)
-                    Container(
-                      width: 5,
-                      height: 5,
-                      margin: const EdgeInsets.only(right: 6),
-                      decoration: const BoxDecoration(
-                        color: SpotifyColors.green,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
                   Text(
-                    _formatDuration(widget.totalDuration),
+                    _formatDuration(displayPos),
                     style: const TextStyle(
                       color: SpotifyColors.textSecondary,
                       fontSize: 12,
@@ -257,12 +267,36 @@ class _AudioWaveformScrubberState extends State<AudioWaveformScrubber>
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.isPlaying)
+                        Container(
+                          width: 5,
+                          height: 5,
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: const BoxDecoration(
+                            color: SpotifyColors.orange,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      Text(
+                        _formatDuration(widget.totalDuration),
+                        style: const TextStyle(
+                          color: SpotifyColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -294,7 +328,7 @@ class _WaveformPainter extends CustomPainter {
     final totalSpacing = size.width * 0.35;
     final spacing = totalSpacing / (barCount - 1);
     final barWidth = (size.width - totalSpacing) / barCount;
-    final activeIndex = (progressFraction * barCount).floor();
+    final cursorX = (progressFraction * size.width).clamp(0.0, size.width);
 
     final activePaint = Paint()
       ..color = activeColor
@@ -308,47 +342,70 @@ class _WaveformPainter extends CustomPainter {
       ..color = cursorColor
       ..style = PaintingStyle.fill;
 
+    final cursorGlowPaint = Paint()
+      ..color = activeColor.withValues(alpha: 0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+
     for (int i = 0; i < barCount; i++) {
-      final x = i * (barWidth + spacing);
+      final barLeft = i * (barWidth + spacing);
+      final barRight = barLeft + barWidth;
+      final barCenterX = barLeft + barWidth / 2;
       var normalizedHeight = heights[i];
 
-      // Dynamischer Puls-Effekt rund um den aktuellen Playhead
+      // Sanft fließende kontinuierliche Sinuswelle bei Wiedergabe
       if (isPlaying) {
-        final distFromPlayhead = (i - activeIndex).abs();
-        if (distFromPlayhead < 4) {
-          final factor = (4 - distFromPlayhead) / 4.0;
-          final pulse = math.sin((pulseValue * math.pi) + (i * 0.4)) * 0.22;
-          normalizedHeight = (normalizedHeight + pulse * factor).clamp(0.15, 1.0);
-        }
+        final wavePhase = pulseValue * 2 * math.pi;
+        final waveMotion = math.sin(wavePhase + (i * 0.32)) * 0.12;
+
+        // Zusätzlicher Nah-Playhead-Puls für spürbare musikalische Lebendigkeit
+        final distFromPlayhead = (cursorX - barCenterX).abs();
+        final nearFactor = (1.0 - (distFromPlayhead / 48.0)).clamp(0.0, 1.0);
+        final nearPulse =
+            math.sin(wavePhase * 2 + (i * 0.2)) * 0.16 * nearFactor;
+
+        normalizedHeight =
+            (normalizedHeight + waveMotion + nearPulse).clamp(0.18, 1.0);
       }
 
       final barH = normalizedHeight * (size.height - 6);
       final y = (size.height - barH) / 2;
-      final isPast = i <= activeIndex;
 
       final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, barWidth, barH),
+        Rect.fromLTWH(barLeft, y, barWidth, barH),
         Radius.circular(barWidth / 2),
       );
 
-      canvas.drawRRect(rect, isPast ? activePaint : inactivePaint);
+      // Sub-Pixel-Präzision bei der Balken-Färbung
+      if (barRight <= cursorX) {
+        canvas.drawRRect(rect, activePaint);
+      } else if (barLeft >= cursorX) {
+        canvas.drawRRect(rect, inactivePaint);
+      } else {
+        // Bar liegt exakt unter der Playhead-Nadel: Split-Clip
+        canvas.save();
+        canvas.clipRect(Rect.fromLTRB(0, 0, cursorX, size.height));
+        canvas.drawRRect(rect, activePaint);
+        canvas.restore();
 
-      // Playhead Cursor-Nadel an der aktuellen Position
-      if (i == activeIndex) {
-        final cursorRect = RRect.fromRectAndRadius(
-          Rect.fromLTWH(x + (barWidth - 2.5) / 2, 0, 2.5, size.height),
-          const Radius.circular(1.5),
-        );
-        canvas.drawRRect(cursorRect, cursorPaint);
+        canvas.save();
+        canvas.clipRect(Rect.fromLTRB(cursorX, 0, size.width, size.height));
+        canvas.drawRRect(rect, inactivePaint);
+        canvas.restore();
       }
     }
+
+    // Playhead Cursor-Nadel mit 60-FPS-Sub-Pixel-Gleiten und Glow
+    final cursorRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH((cursorX - 1.5).clamp(0.0, size.width - 3.0), 0, 3.0,
+          size.height),
+      const Radius.circular(1.5),
+    );
+    canvas.drawRRect(cursorRect, cursorGlowPaint);
+    canvas.drawRRect(cursorRect, cursorPaint);
   }
 
   @override
   bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
-    return oldDelegate.progressFraction != progressFraction ||
-        oldDelegate.pulseValue != pulseValue ||
-        oldDelegate.isPlaying != isPlaying ||
-        oldDelegate.heights != heights;
+    return true; // 60-FPS continuous interpolation
   }
 }

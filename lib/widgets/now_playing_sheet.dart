@@ -360,6 +360,85 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 ],
               ),
 
+              const SizedBox(height: 8),
+
+              // Live Volume Slider Bar (Direkt adaptiert von der originalen Music Assistant App)
+              Builder(
+                builder: (context) {
+                  final active = prov.activePlayer;
+                  final vol = active?.volume ?? 50;
+                  final isMuted = active?.isMuted ?? false;
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            isMuted
+                                ? Icons.volume_off
+                                : (vol == 0
+                                    ? Icons.volume_mute
+                                    : vol < 50
+                                        ? Icons.volume_down
+                                        : Icons.volume_up),
+                            color: isMuted
+                                ? SpotifyColors.textMuted
+                                : SpotifyColors.orange,
+                            size: 22,
+                          ),
+                          tooltip: isMuted ? 'Stummschaltung aufheben' : 'Stummschalten',
+                          onPressed: () {
+                            if (active != null) {
+                              HapticFeedback.lightImpact();
+                              prov.toggleMute(active);
+                            }
+                          },
+                        ),
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              activeTrackColor: SpotifyColors.orange,
+                              inactiveTrackColor: SpotifyColors.sliderInactive,
+                              thumbColor: Colors.white,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                              trackHeight: 3.5,
+                            ),
+                            child: Slider(
+                              value: isMuted ? 0.0 : vol.toDouble().clamp(0.0, 100.0),
+                              min: 0,
+                              max: 100,
+                              onChanged: (val) {
+                                prov.setVolume(val.toInt());
+                              },
+                              onChangeEnd: (val) {
+                                if (active != null) {
+                                  prov.flushVolume(active.id);
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 38,
+                          child: Text(
+                            isMuted ? '0%' : '$vol%',
+                            textAlign: TextAlign.end,
+                            style: const TextStyle(
+                              color: SpotifyColors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
               const Spacer(flex: 1),
 
               // Spotify-Style Lyrics Preview Banner

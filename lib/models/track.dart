@@ -9,6 +9,9 @@ class Track {
   final String? previewUrl;
   final String? provider;
   bool isLiked;
+  final String? lrcLyrics;
+  final String? plainLyrics;
+  final Map<String, dynamic>? rawSource;
 
   Track({
     required this.id,
@@ -21,6 +24,9 @@ class Track {
     this.previewUrl,
     this.provider,
     this.isLiked = false,
+    this.lrcLyrics,
+    this.plainLyrics,
+    this.rawSource,
   });
 
   String get formattedDuration {
@@ -41,6 +47,9 @@ class Track {
       'previewUrl': previewUrl,
       'provider': provider,
       'isLiked': isLiked,
+      'lrcLyrics': lrcLyrics,
+      'plainLyrics': plainLyrics,
+      'rawSource': rawSource,
     };
   }
 
@@ -56,6 +65,9 @@ class Track {
       previewUrl: json['previewUrl'] as String?,
       provider: json['provider'] as String?,
       isLiked: json['isLiked'] as bool? ?? false,
+      lrcLyrics: json['lrcLyrics'] as String?,
+      plainLyrics: json['plainLyrics'] as String?,
+      rawSource: json['rawSource'] as Map<String, dynamic>?,
     );
   }
 
@@ -70,6 +82,9 @@ class Track {
     String? previewUrl,
     String? provider,
     bool? isLiked,
+    String? lrcLyrics,
+    String? plainLyrics,
+    Map<String, dynamic>? rawSource,
   }) {
     return Track(
       id: id ?? this.id,
@@ -82,6 +97,9 @@ class Track {
       previewUrl: previewUrl ?? this.previewUrl,
       provider: provider ?? this.provider,
       isLiked: isLiked ?? this.isLiked,
+      lrcLyrics: lrcLyrics ?? this.lrcLyrics,
+      plainLyrics: plainLyrics ?? this.plainLyrics,
+      rawSource: rawSource ?? this.rawSource,
     );
   }
 }

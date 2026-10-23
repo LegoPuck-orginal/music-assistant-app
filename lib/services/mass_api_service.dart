@@ -544,6 +544,37 @@ class MassApiService {
     return null;
   }
 
+  /// Ruft echte Songtexte (LRC oder Plain) direkt vom Music Assistant Server ab
+  Future<String?> fetchTrackLyrics(Track track) async {
+    try {
+      final trackArg = track.rawSource ?? {
+        'item_id': track.id,
+        'name': track.title,
+        'artists': [
+          {'name': track.artist}
+        ],
+        'album': {'name': track.album},
+        'duration': track.durationSeconds,
+        'uri': track.uri,
+        'provider': track.provider ?? 'library',
+        'media_type': 'track',
+      };
+      final res = await sendCommand('metadata/get_track_lyrics', {
+        'track': trackArg,
+      });
+      if (res is String && res.trim().isNotEmpty) return res;
+      if (res is Map) {
+        final lrc = res['lrc_lyrics']?.toString() ?? res['lrcLyrics']?.toString();
+        if (lrc != null && lrc.trim().isNotEmpty) return lrc;
+        final plain = res['lyrics']?.toString();
+        if (plain != null && plain.trim().isNotEmpty) return plain;
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchTrackLyrics error: $e');
+    }
+    return null;
+  }
+
   /// Ruft echte Songs einer Playlist, eines Albums oder Podcasts ab
   Future<List<Track>> fetchPlaylistTracks(Playlist playlist) async {
     try {
@@ -696,6 +727,17 @@ class MassApiService {
         (id.isNotEmpty ? 'library://track/$id' : previewUrl);
     final provider = map['provider']?.toString() ?? defaultProvider;
 
+    String? lrcLyrics;
+    String? plainLyrics;
+    if (map['metadata'] is Map) {
+      final meta = map['metadata'] as Map<String, dynamic>;
+      lrcLyrics = meta['lrc_lyrics']?.toString() ?? meta['lrcLyrics']?.toString();
+      plainLyrics = meta['lyrics']?.toString();
+    } else {
+      lrcLyrics = map['lrc_lyrics']?.toString() ?? map['lrcLyrics']?.toString();
+      plainLyrics = map['lyrics']?.toString();
+    }
+
     return Track(
       id: id,
       title: title,
@@ -707,6 +749,9 @@ class MassApiService {
       previewUrl: previewUrl,
       provider: provider,
       isLiked: isLiked,
+      lrcLyrics: lrcLyrics,
+      plainLyrics: plainLyrics,
+      rawSource: map,
     );
   }
 
