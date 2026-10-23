@@ -296,7 +296,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.3');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.4');
   }
 
   void _connectAndRefresh() {
@@ -504,12 +504,20 @@ class MusicProvider extends ChangeNotifier {
         final state = data['playback_state']?.toString() ??
             data['state']?.toString();
         final volume = (data['volume_level'] as num?)?.toInt();
+        final syncedTo = data['synced_to']?.toString();
+        final groupChilds = (data['group_childs'] as List?)
+            ?.map((e) => e.toString())
+            .toList();
 
         // Update matching player in list
-        for (final p in _players) {
-          if (p.id == playerId) {
-            if (volume != null) p.volume = volume;
-            if (state != null) p.state = state;
+        for (int i = 0; i < _players.length; i++) {
+          if (_players[i].id == playerId) {
+            _players[i] = _players[i].copyWith(
+              volume: volume,
+              state: state,
+              syncedTo: syncedTo,
+              groupChilds: groupChilds,
+            );
           }
         }
 
@@ -518,9 +526,12 @@ class MusicProvider extends ChangeNotifier {
           if (state != null) {
             _isPlaying = (state == 'playing');
           }
-          if (volume != null) {
-            _activePlayer!.volume = volume;
-          }
+          _activePlayer = _activePlayer!.copyWith(
+            volume: volume,
+            state: state,
+            syncedTo: syncedTo,
+            groupChilds: groupChilds,
+          );
 
           // If media metadata is attached
           final currentMedia = data['current_media'] as Map<String, dynamic>?;
@@ -1105,20 +1116,50 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> setActivePlayer(PlayerDevice player) async {
     final oldPlayer = _activePlayer;
-    if (_activePlayer?.isLocal == true && !player.isLocal) {
-      await _localAudioPlayer.stop();
-    }
+    final wasPlaying = _isPlaying;
 
-    // Seamless Queue Transfer if music was playing on an external speaker and transferring to another external speaker
-    if (_isPlaying &&
+    if (oldPlayer?.isLocal == true && !player.isLocal) {
+      // Vom iPhone auf externen Lautsprecher wechseln
+      await _localAudioPlayer.stop();
+      _isPlaying = false;
+      notifyListeners();
+
+      if (wasPlaying && _currentTrack != null) {
+        final mediaUri = _currentTrack!.uri ?? 'library://track/${_currentTrack!.id}';
+        try {
+          await _api.playMedia(player.id, mediaUri);
+          _isPlaying = true;
+        } catch (e) {
+          debugPrint('[MusicProvider] playMedia on switch error: $e');
+          await _api.playerPlay(player.id);
+          _isPlaying = true;
+        }
+      }
+    } else if (oldPlayer != null && !oldPlayer.isLocal && player.isLocal) {
+      // Vom externen Lautsprecher auf iPhone wechseln
+      try {
+        await _api.playerPause(oldPlayer.id);
+      } catch (e) {
+        debugPrint('[MusicProvider] pause old player error: $e');
+      }
+      if (wasPlaying && _currentTrack != null) {
+        await playTrack(_currentTrack!);
+      }
+    } else if (wasPlaying &&
         oldPlayer != null &&
         !oldPlayer.isLocal &&
         !player.isLocal &&
         oldPlayer.id != player.id) {
+      // Zwischen zwei externen Lautsprechern wechseln
       try {
         await _api.transferQueue(oldPlayer.id, player.id, autoPlay: true);
+        await _api.playerPlay(player.id);
       } catch (e) {
         debugPrint('[MusicProvider] transferQueue error: $e');
+        if (_currentTrack != null) {
+          final mediaUri = _currentTrack!.uri ?? 'library://track/${_currentTrack!.id}';
+          await _api.playMedia(player.id, mediaUri);
+        }
       }
     }
 
@@ -1129,6 +1170,28 @@ class MusicProvider extends ChangeNotifier {
     await _storage.saveActivePlayerId(player.id);
     notifyListeners();
     loadDspForPlayer(player.id);
+  }
+
+  /// Synchronisiert einen Lautsprecher mit dem aktuell aktiven Lautsprecher (Multiroom)
+  Future<void> syncSpeakerWithActive(PlayerDevice speaker) async {
+    if (_activePlayer == null || _activePlayer!.isLocal || speaker.isLocal) return;
+    try {
+      await _api.syncPlayer(speaker.id, _activePlayer!.id);
+      await refreshServerData();
+    } catch (e) {
+      debugPrint('[MusicProvider] syncSpeakerWithActive error: $e');
+    }
+  }
+
+  /// Hebt die Gruppensynchronisierung für einen Lautsprecher auf
+  Future<void> unsyncSpeaker(PlayerDevice speaker) async {
+    if (speaker.isLocal) return;
+    try {
+      await _api.unsyncPlayer(speaker.id);
+      await refreshServerData();
+    } catch (e) {
+      debugPrint('[MusicProvider] unsyncSpeaker error: $e');
+    }
   }
 
   Future<void> setVolume(int vol) async {
@@ -1536,19 +1599,16 @@ class MusicProvider extends ChangeNotifier {
   void _startPositionTimer() {
     _positionTimer?.cancel();
     // Bei lokaler iPhone-Wiedergabe wird die exakte Position direkt von AVPlayer gemeldet.
-    // Ein künstlicher Timer führt sonst zu Konflikten und vorzeitigem Songabbruch!
     if (isLocalPlayback) return;
 
     _positionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_isPlaying && _currentPosition < _totalDuration) {
+      // Nur Zähler für UI-Anzeige aktualisieren, wenn Spielzeit bekannt ist.
+      // Der Music Assistant Server steuert den echten Songwechsel selbst – NIEMALS softwareseitig vorzeitig skippen!
+      if (_isPlaying &&
+          _totalDuration.inSeconds > 0 &&
+          _currentPosition < _totalDuration) {
         _currentPosition += const Duration(seconds: 1);
         notifyListeners();
-      } else if (_currentPosition >= _totalDuration) {
-        if (_repeatMode == 2) {
-          seekTo(Duration.zero);
-        } else {
-          next();
-        }
       }
     });
   }

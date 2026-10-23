@@ -39,11 +39,12 @@ class _LyricsSheetState extends State<LyricsSheet> {
   bool _isLoading = true;
   int _currentLineIndex = -1;
   bool _userIsScrolling = false;
+  String? _lastTrackId;
 
   @override
   void initState() {
     super.initState();
-    _loadLyrics();
+    _loadLyrics(widget.track);
   }
 
   @override
@@ -52,8 +53,12 @@ class _LyricsSheetState extends State<LyricsSheet> {
     super.dispose();
   }
 
-  Future<void> _loadLyrics() async {
-    final res = await _lyricsService.getLyricsForTrack(widget.track);
+  Future<void> _loadLyrics(Track track) async {
+    _lastTrackId = track.id;
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+    final res = await _lyricsService.getLyricsForTrack(track);
     if (mounted) {
       setState(() {
         _lines = res;
@@ -83,6 +88,14 @@ class _LyricsSheetState extends State<LyricsSheet> {
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
+    final activeTrack = prov.currentTrack ?? widget.track;
+
+    if (_lastTrackId != null && _lastTrackId != activeTrack.id) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadLyrics(activeTrack);
+      });
+    }
+
     final newIndex = _lyricsService.findCurrentLineIndex(_lines, prov.currentPosition);
 
     if (newIndex != _currentLineIndex) {
@@ -166,7 +179,7 @@ class _LyricsSheetState extends State<LyricsSheet> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          widget.track.title,
+                          activeTrack.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -176,7 +189,7 @@ class _LyricsSheetState extends State<LyricsSheet> {
                           ),
                         ),
                         Text(
-                          widget.track.artist,
+                          activeTrack.artist,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

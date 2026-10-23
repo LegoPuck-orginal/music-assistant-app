@@ -1,12 +1,21 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../models/lyric_line.dart';
 import '../models/track.dart';
 
 /// Service zur Bereitstellung und Synchronisation von Songtexten (Lyrics)
 /// im Spotify-Stil mit zeitgestempelter Zeilen-Hervorhebung (Karaoke / Synced LRC).
+/// Unterstützt echte synchronisierte Songtexte über die offene LRCLIB-API sowie
+/// kuratierte Hörspiel-Inhalte für Die drei ???.
 class LyricsService {
   static final LyricsService _instance = LyricsService._internal();
   factory LyricsService() => _instance;
   LyricsService._internal();
+
+  final http.Client _client = http.Client();
+  final Map<String, List<LyricLine>> _cache = {};
 
   /// Ermittelt die zeitlich passende Songtext-Zeile für die aktuelle Wiedergabe-Position
   int findCurrentLineIndex(List<LyricLine> lines, Duration position) {
@@ -21,8 +30,13 @@ class LyricsService {
     return 0;
   }
 
-  /// Ruft synchronisierte Songtexte für einen Track ab
+  /// Ruft echte synchronisierte Songtexte für einen Track ab
   Future<List<LyricLine>> getLyricsForTrack(Track track) async {
+    final cacheKey = '${track.artist.toLowerCase()} - ${track.title.toLowerCase()}';
+    if (_cache.containsKey(cacheKey)) {
+      return _cache[cacheKey]!;
+    }
+
     final title = track.title.toLowerCase();
     final artist = track.artist.toLowerCase();
 
@@ -32,28 +46,161 @@ class LyricsService {
         track.album.toLowerCase().contains('drei ???') ||
         title.contains('super-papagei') ||
         title.contains('karpatenhund')) {
-      return _dieDreiFragezeichenIntroLyrics;
+      final res = _dieDreiFragezeichenIntroLyrics;
+      _cache[cacheKey] = res;
+      return res;
     }
 
-    // 2. Bekannte Musik-Hits
-    if (title.contains('bohemian rhapsody') || artist.contains('queen')) {
+    // 2. Bekannte kuratierte Hits
+    if (title.contains('bohemian rhapsody') && artist.contains('queen')) {
+      _cache[cacheKey] = _bohemianRhapsodyLyrics;
       return _bohemianRhapsodyLyrics;
     }
 
-    if (title.contains('dreams') || artist.contains('fleetwood')) {
-      return _dreamsLyrics;
+    // 3. Echte synchronisierte Songtexte von der offenen LRCLIB API abrufen
+    try {
+      final realLyrics = await _fetchFromLrclib(track);
+      if (realLyrics.isNotEmpty) {
+        _cache[cacheKey] = realLyrics;
+        return realLyrics;
+      }
+    } catch (e) {
+      debugPrint('[LyricsService] LRCLIB fetch error: $e');
     }
 
-    if (title.contains('hotel california') || artist.contains('eagles')) {
-      return _hotelCaliforniaLyrics;
-    }
+    // 4. Fallback: Dynamische musikalisch getaktete Verse
+    final fallback = _generateDynamicLyrics(track);
+    _cache[cacheKey] = fallback;
+    return fallback;
+  }
 
-    if (title.contains('blinding lights') || artist.contains('weeknd')) {
-      return _blindingLightsLyrics;
-    }
+  /// Bereinigt Songtitel von störenden Zusätzen wie "(Remastered 2011)" für bessere Trefferquote
+  String _cleanTrackTitle(String title) {
+    var cleaned = title;
+    cleaned = cleaned.replaceAll(RegExp(r'\s*[\(\[](?:feat\.|ft\.|remastered|live|mono|deluxe|version|edit|explicit)[^\)\]]*[\)\]]', caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\s*-\s*(?:remastered|live|radio edit|bonus track).*', caseSensitive: false), '');
+    return cleaned.trim();
+  }
 
-    // 3. Intelligente dynamische Generierung für beliebige Titel aus der Bibliothek
-    return _generateDynamicLyrics(track);
+  /// Fragt die LRCLIB REST-API nach echten synchronisierten Texten ab
+  Future<List<LyricLine>> _fetchFromLrclib(Track track) async {
+    final cleanTitle = _cleanTrackTitle(track.title);
+    final cleanArtist = track.artist.trim();
+    if (cleanTitle.isEmpty || cleanArtist.isEmpty) return [];
+
+    const userAgent = 'MusicAssistantApp/1.10.4 (https://github.com/LegoPuck-orginal/music-assistant-app)';
+    final headers = {'User-Agent': userAgent};
+
+    // Versuch 1: Exakte Suche mit /api/get
+    try {
+      final queryParams = {
+        'track_name': cleanTitle,
+        'artist_name': cleanArtist,
+      };
+      if (track.durationSeconds > 0) {
+        queryParams['duration'] = track.durationSeconds.toString();
+      }
+      final uri = Uri.https('lrclib.net', '/api/get', queryParams);
+      final resp = await _client.get(uri, headers: headers).timeout(const Duration(seconds: 4));
+
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+        final synced = data['syncedLyrics'] as String?;
+        if (synced != null && synced.trim().isNotEmpty) {
+          final lines = parseLrc(synced);
+          if (lines.isNotEmpty) return lines;
+        }
+
+        final plain = data['plainLyrics'] as String?;
+        if (plain != null && plain.trim().isNotEmpty) {
+          return _spacePlainLyrics(plain, track.durationSeconds);
+        }
+      }
+    } catch (_) {}
+
+    // Versuch 2: Flexible Suche mit /api/search
+    try {
+      final searchUri = Uri.https('lrclib.net', '/api/search', {
+        'track_name': cleanTitle,
+        'artist_name': cleanArtist,
+      });
+      final resp = await _client.get(searchUri, headers: headers).timeout(const Duration(seconds: 4));
+
+      if (resp.statusCode == 200) {
+        final list = jsonDecode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
+        for (final item in list) {
+          if (item is Map<String, dynamic>) {
+            final synced = item['syncedLyrics'] as String?;
+            if (synced != null && synced.trim().isNotEmpty) {
+              final lines = parseLrc(synced);
+              if (lines.isNotEmpty) return lines;
+            }
+          }
+        }
+
+        // Falls kein Synced, nehme Plain Lyrics des ersten Treffers
+        if (list.isNotEmpty && list.first is Map<String, dynamic>) {
+          final first = list.first as Map<String, dynamic>;
+          final plain = first['plainLyrics'] as String?;
+          if (plain != null && plain.trim().isNotEmpty) {
+            return _spacePlainLyrics(plain, track.durationSeconds);
+          }
+        }
+      }
+    } catch (_) {}
+
+    return [];
+  }
+
+  /// Parst einen LRC-Text ([mm:ss.xx] Songtext) in strukturierte LyricLine-Objekte
+  List<LyricLine> parseLrc(String lrcContent) {
+    final lines = <LyricLine>[];
+    final regex = RegExp(r'\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)');
+
+    for (final rawLine in lrcContent.split('\n')) {
+      final line = rawLine.trim();
+      if (line.isEmpty) continue;
+      final match = regex.firstMatch(line);
+      if (match != null) {
+        final min = int.tryParse(match.group(1) ?? '0') ?? 0;
+        final sec = int.tryParse(match.group(2) ?? '0') ?? 0;
+        final msStr = match.group(3);
+        final ms = msStr != null
+            ? (int.tryParse(msStr.padRight(3, '0').substring(0, 3)) ?? 0)
+            : 0;
+        final text = match.group(4)?.trim() ?? '';
+        if (text.isNotEmpty) {
+          lines.add(LyricLine(
+            timestamp: Duration(minutes: min, seconds: sec, milliseconds: ms),
+            text: text,
+          ));
+        }
+      }
+    }
+    return lines;
+  }
+
+  /// Verteilt ungetaktete Plain Lyrics gleichmäßig über die Songdauer
+  List<LyricLine> _spacePlainLyrics(String plainLyrics, int durationSeconds) {
+    final rawLines = plainLyrics
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    if (rawLines.isEmpty) return [];
+
+    final dur = durationSeconds > 0 ? durationSeconds : (rawLines.length * 4);
+    final interval = (dur / (rawLines.length + 1)).clamp(2.5, 12.0);
+
+    final lines = <LyricLine>[];
+    for (int i = 0; i < rawLines.length; i++) {
+      lines.add(LyricLine(
+        timestamp: Duration(milliseconds: (i * interval * 1000).toInt()),
+        text: rawLines[i],
+      ));
+    }
+    return lines;
   }
 
   /// Generiert musikalisch getaktete Verse für jeden beliebigen Song
@@ -118,7 +265,7 @@ class LyricsService {
     ];
   }
 
-  // --- Kuratierte Lyrics ---
+  // --- Kuratierte Klassiker ---
 
   static const List<LyricLine> _dieDreiFragezeichenIntroLyrics = [
     LyricLine(timestamp: Duration(seconds: 0), text: '♪ Legendäre Titelmelodie ♪'),
@@ -148,39 +295,5 @@ class LyricsService {
     LyricLine(timestamp: Duration(seconds: 114), text: 'But now I\'ve gone and thrown it all away'),
     LyricLine(timestamp: Duration(seconds: 128), text: 'Mama, ooh, didn\'t mean to make you cry'),
     LyricLine(timestamp: Duration(seconds: 142), text: 'If I\'m not back again this time tomorrow, carry on, carry on'),
-  ];
-
-  static const List<LyricLine> _dreamsLyrics = [
-    LyricLine(timestamp: Duration(seconds: 0), text: '♪ Smooth Bass & Drums Intro ♪'),
-    LyricLine(timestamp: Duration(seconds: 12), text: 'Now here you go again, you say you want your freedom'),
-    LyricLine(timestamp: Duration(seconds: 22), text: 'Well, who am I to keep you down?'),
-    LyricLine(timestamp: Duration(seconds: 32), text: 'It\'s only right that you should play the way you feel it'),
-    LyricLine(timestamp: Duration(seconds: 43), text: 'But listen carefully to the sound of your loneliness'),
-    LyricLine(timestamp: Duration(seconds: 53), text: 'Like a heartbeat drives you mad in the stillness of remembering'),
-    LyricLine(timestamp: Duration(seconds: 65), text: 'What you had, and what you lost'),
-    LyricLine(timestamp: Duration(seconds: 77), text: 'Yeah, thunder only happens when it\'s raining'),
-    LyricLine(timestamp: Duration(seconds: 89), text: 'Players only love you when they\'re playing'),
-    LyricLine(timestamp: Duration(seconds: 101), text: 'Say women, they will come and they will go'),
-    LyricLine(timestamp: Duration(seconds: 113), text: 'When the rain washes you clean, you\'ll know'),
-  ];
-
-  static const List<LyricLine> _hotelCaliforniaLyrics = [
-    LyricLine(timestamp: Duration(seconds: 0), text: '♪ Acoustic 12-String Guitar Intro ♪'),
-    LyricLine(timestamp: Duration(seconds: 24), text: 'On a dark desert highway, cool wind in my hair'),
-    LyricLine(timestamp: Duration(seconds: 34), text: 'Warm smell of colitas, rising up through the air'),
-    LyricLine(timestamp: Duration(seconds: 44), text: 'Up ahead in the distance, I saw a shimmering light'),
-    LyricLine(timestamp: Duration(seconds: 54), text: 'My head grew heavy and my sight grew dim, I had to stop for the night'),
-    LyricLine(timestamp: Duration(seconds: 64), text: 'Welcome to the Hotel California'),
-    LyricLine(timestamp: Duration(seconds: 76), text: 'Such a lovely place, such a lovely face'),
-  ];
-
-  static const List<LyricLine> _blindingLightsLyrics = [
-    LyricLine(timestamp: Duration(seconds: 0), text: '♪ Synthwave Intro ♪'),
-    LyricLine(timestamp: Duration(seconds: 16), text: 'I\'ve been tryna call, I\'ve been on my own for long enough'),
-    LyricLine(timestamp: Duration(seconds: 27), text: 'Maybe you can show me how to love, maybe'),
-    LyricLine(timestamp: Duration(seconds: 38), text: 'I look around and Sin City\'s cold and empty'),
-    LyricLine(timestamp: Duration(seconds: 49), text: 'No one\'s around to judge me, I can see clearly when you\'re gone'),
-    LyricLine(timestamp: Duration(seconds: 60), text: 'I said, ooh, I\'m blinded by the lights'),
-    LyricLine(timestamp: Duration(seconds: 71), text: 'No, I can\'t sleep until I feel your touch'),
   ];
 }

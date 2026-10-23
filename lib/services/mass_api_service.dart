@@ -275,6 +275,15 @@ class MassApiService {
           final volume = (map['volume_level'] as num?)?.toInt() ?? 50;
           final isMuted = map['volume_muted'] as bool? ?? false;
           final available = map['available'] as bool? ?? true;
+          final syncedTo = map['synced_to']?.toString();
+          final groupChilds = (map['group_childs'] as List?)
+                  ?.map((e) => e.toString())
+                  .toList() ??
+              const <String>[];
+          final canSyncWith = (map['can_sync_with'] as List?)
+                  ?.map((e) => e.toString())
+                  .toList() ??
+              const <String>[];
 
           list.add(PlayerDevice(
             id: playerId,
@@ -284,6 +293,9 @@ class MassApiService {
             isMuted: isMuted,
             state: state,
             isAvailable: available,
+            syncedTo: syncedTo,
+            groupChilds: groupChilds,
+            canSyncWith: canSyncWith,
           ));
         }
         return list;
@@ -550,9 +562,8 @@ class MassApiService {
 
     final duration = (map['duration'] as num?)?.toInt() ?? 180;
     final isLiked = map['favorite'] as bool? ?? false;
-    final uri = previewUrl != null && previewUrl.startsWith('http')
-        ? previewUrl
-        : map['uri']?.toString();
+    final realUri = map['uri']?.toString() ??
+        (id.isNotEmpty ? 'library://track/$id' : previewUrl);
     final provider = map['provider']?.toString() ?? defaultProvider;
 
     return Track(
@@ -562,7 +573,8 @@ class MassApiService {
       album: albumName,
       durationSeconds: duration,
       imageUrl: imageUrl,
-      uri: uri,
+      uri: realUri,
+      previewUrl: previewUrl,
       provider: provider,
       isLiked: isLiked,
     );
@@ -687,6 +699,19 @@ class MassApiService {
         'source_queue_id': sourceQueueId,
         'target_queue_id': targetQueueId,
         'auto_play': autoPlay,
+      });
+
+  /// Synchronisiert einen Lautsprecher mit einem Master-Lautsprecher (Multiroom-Gruppe)
+  Future<void> syncPlayer(String playerId, String targetPlayerId) =>
+      sendCommand('players/cmd/sync', {
+        'player_id': playerId,
+        'target_player': targetPlayerId,
+      });
+
+  /// Hebt die Multiroom-Synchronisierung eines Lautsprechers auf
+  Future<void> unsyncPlayer(String playerId) =>
+      sendCommand('players/cmd/unsync', {
+        'player_id': playerId,
       });
 
   /// Power an/aus für einen Lautsprecher

@@ -44,6 +44,21 @@ void main() {
       expect(lines[2].text, contains('Synth Master'));
     });
 
+    test('LyricsService parses standard timestamped LRC format correctly', () {
+      const sampleLrc = '''
+[00:09.65] The club isn't the best place to find a lover
+[00:12.10] So the bar is where I go
+[01:05.50] I'm in love with the shape of you
+''';
+      final lines = lyricsService.parseLrc(sampleLrc);
+      expect(lines.length, equals(3));
+      expect(lines[0].timestamp, equals(const Duration(seconds: 9, milliseconds: 650)));
+      expect(lines[0].text, equals("The club isn't the best place to find a lover"));
+      expect(lines[1].timestamp, equals(const Duration(seconds: 12, milliseconds: 100)));
+      expect(lines[2].timestamp, equals(const Duration(minutes: 1, seconds: 5, milliseconds: 500)));
+      expect(lines[2].text, equals("I'm in love with the shape of you"));
+    });
+
     testWidgets('AudioWaveformScrubber renders and triggers seek callback',
         (WidgetTester tester) async {
       Duration? seekTarget;

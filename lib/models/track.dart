@@ -6,6 +6,7 @@ class Track {
   final int durationSeconds;
   final String? imageUrl;
   final String? uri;
+  final String? previewUrl;
   final String? provider;
   bool isLiked;
 
@@ -17,6 +18,7 @@ class Track {
     required this.durationSeconds,
     this.imageUrl,
     this.uri,
+    this.previewUrl,
     this.provider,
     this.isLiked = false,
   });
@@ -36,6 +38,7 @@ class Track {
       'durationSeconds': durationSeconds,
       'imageUrl': imageUrl,
       'uri': uri,
+      'previewUrl': previewUrl,
       'provider': provider,
       'isLiked': isLiked,
     };
@@ -50,6 +53,7 @@ class Track {
       durationSeconds: json['durationSeconds'] as int? ?? 180,
       imageUrl: json['imageUrl'] as String?,
       uri: json['uri'] as String?,
+      previewUrl: json['previewUrl'] as String?,
       provider: json['provider'] as String?,
       isLiked: json['isLiked'] as bool? ?? false,
     );
@@ -63,6 +67,7 @@ class Track {
     int? durationSeconds,
     String? imageUrl,
     String? uri,
+    String? previewUrl,
     String? provider,
     bool? isLiked,
   }) {
@@ -74,6 +79,7 @@ class Track {
       durationSeconds: durationSeconds ?? this.durationSeconds,
       imageUrl: imageUrl ?? this.imageUrl,
       uri: uri ?? this.uri,
+      previewUrl: previewUrl ?? this.previewUrl,
       provider: provider ?? this.provider,
       isLiked: isLiked ?? this.isLiked,
     );

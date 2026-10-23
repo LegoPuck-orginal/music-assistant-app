@@ -309,14 +309,20 @@ class DevicePickerSheet extends StatelessWidget {
                         subtitle: Text(
                           !isAvail
                               ? 'Nicht erreichbar (Offline)'
-                              : player.isLocal
-                                  ? 'Lokaler iPhone-Lautsprecher (Vorschau / Unterwegs)'
-                                  : '${player.type} • Volle Songlänge • DSP Equalizer',
+                              : player.syncedTo == active?.id
+                                  ? '🔗 Synchronisiert mit ${active?.name}'
+                                  : player.isGroupLeader
+                                      ? '👑 Gruppenleiter (${player.groupChilds.length} Lautsprecher)'
+                                      : player.isLocal
+                                          ? 'Lokaler iPhone-Lautsprecher (Vorschau / Unterwegs)'
+                                          : '${player.type} • Volle Songlänge • DSP Equalizer',
                           style: TextStyle(
                             color: isAvail
-                                ? (player.isLocal
-                                    ? SpotifyColors.textSecondary
-                                    : SpotifyColors.green.withValues(alpha: 0.85))
+                                ? (player.syncedTo == active?.id
+                                    ? SpotifyColors.green
+                                    : player.isLocal
+                                        ? SpotifyColors.textSecondary
+                                        : SpotifyColors.green.withValues(alpha: 0.85))
                                 : SpotifyColors.textMuted,
                             fontSize: 12,
                           ),
@@ -324,6 +330,33 @@ class DevicePickerSheet extends StatelessWidget {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (!player.isLocal &&
+                                isAvail &&
+                                active != null &&
+                                !active.isLocal &&
+                                !isCurrent)
+                              IconButton(
+                                icon: Icon(
+                                  player.syncedTo == active.id
+                                      ? Icons.link
+                                      : Icons.link_off,
+                                  color: player.syncedTo == active.id
+                                      ? SpotifyColors.green
+                                      : SpotifyColors.textSecondary,
+                                  size: 20,
+                                ),
+                                tooltip: player.syncedTo == active.id
+                                    ? 'Von ${active.name} trennen'
+                                    : 'Mit ${active.name} synchronisieren (Multiroom)',
+                                onPressed: () {
+                                  HapticFeedback.lightImpact();
+                                  if (player.syncedTo == active.id) {
+                                    prov.unsyncSpeaker(player);
+                                  } else {
+                                    prov.syncSpeakerWithActive(player);
+                                  }
+                                },
+                              ),
                             if (!player.isLocal && isAvail)
                               IconButton(
                                 icon: Icon(

@@ -7,6 +7,9 @@ class PlayerDevice {
   String state; // playing, paused, idle
   bool isSelected;
   bool isAvailable;
+  final String? syncedTo;
+  final List<String> groupChilds;
+  final List<String> canSyncWith;
 
   PlayerDevice({
     required this.id,
@@ -17,9 +20,14 @@ class PlayerDevice {
     this.state = 'idle',
     this.isSelected = false,
     this.isAvailable = true,
+    this.syncedTo,
+    this.groupChilds = const [],
+    this.canSyncWith = const [],
   });
 
   bool get isLocal => id == 'local_iphone';
+  bool get isSynced => syncedTo != null && syncedTo!.isNotEmpty;
+  bool get isGroupLeader => groupChilds.isNotEmpty;
 
   factory PlayerDevice.localIPhone({bool isSelected = false, int volume = 60}) {
     return PlayerDevice(
@@ -41,6 +49,9 @@ class PlayerDevice {
     String? state,
     bool? isSelected,
     bool? isAvailable,
+    String? syncedTo,
+    List<String>? groupChilds,
+    List<String>? canSyncWith,
   }) {
     return PlayerDevice(
       id: id ?? this.id,
@@ -51,6 +62,9 @@ class PlayerDevice {
       state: state ?? this.state,
       isSelected: isSelected ?? this.isSelected,
       isAvailable: isAvailable ?? this.isAvailable,
+      syncedTo: syncedTo ?? this.syncedTo,
+      groupChilds: groupChilds ?? this.groupChilds,
+      canSyncWith: canSyncWith ?? this.canSyncWith,
     );
   }
 }
