@@ -53,6 +53,7 @@ class MusicProvider extends ChangeNotifier {
   PlayerDevice? _activePlayer;
   Set<String> _likedTrackIds = {};
   Timer? _positionTimer;
+  Timer? _playerPollTimer;
   String _serverUrl = 'http://192.168.188.25:8095';
   String _authToken = StorageService.defaultToken;
   bool _isInitialized = false;
@@ -151,6 +152,33 @@ class MusicProvider extends ChangeNotifier {
   List<Track> get queue => _queue;
   List<PlayerDevice> get players => _players;
   PlayerDevice? get activePlayer => _activePlayer;
+
+  /// Findet andere Lautsprecher im Netzwerk, die gerade aktiv Musik spielen
+  List<PlayerDevice> get otherPlayingPlayers =>
+      _players.where((p) => !p.isSelected && p.isPlaying && p.hasActiveTrack).toList();
+
+  /// Übernimmt die aktive Steuerung eines Lautsprechers, der gerade Musik abspielt
+  Future<void> takeOverControl(PlayerDevice player) async {
+    await setActivePlayer(player);
+    if (player.hasActiveTrack) {
+      _currentTrack = Track(
+        id: player.id,
+        title: player.currentTitle!,
+        artist: player.currentArtist ?? '',
+        album: player.currentAlbum ?? '',
+        imageUrl: player.currentImageUrl,
+        durationSeconds: player.currentDurationSeconds ?? 180,
+        uri: player.currentUri,
+        isLiked: _likedTrackIds.contains(player.id),
+      );
+      _totalDuration = Duration(seconds: player.currentDurationSeconds ?? 180);
+      _currentPosition = Duration(seconds: player.elapsedTimeSeconds ?? 0);
+      _isPlaying = (player.state == 'playing');
+      _startPositionTimer();
+    }
+    await loadServerQueue();
+    notifyListeners();
+  }
   bool get isServerConnected => _api.isConnected;
   String get serverUrl => _serverUrl;
   String get authToken => _authToken;
@@ -296,7 +324,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.4');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.5');
   }
 
   void _connectAndRefresh() {
@@ -319,8 +347,71 @@ class MusicProvider extends ChangeNotifier {
       _api.configure(_serverUrl, _authToken);
 
       refreshServerData();
+
+      // Aktive Überwachung aller Lautsprecher im 4-Sekunden-Takt
+      _playerPollTimer?.cancel();
+      _playerPollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+        if (_api.isConnected && _isAuthenticated) {
+          await _pollPlayersStatus();
+        }
+      });
     } catch (e) {
       debugPrint('[MusicProvider] Background connect error: $e');
+    }
+  }
+
+  /// Fragt im Hintergrund aktiv den Status aller Lautsprecher ab, um aktive Wiedergabe sofort zu erkennen
+  Future<void> _pollPlayersStatus() async {
+    try {
+      final remotePlayers = await _api.fetchPlayers();
+      if (remotePlayers.isEmpty) return;
+
+      bool changed = false;
+      for (final rp in remotePlayers) {
+        final idx = _players.indexWhere((p) => p.id == rp.id);
+        if (idx != -1) {
+          final existing = _players[idx];
+          if (existing.state != rp.state ||
+              existing.currentTitle != rp.currentTitle ||
+              existing.volume != rp.volume ||
+              existing.syncedTo != rp.syncedTo) {
+            _players[idx] = rp.copyWith(isSelected: existing.isSelected);
+            changed = true;
+          }
+        } else {
+          _players.insert(0, rp);
+          changed = true;
+        }
+
+        // Falls dies der aktive Lautsprecher ist, Titel & Position angleichen
+        if (_activePlayer?.id == rp.id) {
+          _activePlayer = rp.copyWith(isSelected: true);
+          if (rp.hasActiveTrack && _currentTrack?.title != rp.currentTitle) {
+            _currentTrack = Track(
+              id: rp.id,
+              title: rp.currentTitle!,
+              artist: rp.currentArtist ?? '',
+              album: rp.currentAlbum ?? '',
+              durationSeconds: rp.currentDurationSeconds ?? 180,
+              imageUrl: rp.currentImageUrl,
+              uri: rp.currentUri,
+              isLiked: _likedTrackIds.contains(rp.id),
+            );
+            _totalDuration = Duration(seconds: rp.currentDurationSeconds ?? 180);
+            changed = true;
+          }
+          if (rp.isPlaying != _isPlaying) {
+            _isPlaying = rp.isPlaying;
+            changed = true;
+          }
+        }
+      }
+
+      if (changed) {
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[MusicProvider] _pollPlayersStatus error: $e');
     }
   }
 
@@ -509,7 +600,16 @@ class MusicProvider extends ChangeNotifier {
             ?.map((e) => e.toString())
             .toList();
 
-        // Update matching player in list
+        final currentMedia = data['current_media'] as Map<String, dynamic>?;
+        final currentTitle = currentMedia?['title']?.toString();
+        final currentArtist = currentMedia?['artist']?.toString();
+        final currentAlbum = currentMedia?['album']?.toString();
+        final currentImageUrl = currentMedia?['image_url']?.toString();
+        final currentDuration = (currentMedia?['duration'] as num?)?.toInt();
+        final elapsedTime = (data['elapsed_time'] as num?)?.toInt();
+        final currentUri = currentMedia?['uri']?.toString();
+
+        // Update matching player in list with full playback metadata
         for (int i = 0; i < _players.length; i++) {
           if (_players[i].id == playerId) {
             _players[i] = _players[i].copyWith(
@@ -517,6 +617,13 @@ class MusicProvider extends ChangeNotifier {
               state: state,
               syncedTo: syncedTo,
               groupChilds: groupChilds,
+              currentTitle: currentTitle,
+              currentArtist: currentArtist,
+              currentAlbum: currentAlbum,
+              currentImageUrl: currentImageUrl,
+              currentDurationSeconds: currentDuration,
+              elapsedTimeSeconds: elapsedTime,
+              currentUri: currentUri,
             );
           }
         }
@@ -531,30 +638,33 @@ class MusicProvider extends ChangeNotifier {
             state: state,
             syncedTo: syncedTo,
             groupChilds: groupChilds,
+            currentTitle: currentTitle,
+            currentArtist: currentArtist,
+            currentAlbum: currentAlbum,
+            currentImageUrl: currentImageUrl,
+            currentDurationSeconds: currentDuration,
+            elapsedTimeSeconds: elapsedTime,
+            currentUri: currentUri,
           );
 
-          // If media metadata is attached
-          final currentMedia = data['current_media'] as Map<String, dynamic>?;
-          if (currentMedia != null) {
-            final title = currentMedia['title']?.toString();
-            final artist = currentMedia['artist']?.toString() ?? '';
-            final album = currentMedia['album']?.toString() ?? '';
-            final img = currentMedia['image_url']?.toString();
-            if (title != null && title.isNotEmpty) {
-              _currentTrack = Track(
-                id: playerId ?? 'remote',
-                title: title,
-                artist: artist,
-                album: album,
-                durationSeconds:
-                    (currentMedia['duration'] as num?)?.toInt() ?? 180,
-                imageUrl: img,
-                isLiked: _likedTrackIds.contains(playerId),
-              );
-            }
+          if (currentTitle != null && currentTitle.isNotEmpty) {
+            _currentTrack = Track(
+              id: playerId ?? 'remote',
+              title: currentTitle,
+              artist: currentArtist ?? '',
+              album: currentAlbum ?? '',
+              durationSeconds: currentDuration ?? 180,
+              imageUrl: currentImageUrl,
+              uri: currentUri,
+              isLiked: _likedTrackIds.contains(playerId),
+            );
+            _totalDuration = Duration(seconds: currentDuration ?? 180);
           }
-          notifyListeners();
+          if (elapsedTime != null) {
+            _currentPosition = Duration(seconds: elapsedTime);
+          }
         }
+        notifyListeners();
       }
 
       if (eventName == 'queue_updated' && data != null) {
@@ -1636,6 +1746,7 @@ class MusicProvider extends ChangeNotifier {
     _authSubscription?.cancel();
     _eventsSubscription?.cancel();
     _positionTimer?.cancel();
+    _playerPollTimer?.cancel();
     _localAudioPlayer.dispose();
     _api.dispose();
     try {

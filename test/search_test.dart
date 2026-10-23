@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:music_assistant_app/models/equalizer_settings.dart';
 import 'package:music_assistant_app/models/player_device.dart';
 import 'package:music_assistant_app/models/playlist.dart';
@@ -8,6 +9,7 @@ import 'package:music_assistant_app/providers/music_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
     const MethodChannel('xyz.luan/audioplayers.global'),
@@ -17,6 +19,16 @@ void main() {
       .setMockMethodCallHandler(
     const MethodChannel('xyz.luan/audioplayers'),
     (MethodCall methodCall) async => 1,
+  );
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+    const MethodChannel('de.timm.musicAssistantApp/apple_now_playing'),
+    (MethodCall methodCall) async => true,
+  );
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+    const MethodChannel('de.timm.musicAssistantApp/live_activity'),
+    (MethodCall methodCall) async => true,
   );
 
   group('Music Assistant Model & Provider Tests', () {
@@ -141,6 +153,33 @@ void main() {
       expect(podcastsOnly.first.name, 'Die drei ??? Podcast');
       expect(musicOnly.length, 1);
       expect(musicOnly.first.name, 'Top 50 Hits');
+    });
+
+    test('PlayerDevice playback tracking & takeover control', () async {
+      final provider = MusicProvider();
+
+      final sonosLivingRoom = PlayerDevice(
+        id: 'sonos_lr',
+        name: 'Wohnzimmer Sonos',
+        type: 'Sonos',
+        state: 'playing',
+        currentTitle: 'Wish You Were Here',
+        currentArtist: 'Pink Floyd',
+        currentAlbum: 'Wish You Were Here',
+        currentDurationSeconds: 334,
+        elapsedTimeSeconds: 45,
+      );
+
+      expect(sonosLivingRoom.isPlaying, isTrue);
+      expect(sonosLivingRoom.hasActiveTrack, isTrue);
+
+      await provider.takeOverControl(sonosLivingRoom);
+
+      expect(provider.activePlayer?.id, equals('sonos_lr'));
+      expect(provider.currentTrack?.title, equals('Wish You Were Here'));
+      expect(provider.currentTrack?.artist, equals('Pink Floyd'));
+      expect(provider.totalDuration.inSeconds, equals(334));
+      expect(provider.currentPosition.inSeconds, equals(45));
     });
   });
 }

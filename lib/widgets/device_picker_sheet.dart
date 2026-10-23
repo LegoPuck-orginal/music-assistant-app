@@ -309,20 +309,24 @@ class DevicePickerSheet extends StatelessWidget {
                         subtitle: Text(
                           !isAvail
                               ? 'Nicht erreichbar (Offline)'
-                              : player.syncedTo == active?.id
-                                  ? '🔗 Synchronisiert mit ${active?.name}'
-                                  : player.isGroupLeader
-                                      ? '👑 Gruppenleiter (${player.groupChilds.length} Lautsprecher)'
-                                      : player.isLocal
-                                          ? 'Lokaler iPhone-Lautsprecher (Vorschau / Unterwegs)'
-                                          : '${player.type} • Volle Songlänge • DSP Equalizer',
+                              : player.isPlaying && player.hasActiveTrack
+                                  ? '▶️ Spielt: ${player.currentTitle} • ${player.currentArtist ?? ""}'
+                                  : player.syncedTo == active?.id
+                                      ? '🔗 Synchronisiert mit ${active?.name}'
+                                      : player.isGroupLeader
+                                          ? '👑 Gruppenleiter (${player.groupChilds.length} Lautsprecher)'
+                                          : player.isLocal
+                                              ? 'Lokaler iPhone-Lautsprecher (Vorschau / Unterwegs)'
+                                              : '${player.type} • Volle Songlänge • DSP Equalizer',
                           style: TextStyle(
                             color: isAvail
-                                ? (player.syncedTo == active?.id
-                                    ? SpotifyColors.green
-                                    : player.isLocal
-                                        ? SpotifyColors.textSecondary
-                                        : SpotifyColors.green.withValues(alpha: 0.85))
+                                ? (player.isPlaying && player.hasActiveTrack
+                                    ? SpotifyColors.orange
+                                    : player.syncedTo == active?.id
+                                        ? SpotifyColors.green
+                                        : player.isLocal
+                                            ? SpotifyColors.textSecondary
+                                            : SpotifyColors.green.withValues(alpha: 0.85))
                                 : SpotifyColors.textMuted,
                             fontSize: 12,
                           ),
@@ -330,6 +334,36 @@ class DevicePickerSheet extends StatelessWidget {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (player.isPlaying && !isCurrent)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: SpotifyColors.orange,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.touch_app, size: 12),
+                                  label: const Text(
+                                    'Steuern',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    HapticFeedback.lightImpact();
+                                    prov.takeOverControl(player);
+                                    Navigator.pop(context);
+                                  },
+                                ),
+                              ),
                             if (!player.isLocal &&
                                 isAvail &&
                                 active != null &&
@@ -399,15 +433,27 @@ class DevicePickerSheet extends StatelessWidget {
                         ),
                         onTap: () {
                           HapticFeedback.lightImpact();
-                          prov.setActivePlayer(player);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                  'Wiedergabe aktiv auf: ${player.name}'),
-                              duration: const Duration(seconds: 1),
-                              backgroundColor: SpotifyColors.surfaceElevated,
-                            ),
-                          );
+                          if (player.isPlaying && !isCurrent) {
+                            prov.takeOverControl(player);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    'Steuerung übernommen für: ${player.name}'),
+                                duration: const Duration(seconds: 1),
+                                backgroundColor: SpotifyColors.surfaceElevated,
+                              ),
+                            );
+                          } else {
+                            prov.setActivePlayer(player);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    'Wiedergabe aktiv auf: ${player.name}'),
+                                duration: const Duration(seconds: 1),
+                                backgroundColor: SpotifyColors.surfaceElevated,
+                              ),
+                            );
+                          }
                         },
                       ),
                     ),

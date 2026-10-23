@@ -11,6 +11,15 @@ class PlayerDevice {
   final List<String> groupChilds;
   final List<String> canSyncWith;
 
+  // Live Wiedergabedaten für Multiroom-Überwachung & Steuerung
+  final String? currentTitle;
+  final String? currentArtist;
+  final String? currentAlbum;
+  final String? currentImageUrl;
+  final int? currentDurationSeconds;
+  final int? elapsedTimeSeconds;
+  final String? currentUri;
+
   PlayerDevice({
     required this.id,
     required this.name,
@@ -23,11 +32,20 @@ class PlayerDevice {
     this.syncedTo,
     this.groupChilds = const [],
     this.canSyncWith = const [],
+    this.currentTitle,
+    this.currentArtist,
+    this.currentAlbum,
+    this.currentImageUrl,
+    this.currentDurationSeconds,
+    this.elapsedTimeSeconds,
+    this.currentUri,
   });
 
   bool get isLocal => id == 'local_iphone';
   bool get isSynced => syncedTo != null && syncedTo!.isNotEmpty;
   bool get isGroupLeader => groupChilds.isNotEmpty;
+  bool get isPlaying => state == 'playing';
+  bool get hasActiveTrack => currentTitle != null && currentTitle!.isNotEmpty;
 
   factory PlayerDevice.localIPhone({bool isSelected = false, int volume = 60}) {
     return PlayerDevice(
@@ -52,6 +70,13 @@ class PlayerDevice {
     String? syncedTo,
     List<String>? groupChilds,
     List<String>? canSyncWith,
+    String? currentTitle,
+    String? currentArtist,
+    String? currentAlbum,
+    String? currentImageUrl,
+    int? currentDurationSeconds,
+    int? elapsedTimeSeconds,
+    String? currentUri,
   }) {
     return PlayerDevice(
       id: id ?? this.id,
@@ -65,6 +90,13 @@ class PlayerDevice {
       syncedTo: syncedTo ?? this.syncedTo,
       groupChilds: groupChilds ?? this.groupChilds,
       canSyncWith: canSyncWith ?? this.canSyncWith,
+      currentTitle: currentTitle ?? this.currentTitle,
+      currentArtist: currentArtist ?? this.currentArtist,
+      currentAlbum: currentAlbum ?? this.currentAlbum,
+      currentImageUrl: currentImageUrl ?? this.currentImageUrl,
+      currentDurationSeconds: currentDurationSeconds ?? this.currentDurationSeconds,
+      elapsedTimeSeconds: elapsedTimeSeconds ?? this.elapsedTimeSeconds,
+      currentUri: currentUri ?? this.currentUri,
     );
   }
 }

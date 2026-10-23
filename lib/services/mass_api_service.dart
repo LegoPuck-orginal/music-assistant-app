@@ -285,6 +285,15 @@ class MassApiService {
                   .toList() ??
               const <String>[];
 
+          final currentMedia = map['current_media'] as Map<String, dynamic>?;
+          final currentTitle = currentMedia?['title']?.toString();
+          final currentArtist = currentMedia?['artist']?.toString();
+          final currentAlbum = currentMedia?['album']?.toString();
+          final currentImageUrl = currentMedia?['image_url']?.toString();
+          final currentDuration = (currentMedia?['duration'] as num?)?.toInt();
+          final elapsedTime = (map['elapsed_time'] as num?)?.toInt();
+          final currentUri = currentMedia?['uri']?.toString();
+
           list.add(PlayerDevice(
             id: playerId,
             name: name,
@@ -296,6 +305,13 @@ class MassApiService {
             syncedTo: syncedTo,
             groupChilds: groupChilds,
             canSyncWith: canSyncWith,
+            currentTitle: currentTitle,
+            currentArtist: currentArtist,
+            currentAlbum: currentAlbum,
+            currentImageUrl: currentImageUrl,
+            currentDurationSeconds: currentDuration,
+            elapsedTimeSeconds: elapsedTime,
+            currentUri: currentUri,
           ));
         }
         return list;

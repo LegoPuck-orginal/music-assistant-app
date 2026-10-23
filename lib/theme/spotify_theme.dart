@@ -9,11 +9,16 @@ class SpotifyTheme {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: SpotifyColors.pureBlack,
       canvasColor: SpotifyColors.pureBlack,
+      cardColor: SpotifyColors.surface,
+      dialogTheme: const DialogThemeData(
+        backgroundColor: SpotifyColors.surfaceElevated,
+      ),
+      dividerColor: SpotifyColors.borderSubtle,
       colorScheme: const ColorScheme.dark(
-        primary: SpotifyColors.green,
-        onPrimary: Colors.black,
-        secondary: SpotifyColors.greenLight,
-        onSecondary: Colors.black,
+        primary: SpotifyColors.orange,
+        onPrimary: Colors.white,
+        secondary: SpotifyColors.orangeLight,
+        onSecondary: Colors.white,
         surface: SpotifyColors.surface,
         onSurface: SpotifyColors.textPrimary,
       ),
@@ -31,7 +36,7 @@ class SpotifyTheme {
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: SpotifyColors.pureBlack,
-        selectedItemColor: Colors.white,
+        selectedItemColor: SpotifyColors.orange,
         unselectedItemColor: SpotifyColors.textSecondary,
         selectedLabelStyle: TextStyle(
           fontSize: 11,
@@ -43,6 +48,11 @@ class SpotifyTheme {
         ),
         type: BottomNavigationBarType.fixed,
         elevation: 0,
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        backgroundColor: SpotifyColors.surfaceElevated,
+        contentTextStyle: TextStyle(color: Colors.white),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
