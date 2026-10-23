@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import '../models/audiobook.dart';
 import '../theme/spotify_colors.dart';
 
-/// Spotify-Style Hörbuch & Hörspiel Karte (z.B. für Die drei ???)
+/// Next-Gen Studio Hörbuch & Hörspiel Karte (z. B. für Die drei ???)
 class AudiobookCard extends StatelessWidget {
   final Audiobook audiobook;
   final VoidCallback onTap;
@@ -24,30 +24,48 @@ class AudiobookCard extends StatelessWidget {
         onTap();
       },
       child: Container(
-        width: 154,
+        width: 158,
         margin: const EdgeInsets.only(right: 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Cover Art mit Episode Badge & Play Button
+            // Cover Art mit Episode Badge & Adobe-Orange Play Button
             Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: AspectRatio(
-                    aspectRatio: 1.0,
-                    child: Container(
-                      color: SpotifyColors.surfaceElevated,
-                      child: Image.network(
-                        audiobook.imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Container(
-                          color: const Color(0xFF1E1E1E),
-                          child: const Center(
-                            child: Icon(
-                              Icons.auto_stories,
-                              color: SpotifyColors.green,
-                              size: 40,
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: SpotifyColors.orange.withValues(alpha: 0.28),
+                      width: 1.0,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: AspectRatio(
+                      aspectRatio: 1.0,
+                      child: Container(
+                        color: SpotifyColors.surfaceElevated,
+                        child: Image.network(
+                          audiobook.imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Container(
+                            decoration: const BoxDecoration(
+                              gradient: SpotifyColors.emberHeroGradient,
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.auto_stories_rounded,
+                                color: SpotifyColors.orange,
+                                size: 42,
+                              ),
                             ),
                           ),
                         ),
@@ -62,22 +80,22 @@ class AudiobookCard extends StatelessWidget {
                   left: 8,
                   child: Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(6),
+                      color: Colors.black.withValues(alpha: 0.82),
+                      borderRadius: BorderRadius.circular(7),
                       border: Border.all(
-                        color: SpotifyColors.green.withValues(alpha: 0.7),
-                        width: 0.8,
+                        color: SpotifyColors.orange.withValues(alpha: 0.8),
+                        width: 0.9,
                       ),
                     ),
                     child: Text(
                       'FOLGE ${audiobook.episodeNumber}',
                       style: const TextStyle(
-                        color: SpotifyColors.green,
+                        color: SpotifyColors.orange,
                         fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.6,
                       ),
                     ),
                   ),
@@ -96,12 +114,12 @@ class AudiobookCard extends StatelessWidget {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: SpotifyColors.green,
+                        gradient: SpotifyColors.emberGradient,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 8,
+                            color: SpotifyColors.orange.withValues(alpha: 0.45),
+                            blurRadius: 10,
                             offset: const Offset(0, 3),
                           ),
                         ],
@@ -123,13 +141,13 @@ class AudiobookCard extends StatelessWidget {
 
             // Series Name
             Text(
-              audiobook.series,
+              audiobook.series.toUpperCase(),
               maxLines: 1,
               style: const TextStyle(
-                color: SpotifyColors.green,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.4,
+                color: SpotifyColors.orange,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.6,
               ),
             ),
 
@@ -143,12 +161,12 @@ class AudiobookCard extends StatelessWidget {
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 13,
-                fontWeight: FontWeight.w700,
-                height: 1.25,
+                fontWeight: FontWeight.w800,
+                height: 1.22,
               ),
             ),
 
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
 
             // Duration
             Text(
@@ -156,7 +174,7 @@ class AudiobookCard extends StatelessWidget {
               style: const TextStyle(
                 color: SpotifyColors.textSecondary,
                 fontSize: 11,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],

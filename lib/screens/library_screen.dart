@@ -258,82 +258,117 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
 
-            // Pinned Item: Lieblingssongs
+            // Pinned Item: Lieblingssongs im Adobe-Ember Studio Vault Design
             if (_searchQuery.isEmpty)
               SliverToBoxAdapter(
-                child: InkWell(
-                  onTap: () {
-                    final likedPlaylist = Playlist(
-                      id: 'liked_songs',
-                      name: 'Lieblingssongs',
-                      owner: 'Music Assistant',
-                      trackCount: likedTracks.length,
-                      tracks: likedTracks,
-                    );
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            PlaylistDetailScreen(playlist: likedPlaylist),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      final likedPlaylist = Playlist(
+                        id: 'liked_songs',
+                        name: 'Lieblingssongs',
+                        owner: 'Music Assistant',
+                        trackCount: likedTracks.length,
+                        tracks: likedTracks,
+                      );
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              PlaylistDetailScreen(playlist: likedPlaylist),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: SpotifyColors.emberHeroGradient,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: SpotifyColors.orange.withValues(alpha: 0.48),
+                          width: 1.0,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color:
+                                SpotifyColors.orange.withValues(alpha: 0.14),
+                            blurRadius: 16,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
                       ),
-                    );
-                  },
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                Color(0xFF450AF5),
-                                Color(0xFF8E8EE5),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              gradient: SpotifyColors.emberGradient,
+                              borderRadius: BorderRadius.circular(13),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: SpotifyColors.orange
+                                      .withValues(alpha: 0.4),
+                                  blurRadius: 10,
+                                ),
                               ],
                             ),
-                            borderRadius: BorderRadius.circular(4),
+                            child: const Icon(
+                              Icons.favorite_rounded,
+                              color: Colors.black,
+                              size: 28,
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.favorite,
-                            color: Colors.white,
-                            size: 30,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Lieblingssongs',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Icon(Icons.push_pin,
-                                      size: 13, color: SpotifyColors.green),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Playlist • ${likedTracks.length} Songs',
-                                    style: const TextStyle(
-                                      color: SpotifyColors.textSecondary,
-                                      fontSize: 13,
-                                    ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Lieblingssongs',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.3,
                                   ),
-                                ],
-                              ),
-                            ],
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.push_pin_rounded,
+                                        size: 13, color: SpotifyColors.orange),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Angepinnte Favoriten • ${likedTracks.length} Songs',
+                                      style: const TextStyle(
+                                        color: SpotifyColors.textSecondary,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                          if (likedTracks.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.play_circle_fill_rounded,
+                                color: SpotifyColors.orange,
+                                size: 34,
+                              ),
+                              onPressed: () {
+                                HapticFeedback.mediumImpact();
+                                prov.playTrack(likedTracks.first,
+                                    newQueue: likedTracks);
+                              },
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

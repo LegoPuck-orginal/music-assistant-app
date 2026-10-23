@@ -863,7 +863,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'v${prov.updateInfo?.currentVersion ?? prov.appVersion} (Build 29)',
+                          'v${prov.updateInfo?.currentVersion ?? prov.appVersion} (Build 30)',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
@@ -976,7 +976,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version ${prov.appVersion} (Build 29) • Echte Server-API & Equalizer',
+                  'Version ${prov.appVersion} (Build 30) • Echte Server-API & Equalizer',
                   style: const TextStyle(
                     color: SpotifyColors.textSecondary,
                     fontSize: 12,

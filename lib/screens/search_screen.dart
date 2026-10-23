@@ -72,43 +72,93 @@ class _SearchScreenState extends State<SearchScreen> {
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // Header "Suche"
-            const SliverToBoxAdapter(
+            // Header "Suche" im Studio-Look
+            SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
-                child: Text(
-                  'Suche',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.6,
-                  ),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: SpotifyColors.orange,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'KATALOG & SERVER-INDEX',
+                          style: TextStyle(
+                            color: SpotifyColors.orangeLight,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Suche',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.7,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
 
-            // Search Bar Input
+            // Obsidian-Ember Studio Search Bar Input
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Container(
-                  height: 48,
+                  height: 50,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(6),
+                    gradient: SpotifyColors.obsidianCardGradient,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: SpotifyColors.orange.withValues(alpha: 0.45),
+                      width: 1.1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: SpotifyColors.orange.withValues(alpha: 0.1),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: TextField(
                     controller: _searchCtrl,
                     textInputAction: TextInputAction.search,
                     onSubmitted: (val) => _executeSearch(val, prov),
-                    style: const TextStyle(color: Colors.black, fontSize: 15),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                     onChanged: (val) => _onSearchChanged(val, prov),
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.search, color: Colors.black54),
+                      prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        color: SpotifyColors.orange,
+                      ),
                       suffixIcon: _searchCtrl.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear, color: Colors.black54),
+                              icon: const Icon(
+                                Icons.clear_rounded,
+                                color: SpotifyColors.textSecondary,
+                              ),
                               onPressed: () {
                                 _searchCtrl.clear();
                                 setState(() {});
@@ -116,9 +166,10 @@ class _SearchScreenState extends State<SearchScreen> {
                               },
                             )
                           : null,
-                      hintText: 'Was möchtest du hören?',
+                      hintText:
+                          'Songs, Künstler, Alben oder Hörbücher suchen...',
                       hintStyle: const TextStyle(
-                        color: Colors.black54,
+                        color: SpotifyColors.textMuted,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -426,19 +477,26 @@ class _SearchScreenState extends State<SearchScreen> {
           _selectedCategory = categoryPrefix;
         });
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7.5),
         decoration: BoxDecoration(
-          color:
-              isSelected ? SpotifyColors.green : SpotifyColors.surfaceElevated,
+          gradient: isSelected ? SpotifyColors.emberGradient : null,
+          color: isSelected ? null : SpotifyColors.surfaceElevated,
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? SpotifyColors.orangeLight
+                : SpotifyColors.borderSubtle,
+            width: 0.9,
+          ),
         ),
         child: Text(
           title,
           style: TextStyle(
             color: isSelected ? Colors.black : Colors.white,
             fontSize: 12,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
@@ -446,6 +504,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildGenreCard(Map<String, dynamic> genre, MusicProvider prov) {
+    final baseColor = genre['color'] as Color;
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
@@ -454,32 +513,74 @@ class _SearchScreenState extends State<SearchScreen> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: genre['color'] as Color,
-          borderRadius: BorderRadius.circular(6),
+          gradient: LinearGradient(
+            colors: [
+              baseColor.withValues(alpha: 0.92),
+              Color.lerp(baseColor, Colors.black, 0.58) ?? Colors.black,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.14),
+            width: 0.9,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: baseColor.withValues(alpha: 0.2),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
             Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                genre['name'] as String,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                ),
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    genre['name'] as String,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'EXPLORE',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             Positioned(
-              right: -8,
+              right: -6,
               bottom: -8,
               child: Transform.rotate(
-                angle: 0.35,
+                angle: 0.32,
                 child: Icon(
                   genre['icon'] as IconData,
-                  size: 54,
-                  color: Colors.white.withValues(alpha: 0.3),
+                  size: 56,
+                  color: Colors.white.withValues(alpha: 0.25),
                 ),
               ),
             ),

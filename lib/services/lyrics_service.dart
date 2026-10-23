@@ -18,6 +18,24 @@ class LyricsService {
   final http.Client _client = http.Client();
   final Map<String, List<LyricLine>> _cache = {};
 
+  /// Benutzerdefinierter Zeit-Offset in Millisekunden für präzises Buchstaben-Timing
+  /// (z. B. zum Ausgleich von Bluetooth-/AirPlay-Latenz).
+  int _syncOffsetMs = 0;
+  int get syncOffsetMs => _syncOffsetMs;
+
+  void adjustSyncOffset(int deltaMs) {
+    _syncOffsetMs = (_syncOffsetMs + deltaMs).clamp(-5000, 5000);
+  }
+
+  void resetSyncOffset() {
+    _syncOffsetMs = 0;
+  }
+
+  Duration applySyncOffset(Duration rawPosition) {
+    final adjustedMs = rawPosition.inMilliseconds + _syncOffsetMs;
+    return Duration(milliseconds: adjustedMs < 0 ? 0 : adjustedMs);
+  }
+
   /// Ermittelt die zeitlich passende Songtext-Zeile für die aktuelle Wiedergabe-Position
   int findCurrentLineIndex(List<LyricLine> lines, Duration position) {
     if (lines.isEmpty) return -1;
@@ -29,6 +47,32 @@ class LyricsService {
       }
     }
     return 0;
+  }
+
+  /// Berechnet den detaillierten Buchstaben-Snapshot für die Zeile an `index`
+  LyricLineSnapshot getLineSnapshot(
+    List<LyricLine> lines,
+    int index,
+    Duration position,
+  ) {
+    if (index < 0 || index >= lines.length) {
+      return const LyricLineSnapshot(
+        lineProgress: 0.0,
+        chars: [],
+        activeCharIndex: -1,
+        spelledText: '',
+        remainingText: '',
+        activeWord: '',
+        activeWordSpelled: '',
+      );
+    }
+    final line = lines[index];
+    final nextTimestamp =
+        (index + 1 < lines.length) ? lines[index + 1].timestamp : line.endTimestamp;
+    return line.computeSnapshot(
+      position,
+      nextLineTimestamp: nextTimestamp,
+    );
   }
 
   /// Ruft echte synchronisierte Songtexte für einen Track ab
@@ -241,15 +285,18 @@ class LyricsService {
     _cache.remove(cacheKey);
   }
 
-  /// Parst einen LRC-Text ([mm:ss.xx] Songtext) in strukturierte LyricLine-Objekte
+  /// Parst einen LRC-Text ([mm:ss.xx] Songtext) inkl. optionaler Enhanced-LRC-Worttags
+  /// (<mm:ss.xx>Wort) in strukturierte LyricLine-Objekte mit End-Zeitstempeln.
   List<LyricLine> parseLrc(String lrcContent) {
-    final lines = <LyricLine>[];
-    final regex = RegExp(r'\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)');
+    final rawParsed = <LyricLine>[];
+    final lineRegex = RegExp(r'\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)');
+    final wordTagRegex =
+        RegExp(r'<(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>\s*([^<]+)');
 
     for (final rawLine in lrcContent.split('\n')) {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
-      final match = regex.firstMatch(line);
+      final match = lineRegex.firstMatch(line);
       if (match != null) {
         final min = int.tryParse(match.group(1) ?? '0') ?? 0;
         final sec = int.tryParse(match.group(2) ?? '0') ?? 0;
@@ -257,14 +304,67 @@ class LyricsService {
         final ms = msStr != null
             ? (int.tryParse(msStr.padRight(3, '0').substring(0, 3)) ?? 0)
             : 0;
-        final text = match.group(4)?.trim() ?? '';
-        if (text.isNotEmpty) {
-          lines.add(LyricLine(
-            timestamp: Duration(minutes: min, seconds: sec, milliseconds: ms),
-            text: text,
+        final rawText = match.group(4)?.trim() ?? '';
+        if (rawText.isEmpty) continue;
+
+        final lineTimestamp =
+            Duration(minutes: min, seconds: sec, milliseconds: ms);
+
+        // Prüfen auf Enhanced LRC Wort-Zeitstempel (<mm:ss.xx>Wort)
+        final wordMatches = wordTagRegex.allMatches(rawText).toList();
+        final parsedWords = <LyricWord>[];
+        if (wordMatches.isNotEmpty) {
+          final tempStarts = <Duration>[];
+          final tempTexts = <String>[];
+          for (final wm in wordMatches) {
+            final wMin = int.tryParse(wm.group(1) ?? '0') ?? 0;
+            final wSec = int.tryParse(wm.group(2) ?? '0') ?? 0;
+            final wMsStr = wm.group(3);
+            final wMs = wMsStr != null
+                ? (int.tryParse(wMsStr.padRight(3, '0').substring(0, 3)) ?? 0)
+                : 0;
+            final wText = wm.group(4)?.trim() ?? '';
+            if (wText.isNotEmpty) {
+              tempStarts.add(
+                  Duration(minutes: wMin, seconds: wSec, milliseconds: wMs));
+              tempTexts.add(wText);
+            }
+          }
+          for (int i = 0; i < tempStarts.length; i++) {
+            final nextStart = (i + 1 < tempStarts.length)
+                ? tempStarts[i + 1]
+                : tempStarts[i] +
+                    Duration(milliseconds: (tempTexts[i].length * 110).clamp(250, 1200));
+            parsedWords.add(LyricWord(
+              text: tempTexts[i],
+              start: tempStarts[i],
+              end: nextStart,
+            ));
+          }
+        }
+
+        final cleanText = rawText
+            .replaceAll(RegExp(r'<\d{1,2}:\d{2}(?:\.\d{1,3})?>'), '')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+
+        if (cleanText.isNotEmpty) {
+          rawParsed.add(LyricLine(
+            timestamp: lineTimestamp,
+            text: cleanText,
+            words: parsedWords,
           ));
         }
       }
+    }
+
+    // Verknüpfe jede Zeile mit dem Startzeitpunkt der darauffolgenden Zeile
+    final lines = <LyricLine>[];
+    for (int i = 0; i < rawParsed.length; i++) {
+      final current = rawParsed[i];
+      final nextTs =
+          (i + 1 < rawParsed.length) ? rawParsed[i + 1].timestamp : null;
+      lines.add(current.copyWith(endTimestamp: nextTs));
     }
     return lines;
   }
@@ -284,8 +384,11 @@ class LyricsService {
 
     final lines = <LyricLine>[];
     for (int i = 0; i < rawLines.length; i++) {
+      final startMs = (i * interval * 1000).toInt();
+      final endMs = ((i + 1) * interval * 1000).toInt();
       lines.add(LyricLine(
-        timestamp: Duration(milliseconds: (i * interval * 1000).toInt()),
+        timestamp: Duration(milliseconds: startMs),
+        endTimestamp: Duration(milliseconds: endMs),
         text: rawLines[i],
       ));
     }

@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import 'device_picker_sheet.dart';
+import 'lyrics_sheet.dart';
 import 'now_playing_sheet.dart';
 
+/// Schwebende Obsidian & Adobe-Orange Studio-Kapsel (Next-Gen MiniPlayer)
+/// mit Direktzugriff auf Buchstabe-für-Buchstabe-Lyrics, Multiroom & Laser-Progress.
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
 
@@ -16,8 +19,10 @@ class MiniPlayer extends StatelessWidget {
 
     if (track == null) return const SizedBox.shrink();
 
-    final progress = prov.totalDuration.inSeconds > 0
-        ? (prov.currentPosition.inSeconds / prov.totalDuration.inSeconds).clamp(0.0, 1.0)
+    final progress = prov.totalDuration.inMilliseconds > 0
+        ? (prov.currentPosition.inMilliseconds /
+                prov.totalDuration.inMilliseconds)
+            .clamp(0.0, 1.0)
         : 0.0;
 
     return GestureDetector(
@@ -31,52 +36,85 @@ class MiniPlayer extends StatelessWidget {
         );
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        margin: const EdgeInsets.fromLTRB(10, 4, 10, 8),
         decoration: BoxDecoration(
-          color: SpotifyColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(8),
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFF1C120D),
+              Color(0xFF111117),
+              Color(0xFF0C0C10),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: prov.isPlaying
+                ? SpotifyColors.orange.withValues(alpha: 0.5)
+                : SpotifyColors.borderHighlight,
+            width: 1.0,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.6),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              color: Colors.black.withValues(alpha: 0.78),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
             ),
+            if (prov.isPlaying)
+              BoxShadow(
+                color: SpotifyColors.orange.withValues(alpha: 0.16),
+                blurRadius: 18,
+                spreadRadius: 0.5,
+              ),
           ],
         ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 12, 6),
+              padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
               child: Row(
                 children: [
-                  // Album Cover
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      color: SpotifyColors.surfaceHighlight,
-                      child: track.imageUrl != null
-                          ? Image.network(
-                              track.imageUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => const Icon(
-                                Icons.music_note,
-                                color: SpotifyColors.textSecondary,
+                  // Studio Cover mit leuchtendem Rahmen
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                        color: prov.isPlaying
+                            ? SpotifyColors.orange.withValues(alpha: 0.7)
+                            : Colors.white12,
+                        width: 1.1,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(9.5),
+                      child: Container(
+                        color: SpotifyColors.surfaceHighlight,
+                        child: track.imageUrl != null
+                            ? Image.network(
+                                track.imageUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(
+                                  Icons.music_note_rounded,
+                                  color: SpotifyColors.orange,
+                                  size: 20,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.music_note_rounded,
+                                color: SpotifyColors.orange,
                                 size: 20,
                               ),
-                            )
-                          : const Icon(
-                              Icons.music_note,
-                              color: SpotifyColors.textSecondary,
-                              size: 20,
-                            ),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 11),
 
-                  // Song & Artist Info
+                  // Song, aktiver Lautsprecher & Künstler
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,40 +126,57 @@ class MiniPlayer extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Row(
                           children: [
                             if (prov.activePlayer != null) ...[
-                              Icon(
-                                prov.activePlayer!.isLocal
-                                    ? Icons.smartphone
-                                    : Icons.speaker,
-                                size: 11,
-                                color: SpotifyColors.green,
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  prov.activePlayer!.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: SpotifyColors.green,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: SpotifyColors.orange
+                                      .withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(
+                                    color: SpotifyColors.orange
+                                        .withValues(alpha: 0.45),
+                                    width: 0.6,
                                   ),
                                 ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      prov.activePlayer!.isLocal
+                                          ? Icons.smartphone_rounded
+                                          : Icons.speaker_rounded,
+                                      size: 10,
+                                      color: SpotifyColors.orange,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    ConstrainedBox(
+                                      constraints:
+                                          const BoxConstraints(maxWidth: 82),
+                                      child: Text(
+                                        prov.activePlayer!.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: SpotifyColors.orange,
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              const SizedBox(width: 5),
-                              const Text('•',
-                                  style: TextStyle(
-                                      color: SpotifyColors.textSecondary,
-                                      fontSize: 10)),
-                              const SizedBox(width: 5),
+                              const SizedBox(width: 6),
                             ],
                             Flexible(
                               child: Text(
@@ -130,7 +185,8 @@ class MiniPlayer extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: SpotifyColors.textSecondary,
-                                  fontSize: 11,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ),
@@ -140,16 +196,34 @@ class MiniPlayer extends StatelessWidget {
                     ),
                   ),
 
-                  // Speaker / Device Icon
+                  // 1-Tap Direkt-Button für Buchstabe-für-Buchstabe Lyrics!
                   IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Live-Lyrics (Buchstabe für Buchstabe)',
+                    icon: const Icon(
+                      Icons.lyrics_outlined,
+                      size: 19,
+                      color: SpotifyColors.orange,
+                    ),
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      LyricsSheet.show(context, track);
+                    },
+                  ),
+
+                  // Multiroom / Device Picker
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Lautsprecher wählen',
                     icon: Icon(
-                      Icons.devices,
-                      size: 20,
+                      Icons.speaker_group_outlined,
+                      size: 19,
                       color: prov.activePlayer != null
-                          ? SpotifyColors.green
+                          ? Colors.white
                           : SpotifyColors.textMuted,
                     ),
                     onPressed: () {
+                      HapticFeedback.lightImpact();
                       showModalBottomSheet(
                         context: context,
                         isScrollControlled: true,
@@ -159,37 +233,66 @@ class MiniPlayer extends StatelessWidget {
                     },
                   ),
 
-                  // Heart / Like Button
+                  // Favorit / Herz
                   IconButton(
+                    visualDensity: VisualDensity.compact,
                     icon: Icon(
-                      track.isLiked ? Icons.favorite : Icons.favorite_border,
-                      size: 20,
-                      color: track.isLiked ? SpotifyColors.green : Colors.white,
+                      track.isLiked
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      size: 19,
+                      color: track.isLiked
+                          ? SpotifyColors.orange
+                          : Colors.white70,
                     ),
-                    onPressed: () => prov.toggleLike(track),
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      prov.toggleLike(track);
+                    },
                   ),
 
-                  // Play/Pause Button
-                  IconButton(
-                    icon: Icon(
-                      prov.isPlaying ? Icons.pause : Icons.play_arrow,
-                      size: 28,
-                      color: Colors.white,
+                  const SizedBox(width: 2),
+
+                  // Leuchtender Adobe-Orange Play/Pause Kreis-Button
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      prov.togglePlayPause();
+                    },
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        gradient: SpotifyColors.emberGradient,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: SpotifyColors.orange.withValues(alpha: 0.45),
+                            blurRadius: 10,
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        prov.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        size: 22,
+                        color: Colors.black,
+                      ),
                     ),
-                    onPressed: () => prov.togglePlayPause(),
                   ),
                 ],
               ),
             ),
 
-            // Progress Line
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+            // Laser-Progress-Linie am unteren Kapselrand
+            SizedBox(
+              height: 2.8,
               child: LinearProgressIndicator(
                 value: progress,
-                backgroundColor: SpotifyColors.surfaceHighlight,
-                valueColor: const AlwaysStoppedAnimation<Color>(SpotifyColors.green),
-                minHeight: 2.5,
+                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                valueColor:
+                    const AlwaysStoppedAnimation<Color>(SpotifyColors.orange),
               ),
             ),
           ],

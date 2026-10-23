@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
@@ -32,13 +33,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       backgroundColor: SpotifyColors.pureBlack,
       body: Stack(
         children: [
-          // Current Page
+          // Aktuelle Ansicht
           IndexedStack(
             index: _currentIndex,
             children: _screens,
           ),
 
-          // Sticky MiniPlayer floating right above the bottom navigation bar
+          // Subtiles oberes Adobe-Orange Studio-Ambient-Licht
+          IgnorePointer(
+            child: Container(
+              height: 180,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    SpotifyColors.orange.withValues(alpha: 0.09),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Schwebende Obsidian-Ember Studio-Kapsel (MiniPlayer)
           if (hasTrack)
             const Positioned(
               left: 0,
@@ -49,42 +67,51 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         ],
       ),
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: SpotifyColors.pureBlack,
+        decoration: BoxDecoration(
+          color: const Color(0xFF060609),
           border: Border(
             top: BorderSide(
-              color: SpotifyColors.borderSubtle,
-              width: 0.5,
+              color: SpotifyColors.orange.withValues(alpha: 0.22),
+              width: 0.8,
             ),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.85),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          backgroundColor: SpotifyColors.pureBlack,
-          selectedItemColor: Colors.white,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          selectedItemColor: SpotifyColors.orange,
           unselectedItemColor: SpotifyColors.textSecondary,
           selectedFontSize: 11,
           unselectedFontSize: 11,
           type: BottomNavigationBarType.fixed,
           onTap: (index) {
+            HapticFeedback.selectionClick();
             setState(() {
               _currentIndex = index;
             });
           },
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home_filled),
+              icon: Icon(Icons.space_dashboard_outlined),
+              activeIcon: Icon(Icons.space_dashboard_rounded),
               label: 'Start',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.search),
-              activeIcon: Icon(Icons.search),
+              icon: Icon(Icons.manage_search_rounded),
+              activeIcon: Icon(Icons.search_rounded),
               label: 'Suche',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.library_music_outlined),
-              activeIcon: Icon(Icons.library_music),
+              icon: Icon(Icons.album_outlined),
+              activeIcon: Icon(Icons.album_rounded),
               label: 'Bibliothek',
             ),
           ],

@@ -66,12 +66,13 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: SpotifyColors.pureBlack,
       body: CustomScrollView(
         slivers: [
-          // Spotify Top Bar
+          // Next-Gen Studio Command Top Bar
           SliverAppBar(
             floating: true,
-            backgroundColor: SpotifyColors.pureBlack,
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
             elevation: 0,
-            leadingWidth: 50,
+            leadingWidth: 52,
             leading: Padding(
               padding: const EdgeInsets.only(left: 14),
               child: Center(
@@ -85,14 +86,55 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            title: Text(
-              _getGreeting(prov),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 21,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: prov.isServerConnected
+                            ? SpotifyColors.orange
+                            : Colors.amber,
+                        shape: BoxShape.circle,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: SpotifyColors.orange,
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      prov.activePlayer != null
+                          ? 'STUDIO • ${prov.activePlayer!.name.toUpperCase()}'
+                          : 'MUSIC ASSISTANT STUDIO',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: SpotifyColors.orangeLight,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  _getGreeting(prov),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+              ],
             ),
             actions: [
               IconButton(
@@ -104,15 +146,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
               IconButton(
-                icon: const Icon(Icons.notifications_none, color: Colors.white),
-                tooltip: 'Mitteilungen',
+                icon: const Icon(Icons.notifications_none_rounded,
+                    color: Colors.white),
+                tooltip: 'Systemstatus & Mitteilungen',
                 onPressed: () {
                   HapticFeedback.lightImpact();
                   _showNotificationsSheet(context);
                 },
               ),
               IconButton(
-                icon: const Icon(Icons.history, color: Colors.white),
+                icon: const Icon(Icons.history_rounded, color: Colors.white),
                 tooltip: 'Zuletzt gehört',
                 onPressed: () {
                   HapticFeedback.lightImpact();
@@ -123,11 +166,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 alignment: Alignment.center,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.settings_outlined, color: Colors.white),
+                    icon: const Icon(Icons.settings_outlined,
+                        color: Colors.white),
                     tooltip: 'Einstellungen',
                     onPressed: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const SettingsScreen()),
                       );
                     },
                   ),
@@ -139,7 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         width: 8,
                         height: 8,
                         decoration: const BoxDecoration(
-                          color: SpotifyColors.green,
+                          color: SpotifyColors.orange,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -776,66 +821,66 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           gradient: const LinearGradient(
             colors: [
-              Color(0xFF0F172A),
-              Color(0xFF0D2538),
-              Color(0xFF0B1E19),
+              Color(0xFF2B1206),
+              Color(0xFF170D09),
+              Color(0xFF0E0E13),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           border: Border.all(
             color: isDjActive
-                ? const Color(0xFF00F2FE).withValues(alpha: 0.6)
-                : const Color(0xFF1E3A8A).withValues(alpha: 0.6),
+                ? SpotifyColors.orange.withValues(alpha: 0.75)
+                : SpotifyColors.orange.withValues(alpha: 0.35),
             width: 1.2,
           ),
           boxShadow: [
             BoxShadow(
-              color: (isDjActive
-                      ? const Color(0xFF00F2FE)
-                      : const Color(0xFF38BDF8))
-                  .withValues(alpha: 0.18),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
+              color: SpotifyColors.orange
+                  .withValues(alpha: isDjActive ? 0.22 : 0.12),
+              blurRadius: 20,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
         child: Row(
           children: [
-            // Mini Glowing Pulsing DJ Orb Icon
+            // Glowing Adobe-Ember Studio DJ Orb
             Container(
-              width: 50,
-              height: 50,
+              width: 52,
+              height: 52,
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: SweepGradient(
                   colors: [
-                    Color(0xFF00F2FE),
-                    Color(0xFF4FACFE),
-                    Color(0xFF7F00FF),
-                    SpotifyColors.green,
-                    Color(0xFF00F2FE),
+                    SpotifyColors.orange,
+                    Color(0xFFFFA726),
+                    Color(0xFFFF3D00),
+                    SpotifyColors.orangeLight,
+                    SpotifyColors.orange,
                   ],
                 ),
               ),
               child: Center(
                 child: Container(
-                  width: 38,
-                  height: 38,
+                  width: 40,
+                  height: 40,
                   decoration: const BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Color(0xFF0A0E17),
+                    color: Color(0xFF0A0A0E),
                   ),
                   child: Center(
                     child: Icon(
-                      isDjActive ? Icons.graphic_eq : Icons.auto_awesome,
-                      color: const Color(0xFF00F2FE),
-                      size: 20,
+                      isDjActive
+                          ? Icons.graphic_eq_rounded
+                          : Icons.auto_awesome_rounded,
+                      color: SpotifyColors.orange,
+                      size: 21,
                     ),
                   ),
                 ),
@@ -852,74 +897,79 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                            horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00F2FE).withValues(alpha: 0.2),
+                          color: SpotifyColors.orange.withValues(alpha: 0.22),
                           borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: SpotifyColors.orange.withValues(alpha: 0.6),
+                            width: 0.6,
+                          ),
                         ),
                         child: const Text(
-                          'KI-DJ',
+                          'KI-DJ STUDIO',
                           style: TextStyle(
-                            color: Color(0xFF00F2FE),
+                            color: SpotifyColors.orangeLight,
                             fontSize: 9,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w900,
                             letterSpacing: 0.8,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        isDjActive
-                            ? 'Vibe: ${prov.currentDjVibe.title}'
-                            : 'Dein persönlicher DJ',
-                        style: const TextStyle(
-                          color: SpotifyColors.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(width: 7),
+                      Flexible(
+                        child: Text(
+                          isDjActive
+                              ? 'Vibe: ${prov.currentDjVibe.title}'
+                              : 'Dein persönlicher Studio-Moderator',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: SpotifyColors.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Text(
                     isDjActive
                         ? (prov.djSpeechText ?? 'Tippe für Moderation & Vibe')
-                        : 'Bereit für deine Session? Mix & Sprachansage starten',
+                        : 'Live-Mix, Übergänge & KI-Sprachmoderation starten',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
 
-            // Green/Cyan Play Button
+            // Ember Play Button
             Container(
-              width: 36,
-              height: 36,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF00F2FE), SpotifyColors.green],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                gradient: SpotifyColors.emberGradient,
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF00F2FE).withValues(alpha: 0.4),
-                    blurRadius: 8,
+                    color: SpotifyColors.orange.withValues(alpha: 0.45),
+                    blurRadius: 10,
                   ),
                 ],
               ),
               child: const Icon(
-                Icons.play_arrow,
+                Icons.play_arrow_rounded,
                 color: Colors.black,
-                size: 22,
+                size: 24,
               ),
             ),
           ],
@@ -937,18 +987,34 @@ class _HomeScreenState extends State<HomeScreen> {
           _selectedFilter = label;
         });
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7.5),
         decoration: BoxDecoration(
-          color: isSelected ? SpotifyColors.green : SpotifyColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(20),
+          gradient: isSelected ? SpotifyColors.emberGradient : null,
+          color: isSelected ? null : SpotifyColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: isSelected
+                ? SpotifyColors.orangeLight
+                : SpotifyColors.borderSubtle,
+            width: 0.9,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: SpotifyColors.orange.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                  ),
+                ]
+              : null,
         ),
         child: Text(
           label,
           style: TextStyle(
             color: isSelected ? Colors.black : Colors.white,
             fontSize: 12,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
@@ -959,6 +1025,7 @@ class _HomeScreenState extends State<HomeScreen> {
       BuildContext context, Playlist playlist, MusicProvider prov) {
     return GestureDetector(
       onTap: () {
+        HapticFeedback.lightImpact();
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => PlaylistDetailScreen(playlist: playlist),
@@ -967,8 +1034,12 @@ class _HomeScreenState extends State<HomeScreen> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: SpotifyColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(5),
+          gradient: SpotifyColors.obsidianCardGradient,
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: SpotifyColors.borderSubtle,
+            width: 0.9,
+          ),
         ),
         clipBehavior: Clip.antiAlias,
         child: Row(
@@ -982,18 +1053,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       playlist.imageUrl!,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => const Icon(
-                        Icons.music_note,
-                        color: SpotifyColors.textSecondary,
-                        size: 24,
+                        Icons.music_note_rounded,
+                        color: SpotifyColors.orange,
+                        size: 22,
                       ),
                     )
                   : const Icon(
-                      Icons.music_note,
-                      color: SpotifyColors.textSecondary,
-                      size: 24,
+                      Icons.music_note_rounded,
+                      color: SpotifyColors.orange,
+                      size: 22,
                     ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 playlist.name,
@@ -1002,12 +1073,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 12,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w800,
                   height: 1.2,
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Icon(
+                Icons.play_circle_fill_rounded,
+                color: SpotifyColors.orange,
+                size: 18,
+              ),
+            ),
           ],
         ),
       ),
@@ -1016,15 +1094,36 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSectionHeader(BuildContext context, String title) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-      child: Text(
-        title,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
-          letterSpacing: -0.4,
-        ),
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 12),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 18,
+            margin: const EdgeInsets.only(right: 10),
+            decoration: BoxDecoration(
+              color: SpotifyColors.orange,
+              borderRadius: BorderRadius.circular(2),
+              boxShadow: const [
+                BoxShadow(
+                  color: SpotifyColors.orange,
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 19.5,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1033,28 +1132,50 @@ class _HomeScreenState extends State<HomeScreen> {
       BuildContext context, String title, [String? subtitle]) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (subtitle != null && subtitle.isNotEmpty) ...[
-            Text(
-              subtitle.toUpperCase(),
-              style: const TextStyle(
-                color: SpotifyColors.textSecondary,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.0,
-              ),
+          Container(
+            width: 4,
+            height: 24,
+            margin: const EdgeInsets.only(right: 10),
+            decoration: BoxDecoration(
+              color: SpotifyColors.orange,
+              borderRadius: BorderRadius.circular(2),
+              boxShadow: const [
+                BoxShadow(
+                  color: SpotifyColors.orange,
+                  blurRadius: 8,
+                ),
+              ],
             ),
-            const SizedBox(height: 2),
-          ],
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.4,
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (subtitle != null && subtitle.isNotEmpty) ...[
+                  Text(
+                    subtitle.toUpperCase(),
+                    style: const TextStyle(
+                      color: SpotifyColors.orangeLight,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                ],
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 19.5,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

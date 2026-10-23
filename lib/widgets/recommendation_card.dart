@@ -21,8 +21,9 @@ class RecommendationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
     final isArtist = item.mediaType == 'artist';
-    final isPlayingThis = prov.currentTrack?.title.toLowerCase() == item.name.toLowerCase() &&
-        prov.isPlaying;
+    final isPlayingThis =
+        prov.currentTrack?.title.toLowerCase() == item.name.toLowerCase() &&
+            prov.isPlaying;
 
     if (isArtist) {
       return _buildArtistCard(context, prov);
@@ -34,7 +35,7 @@ class RecommendationCard extends StatelessWidget {
   Widget _buildStandardCard(
       BuildContext context, MusicProvider prov, bool isPlayingThis) {
     return Container(
-      width: 145,
+      width: 148,
       margin: const EdgeInsets.only(right: 14),
       child: GestureDetector(
         onTap: () {
@@ -48,15 +49,33 @@ class RecommendationCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Artwork with Play overlay
+            // Artwork mit Obsidian-Rahmen & Play-Emblem
             Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: 145,
-                    height: 145,
+                Container(
+                  width: 148,
+                  height: 148,
+                  decoration: BoxDecoration(
                     color: SpotifyColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isPlayingThis
+                          ? SpotifyColors.orange
+                          : Colors.white.withValues(alpha: 0.09),
+                      width: isPlayingThis ? 1.5 : 0.9,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isPlayingThis
+                            ? SpotifyColors.orange.withValues(alpha: 0.25)
+                            : Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 14,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
                     child: item.imageUrl != null && item.imageUrl!.isNotEmpty
                         ? Image.network(
                             item.imageUrl!,
@@ -66,7 +85,6 @@ class RecommendationCard extends StatelessWidget {
                         : _fallbackCover(),
                   ),
                 ),
-                // Green Play FAB Overlay on bottom-right of the cover
                 Positioned(
                   right: 8,
                   bottom: 8,
@@ -74,18 +92,20 @@ class RecommendationCard extends StatelessWidget {
                     width: 34,
                     height: 34,
                     decoration: BoxDecoration(
-                      color: SpotifyColors.green,
+                      gradient: SpotifyColors.emberGradient,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          blurRadius: 8,
+                          color: SpotifyColors.orange.withValues(alpha: 0.45),
+                          blurRadius: 10,
                           offset: const Offset(0, 2),
                         ),
                       ],
                     ),
                     child: Icon(
-                      isPlayingThis ? Icons.pause : Icons.play_arrow,
+                      isPlayingThis
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
                       color: Colors.black,
                       size: 20,
                     ),
@@ -101,9 +121,9 @@ class RecommendationCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: isPlayingThis ? SpotifyColors.green : Colors.white,
+                color: isPlayingThis ? SpotifyColors.orange : Colors.white,
                 fontSize: 13,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w800,
                 letterSpacing: -0.2,
               ),
             ),
@@ -138,13 +158,11 @@ class RecommendationCard extends StatelessWidget {
           if (onTap != null) {
             onTap!();
           } else {
-            // Search or play artist
             prov.search(item.name);
           }
         },
         child: Column(
           children: [
-            // Circular Avatar
             Container(
               width: 110,
               height: 110,
@@ -152,13 +170,13 @@ class RecommendationCard extends StatelessWidget {
                 shape: BoxShape.circle,
                 color: SpotifyColors.surfaceElevated,
                 border: Border.all(
-                  color: SpotifyColors.green.withValues(alpha: 0.3),
-                  width: 1.5,
+                  color: SpotifyColors.orange.withValues(alpha: 0.45),
+                  width: 1.6,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 10,
+                    color: SpotifyColors.orange.withValues(alpha: 0.14),
+                    blurRadius: 14,
                     offset: const Offset(0, 4),
                   ),
                 ],
@@ -174,8 +192,6 @@ class RecommendationCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-
-            // Artist Name
             Text(
               item.name,
               maxLines: 1,
@@ -183,19 +199,18 @@ class RecommendationCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 2),
-
-            // Tag
             const Text(
-              'Künstler',
+              'KÜNSTLER',
               style: TextStyle(
-                color: SpotifyColors.textSecondary,
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
+                color: SpotifyColors.orangeLight,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.6,
               ),
             ),
           ],
@@ -206,11 +221,15 @@ class RecommendationCard extends StatelessWidget {
 
   Widget _fallbackCover() {
     return Container(
-      color: SpotifyColors.surfaceHighlight,
+      decoration: const BoxDecoration(
+        gradient: SpotifyColors.obsidianCardGradient,
+      ),
       child: Center(
         child: Icon(
-          item.mediaType == 'album' ? Icons.album : Icons.music_note,
-          color: SpotifyColors.textMuted,
+          item.mediaType == 'album'
+              ? Icons.album_rounded
+              : Icons.music_note_rounded,
+          color: SpotifyColors.orange.withValues(alpha: 0.6),
           size: 38,
         ),
       ),
@@ -219,11 +238,13 @@ class RecommendationCard extends StatelessWidget {
 
   Widget _fallbackArtistIcon() {
     return Container(
-      color: SpotifyColors.surfaceHighlight,
+      decoration: const BoxDecoration(
+        gradient: SpotifyColors.obsidianCardGradient,
+      ),
       child: const Center(
         child: Icon(
-          Icons.person,
-          color: SpotifyColors.textMuted,
+          Icons.person_rounded,
+          color: SpotifyColors.orange,
           size: 44,
         ),
       ),

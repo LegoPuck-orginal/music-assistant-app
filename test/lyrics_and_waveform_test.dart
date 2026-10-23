@@ -78,6 +78,78 @@ void main() {
       expect(lines[2].text, equals("I'm in love with the shape of you"));
     });
 
+    test('Letter-by-letter (Buchstabe für Buchstabe) snapshot spells out characters accurately', () {
+      const sampleLrc = '''
+[00:10.00] Hallo Welt
+[00:14.00] Nächste Zeile
+''';
+      final lines = lyricsService.parseLrc(sampleLrc);
+      expect(lines.length, equals(2));
+
+      // Am Zeilenstart (10.00s): 0% Fortschritt
+      final snapStart = lyricsService.getLineSnapshot(
+        lines,
+        0,
+        const Duration(seconds: 10),
+      );
+      expect(snapStart.lineProgress, equals(0.0));
+      expect(snapStart.spelledText, isEmpty);
+      expect(snapStart.remainingText, equals('Hallo Welt'));
+
+      // Mitten im Singen der Zeile (10.55s): Teilweise buchstabiert
+      final snapMid = lyricsService.getLineSnapshot(
+        lines,
+        0,
+        const Duration(seconds: 10, milliseconds: 550),
+      );
+      expect(snapMid.lineProgress, greaterThan(0.2));
+      expect(snapMid.lineProgress, lessThan(0.9));
+      expect(snapMid.spelledText.isNotEmpty, isTrue);
+      expect(snapMid.spelledText + snapMid.remainingText, equals('Hallo Welt'));
+      expect(snapMid.activeCharIndex, greaterThanOrEqualTo(0));
+      expect(snapMid.activeWord, anyOf(equals('Hallo'), equals('Welt')));
+
+      // Am Ende der Zeile (13.80s): Vollständig buchstabiert
+      final snapEnd = lyricsService.getLineSnapshot(
+        lines,
+        0,
+        const Duration(seconds: 13, milliseconds: 800),
+      );
+      expect(snapEnd.lineProgress, equals(1.0));
+      expect(snapEnd.spelledText, equals('Hallo Welt'));
+      expect(snapEnd.remainingText, isEmpty);
+      expect(snapEnd.chars.every((c) => c.isSung), isTrue);
+    });
+
+    test('Enhanced LRC word timestamps (<mm:ss.xx>) are parsed and interpolated letter by letter', () {
+      const enhancedLrc = '''
+[00:05.00] <00:05.00>Is <00:05.50>this <00:06.20>fantasy
+''';
+      final lines = lyricsService.parseLrc(enhancedLrc);
+      expect(lines.length, equals(1));
+      expect(lines.first.text, equals('Is this fantasy'));
+      expect(lines.first.words.length, equals(3));
+      expect(lines.first.words[2].text, equals('fantasy'));
+
+      final snapDuringFantasy = lyricsService.getLineSnapshot(
+        lines,
+        0,
+        const Duration(seconds: 6, milliseconds: 500),
+      );
+      expect(snapDuringFantasy.activeWord, equals('fantasy'));
+      expect(snapDuringFantasy.activeWordSpelled.startsWith('f'), isTrue);
+    });
+
+    test('LyricsService syncOffsetMs adjusts effective playback position', () {
+      lyricsService.resetSyncOffset();
+      expect(lyricsService.syncOffsetMs, equals(0));
+      lyricsService.adjustSyncOffset(200);
+      expect(lyricsService.syncOffsetMs, equals(200));
+      final adjusted = lyricsService.applySyncOffset(const Duration(seconds: 10));
+      expect(adjusted, equals(const Duration(seconds: 10, milliseconds: 200)));
+      lyricsService.resetSyncOffset();
+    });
+
     testWidgets('AudioWaveformScrubber renders and triggers seek callback',
         (WidgetTester tester) async {
       Duration? seekTarget;
