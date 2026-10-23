@@ -93,10 +93,14 @@ jobs:
 
       - name: Package Unsigned IPA for Sideloading
         run: |
+          # 1. Clean Standalone iOS IPA (Optimized for isideload, SideStore, AltStore, Sideloadly)
+          # Does not contain nested Watch bundle, preventing 'InvalidCompanionAppBundleIdentifier'
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -qr music-assistant.ipa Payload
+          cp music-assistant.ipa music-assistant-v${{ env.APP_VERSION }}.ipa
           
-          # Embed Apple Watch companion app in Runner.app/Watch/
+          # 2. Bundle with Apple Watch companion app (for TrollStore & Multi-Target Developers)
           WATCH_BUNDLE="build/watch_derived/Build/Products/Release-watchos/WatchApp.app"
           if [ -d "$WATCH_BUNDLE" ]; then
             echo "Embedding Apple Watch app inside Payload/Runner.app/Watch/..."
@@ -104,19 +108,19 @@ jobs:
             cp -r "$WATCH_BUNDLE" Payload/Runner.app/Watch/WatchApp.app
             echo "Watch app successfully embedded:"
             ls -la Payload/Runner.app/Watch/WatchApp.app
-          else
-            echo "Warning: Watch app bundle not found at $WATCH_BUNDLE"
+            zip -qr music-assistant-with-watch.ipa Payload
+            cp music-assistant-with-watch.ipa music-assistant-with-watch-v${{ env.APP_VERSION }}.ipa
           fi
           
-          zip -qr music-assistant.ipa Payload
-          cp music-assistant.ipa music-assistant-v${{ env.APP_VERSION }}.ipa
           ls -lh music-assistant*.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: music-assistant-ipa
-          path: music-assistant.ipa
+          path: |
+            music-assistant.ipa
+            music-assistant-with-watch.ipa
 
       - name: Publish Versioned Sideload Release
         uses: softprops/action-gh-release@v2
@@ -126,35 +130,27 @@ jobs:
           name: "Music Assistant iOS v${{ env.APP_VERSION }} (Build ${{ env.APP_BUILD }})"
           body: |
             ### 🎵 Music Assistant iOS v${{ env.APP_VERSION }} (Spotify Edition)
-            Sideload-Release für **SideStore**, **AltStore** und **Sideloadly**.
+            Sideload-Release für **SideStore**, **AltStore**, **isideload** und **Sideloadly**.
             
             * **Version**: `v${{ env.APP_VERSION }}` (Build `${{ env.APP_BUILD }}`)
             * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
             * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
+            * **Downloads**:
+              - 📱 **`music-assistant.ipa`** (Empfohlen): Bereinigtes Paket für **isideload**, **SideStore**, **AltStore** und kostenlose Apple-Developer-Zertifikate (verhindert den `InvalidCompanionAppBundleIdentifier`-Fehler).
+              - ⌚ **`music-assistant-with-watch.ipa`**: Beinhaltet die eingebettete watchOS Companion App für TrollStore oder bezahlte Entwicklerzertifikate.
             * **Features & Highlights**:
-              - 🎨 **Eigenes App-Icon (Spotify Edition)**: Speziell designtes, hochauflösendes iOS App-Icon mit tiefem OLED-Schwarz, konzentrischen Vinyl-Grooves und leuchtend grünem Spotify-Musik-Emblem in allen iOS- und Watch-Größen
-              - 🏝️ **Echte Apple Dynamic Island & Live Activities (ActivityKit & WidgetKit)**: Native Hardware-Integration für iPhone 14 Pro, 15 und 16 – zeigt aktive Lautsprecher, pulsierende Soundwaves und DJ-Sprachblasen direkt in der Dynamic Island und auf dem Sperrbildschirm
-              - 📲 **Autarker In-App-Updater (Keine Extra-App nötig)**: One-Tap-Installation und direktes In-App-Update über das native Apple OTA-Protokoll (`itms-services`) ohne SideStore, AltStore oder PC
-              - 💾 **Offline Musik-Downloads & Speicher-Manager**: Lade einzelne Songs oder ganze Playlists herunter und genieße unterbrechungsfreie Musikwiedergabe komplett ohne Internetverbindung
-              - ⌚ **Apple Watch Version & Companion App**: Vollständige watchOS-App (`ios/WatchApp`) in SwiftUI mit Now-Playing, Lautstärkeregelung über die Digital Crown, Multiroom-Lautsprecher-Auswahl und Spotify KI-DJ Vibe-Umschaltung direkt am Handgelenk
-              - ⌚ **Apple Watch Remote & Live-Vorschau**: Integrierte, fotorealistische Apple Watch Fernbedienung direkt in der iOS-App zur Steuerung aller Multiroom-Speaker
-              - 🎧 **Spotify Virtueller KI-DJ ("DJ X")**: Interaktiver DJ mit Sprachansagen (TTS über Music Assistant), 6 Stimmungen (*Allzeit-Favoriten*, *Rock-Klassiker*, *Vergessene Schätze*, *Entdeckungen*, *Party-Modus*, *Late Night*), pulsierendem Orb-Visualizer und automatischer Song-Zusammenstellung
-              - 👤 **Profil- & Avatar-Verwaltung**: Eigenes Profilbild mit 8 kuratierten Spotify-Presets (DJ Pulse, Vinyl Master, Rock Star, etc.) oder individueller Bild-URL, persistiert im lokalen Speicher
-              - 🔊 Automatische Raum-Lautsprecher-Auswahl ("Tim", "Wohnzimmer", Sonos) für volle Songlänge & Hi-Fi
-              - 📱 iOS Hintergrund-Wiedergabe & Audio-Session Fix (kein Abbruch mehr beim Sperren des iPhones)
-              - 💡 Intelligente Musik-Empfehlungen direkt auf dem Home Screen (Last.fm Ähnliche Titel & Künstler, Allzeit-Favoriten, Vergessene Schätze)
-              - 🎙️ Vollständige Podcast-Integration (Shows, Episoden-Browser, Cover & Audio-Previews)
-              - 🎚️ Direkte Server-Anbindung an das Music Assistant DSP-System (Presets wie *ARC Daily Punch*, *Airpods*, Preamp, parametrische Bänder)
-              - 🌟 Neuer Spotify-Style Welcome & Anmelde-Screen (Benutzername & Passwort statt manueller API-Token)
-              - 👥 Warteschlangen-Management mit Live-WebSocket-Sync
-              - 🔊 Multiroom-Lautsprechersteuerung (Sonos, AirPlay, Shield, Chromecast, iPhone)
-              - ⏱️ Sleep-Timer & TTS-Sprachansagen
-            
-            #### 📲 Installation:
-            * **Direktes In-App-Update**: Tippe in den Einstellungen oder im Update-Dialog einfach auf *„Jetzt direkt in der App installieren“*. Keine weitere App erforderlich!
+              - 🎨 **Eigenes App-Icon (Spotify Edition)**: Speziell designtes, hochauflösendes iOS App-Icon mit tiefem OLED-Schwarz, konzentrischen Vinyl-Grooves und leuchtend grünem Spotify-Musik-Emblem
+              - 🎛️ **Vollständiger Adaptiver Equalizer**: Fletcher-Munson Dynamic Loudness, Genre-Profiling, Akustik-Kompensation, Echtzeit Bezier-Spline-Visualizer und Server-DSP-Sync
+              - 🏝️ **Echte Apple Dynamic Island & Live Activities (ActivityKit & WidgetKit)**: Reines natives Apple-Hardware-Widget für iPhone 14 Pro, 15 und 16
+              - 📲 **Autarker In-App-Updater**: One-Tap-Installation und direktes In-App-Update über das native Apple OTA-Protokoll (`itms-services`)
+              - 💾 **Offline Musik-Downloads & Speicher-Manager**: Lade Songs und Playlists für Offline-Wiedergabe herunter
+              - ⌚ **Apple Watch Remote & watchOS App**: Interaktive Apple Watch Fernbedienung direkt in der iOS-App sowie native watchOS-App
+              - 🎧 **Spotify Virtueller KI-DJ ("DJ X")**: Mit Apple Neural Siri / Studio-Stimmen, Lautstärke-Ducking und lokalem LLM-Support
           files: |
             music-assistant.ipa
             music-assistant-v${{ env.APP_VERSION }}.ipa
+            music-assistant-with-watch.ipa
+            music-assistant-with-watch-v${{ env.APP_VERSION }}.ipa
             ios/ota_manifest.plist
 
       - name: Update Latest Sideload Release
@@ -169,4 +165,6 @@ jobs:
             
             * **Aktuelle Version**: `v${{ env.APP_VERSION }}` (Build `${{ env.APP_BUILD }}`)
             * **Direkt-Download**: [music-assistant.ipa](https://github.com/LegoPuck-orginal/music-assistant-app/releases/download/latest/music-assistant.ipa)
-          files: music-assistant.ipa
+          files: |
+            music-assistant.ipa
+            music-assistant-with-watch.ipa
