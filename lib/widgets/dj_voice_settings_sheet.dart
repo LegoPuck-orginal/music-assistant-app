@@ -4,6 +4,7 @@ import '../models/dj_voice_settings.dart';
 import '../providers/music_provider.dart';
 import '../services/native_tts_service.dart';
 import '../services/ollama_service.dart';
+import '../theme/spotify_colors.dart';
 
 class DjVoiceSettingsSheet extends StatefulWidget {
   const DjVoiceSettingsSheet({super.key});
@@ -167,12 +168,12 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1DB954).withValues(alpha: 0.15),
+                    color: SpotifyColors.orange.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
                     Icons.record_voice_over_rounded,
-                    color: Color(0xFF1DB954),
+                    color: SpotifyColors.orange,
                     size: 20,
                   ),
                 ),
@@ -184,7 +185,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                       Text(
                         'DJ STIMME & SPRACHMODELL',
                         style: TextStyle(
-                          color: Color(0xFF1DB954),
+                          color: SpotifyColors.orange,
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 1.2,
@@ -209,7 +210,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                   child: const Text(
                     'Fertig',
                     style: TextStyle(
-                      color: Color(0xFF1DB954),
+                      color: SpotifyColors.orange,
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
                     ),
@@ -280,7 +281,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                             : (_appleVoices.isNotEmpty ? _appleVoices.first.identifier : null),
                         isExpanded: true,
                         dropdownColor: const Color(0xFF242424),
-                        icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF1DB954)),
+                        icon: const Icon(Icons.arrow_drop_down, color: SpotifyColors.orange),
                         items: _appleVoices.map((v) {
                           return DropdownMenuItem<String>(
                             value: v.identifier,
@@ -303,13 +304,13 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF1DB954).withValues(alpha: 0.2),
+                                      color: SpotifyColors.orange.withValues(alpha: 0.2),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: const Text(
                                       'NEURAL',
                                       style: TextStyle(
-                                        color: Color(0xFF1DB954),
+                                        color: SpotifyColors.orange,
                                         fontSize: 9,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -385,7 +386,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                     decoration: InputDecoration(
                       labelText: 'Server URL (HA oder Piper HTTP)',
                       labelStyle: const TextStyle(color: Colors.white60),
-                      hintText: 'http://192.168.188.25:8123',
+                      hintText: 'http://homeassistant.local:8123',
                       hintStyle: const TextStyle(color: Colors.white24),
                       filled: true,
                       fillColor: const Color(0xFF1E1E1E),
@@ -421,7 +422,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: _enableOllama
-                          ? const Color(0xFF1DB954).withValues(alpha: 0.5)
+                          ? SpotifyColors.orange.withValues(alpha: 0.5)
                           : Colors.transparent,
                     ),
                   ),
@@ -451,7 +452,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                           ),
                           Switch.adaptive(
                             value: _enableOllama,
-                            activeTrackColor: const Color(0xFF1DB954),
+                            activeTrackColor: SpotifyColors.orange,
                             onChanged: (val) {
                               setState(() => _enableOllama = val);
                               _saveSettings();
@@ -475,7 +476,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                                       height: 16,
                                       child: CircularProgressIndicator(strokeWidth: 2),
                                     )
-                                  : const Icon(Icons.refresh, color: Color(0xFF1DB954)),
+                                  : const Icon(Icons.refresh, color: SpotifyColors.orange),
                               onPressed: _detectOllamaModels,
                             ),
                             filled: true,
@@ -550,7 +551,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                           Text(
                             '${_speechRate.toStringAsFixed(2)}x ${_speechRate == 1.05 ? "(Radio DJ)" : ""}',
                             style: const TextStyle(
-                              color: Color(0xFF1DB954),
+                              color: SpotifyColors.orange,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -561,7 +562,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                         min: 0.8,
                         max: 1.4,
                         divisions: 12,
-                        activeColor: const Color(0xFF1DB954),
+                        activeColor: SpotifyColors.orange,
                         onChanged: (val) {
                           setState(() => _speechRate = val);
                           _saveSettings();
@@ -577,7 +578,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                           Text(
                             '${_pitch.toStringAsFixed(2)}x ${_pitch == 0.95 ? "(Sonorer Bass)" : ""}',
                             style: const TextStyle(
-                              color: Color(0xFF1DB954),
+                              color: SpotifyColors.orange,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -588,7 +589,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                         min: 0.8,
                         max: 1.2,
                         divisions: 8,
-                        activeColor: const Color(0xFF1DB954),
+                        activeColor: SpotifyColors.orange,
                         onChanged: (val) {
                           setState(() => _pitch = val);
                           _saveSettings();
@@ -618,7 +619,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                           ),
                           Switch.adaptive(
                             value: _enableDucking,
-                            activeTrackColor: const Color(0xFF1DB954),
+                            activeTrackColor: SpotifyColors.orange,
                             onChanged: (val) {
                               setState(() => _enableDucking = val);
                               _saveSettings();
@@ -636,7 +637,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                 ElevatedButton.icon(
                   onPressed: _isTestingVoice ? null : _testVoice,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1DB954),
+                    backgroundColor: SpotifyColors.orange,
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
@@ -699,11 +700,11 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFF1DB954).withValues(alpha: 0.12)
+              ? SpotifyColors.orange.withValues(alpha: 0.12)
               : const Color(0xFF1E1E1E),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected ? const Color(0xFF1DB954) : Colors.transparent,
+            color: isSelected ? SpotifyColors.orange : Colors.transparent,
             width: 1.5,
           ),
         ),
@@ -713,7 +714,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFF1DB954) : Colors.white10,
+                color: isSelected ? SpotifyColors.orange : Colors.white10,
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -744,7 +745,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF1DB954),
+                            color: SpotifyColors.orange,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -773,7 +774,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isSelected ? const Color(0xFF1DB954) : Colors.white38,
+                  color: isSelected ? SpotifyColors.orange : Colors.white38,
                   width: 2,
                 ),
               ),
@@ -784,7 +785,7 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
                         height: 12,
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Color(0xFF1DB954),
+                          color: SpotifyColors.orange,
                         ),
                       ),
                     )

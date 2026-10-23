@@ -75,22 +75,24 @@ jobs:
           name: "Music Assistant iOS v${{ env.APP_VERSION }} (Build ${{ env.APP_BUILD }})"
           make_latest: true
           body: |
-            ### 🎵 Music Assistant iOS v${{ env.APP_VERSION }} (Spotify Edition)
+            ### 🎵 Music Assistant iOS v${{ env.APP_VERSION }} (Universal Edition)
             Offizielles Sideload-Release für **isideload**, **SideStore**, **AltStore** und **Sideloadly**.
             
             * **Version**: `v${{ env.APP_VERSION }}` (Build `${{ env.APP_BUILD }}`)
-            * **Design**: 100% Spotify UI mit echtem OLED-Schwarz (`#000000`/`#121212`) und Spotify-Grün (`#1DB954`)
-            * **Server**: Vorkonfiguriert für Music Assistant 2.0 (`http://192.168.188.25:8095`)
+            * **Design**: Adobe Dark OLED Black (`#000000`/`#070707`) & Adobe Signature Orange (`#FF5C00`)
+            * **Universal Network**: Automatisches Server-Scanning (Auto-Discovery), Verbindungs-Tester & Sofort-Start im Demo- & Offline-Modus
             * **Direkt-Download**: [music-assistant.ipa](https://github.com/LegoPuck-orginal/music-assistant-app/releases/download/v${{ env.APP_VERSION }}/music-assistant.ipa)
             * **Enthaltene Features**:
+              - 📘 **Interaktiver Willkommens-Guide & Setup-Assistent**: Automatische Server-Erkennung, Connection-Test & Onboarding
               - 🏝️ **Native Apple Dynamic Island**: Echtes Hardware-Element mit animierten Audio-Equalizer-Wellen und Album-Cover
               - ⌚ **Native Apple Watch Anbindung**: Automatische „Jetzt läuft“-Anzeige auf der Apple Watch mit Digital Crown Lautstärkeregelung
+              - 🔊 **Live Multiroom Speaker Monitor & 1-Tap Takeover**: Aktive Lautsprecher im Haus überwachen und Steuerung mit einem Klick übernehmen
               - 📚 **Hörbücher & Hörspiele (Die drei ???)**: Eigener Bereich mit Folgen-Übersicht, Sprecher-Cast und Kapitelliste
-              - 🎤 **Live Synchronisierte Songtexte (Lyrics)**: Spotify-Style Karaoke mit automatischem Mitscrollen
+              - 🎤 **Live Synchronisierte Songtexte (Lyrics via LRCLIB)**: Taktgenaues Karaoke mit automatischem Mitscrollen
               - 🌊 **Interaktiver Audio-Waveform Scrubber**: 48 dynamische Klangwellenbalken mit Haptik
               - 📲 **Autarker In-App-Updater**: Direktdownload der IPA in der App & iOS Share-Sheet („In Dateien sichern“)
-              - 🎛️ **Vollständiger Adaptiver Equalizer**: Fletcher-Munson Loudness & Genre-Profiling
-              - 🎨 **Eigenes Spotify-App-Icon (OLED Black Edition)**
+              - 🎛️ **Vollständiger 10-Band DSP Equalizer**: Fletcher-Munson Loudness & Genre-Profiling
+              - 🎨 **Adobe Dark OLED Black App-Icon**
           files: |
             music-assistant.ipa
             ios/ota_manifest.plist

@@ -39,7 +39,7 @@ class ProfileAvatar extends StatelessWidget {
       id: 'preset:headphones',
       name: 'Audiophil',
       icon: Icons.headphones,
-      gradient: [Color(0xFF1DB954), Color(0xFF191414)],
+      gradient: [SpotifyColors.orange, Color(0xFF191414)],
     ),
     'preset:rocker': AvatarPreset(
       id: 'preset:rocker',
@@ -163,12 +163,12 @@ class ProfileAvatar extends StatelessWidget {
   Widget _buildFallbackInitial() {
     final initial = (user?.effectiveName.isNotEmpty == true)
         ? user!.effectiveName[0].toUpperCase()
-        : 'T';
+        : 'M';
     return Container(
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
         gradient: LinearGradient(
-          colors: [Color(0xFF1DB954), Color(0xFF0F682F)],
+          colors: [SpotifyColors.orange, SpotifyColors.orangeLight],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),

@@ -18,14 +18,25 @@ class StorageService {
   static const String _keyUserId = 'mass_user_id';
   static const String _keyAvatarUrl = 'mass_avatar_url';
   static const String _keyIsGuest = 'mass_is_guest';
+  static const String _keyWelcomeGuideCompleted = 'mass_welcome_guide_completed';
 
-  // Default Admin Token from local system
-  static const String defaultToken =
+  // Standardmäßiger lokaler Entwickler-Token (optional für Tests)
+  static const String defaultAdminToken =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqQVBSWElJMUVBa2hBVVNTODEwYVhLU2ZhaWhwQmY1anlzcnJUQ1RQUnpRIiwianRpIjoiYy1KNjdBMklRRTUyeGY4U3dYOXYyREI4VUlMSEg5S1VESi1qOVV5S0tNOCIsImlhdCI6MTc5MDQyNjA3MywiZXhwIjoxODIxOTYyMDczLCJ1c2VybmFtZSI6InRpbS1tIiwicm9sZSI6ImFkbWluIiwidG9rZW5fbmFtZSI6Imxlbm92by1sZWdpb25lIiwiaXNfbG9uZ19saXZlZCI6dHJ1ZX0.UNJl7eX_ycLgIjK0tP6WBZeuE8EoWejNn3BA0yiX_k4';
+
+  Future<bool> hasCompletedWelcomeGuide() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyWelcomeGuideCompleted) ?? false;
+  }
+
+  Future<void> setWelcomeGuideCompleted(bool completed) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyWelcomeGuideCompleted, completed);
+  }
 
   Future<String> loadServerUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyServerUrl) ?? 'http://192.168.188.25:8095';
+    return prefs.getString(_keyServerUrl) ?? 'http://homeassistant.local:8095';
   }
 
   Future<void> saveServerUrl(String url) async {
@@ -35,7 +46,7 @@ class StorageService {
 
   Future<String?> loadAuthToken() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyAuthToken) ?? defaultToken;
+    return prefs.getString(_keyAuthToken);
   }
 
   Future<void> saveAuthToken(String token) async {

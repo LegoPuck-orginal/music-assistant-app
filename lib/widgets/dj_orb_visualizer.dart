@@ -145,7 +145,7 @@ class _DjOrbVisualizerState extends State<DjOrbVisualizer>
                           Color(0xFF4FACFE),
                           Color(0xFF7F00FF),
                           Color(0xFFE100FF),
-                          Color(0xFF1DB954),
+                          Color(0xFFFF5C00),
                           Color(0xFF00F2FE),
                         ],
                       ),

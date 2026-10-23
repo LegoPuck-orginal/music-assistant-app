@@ -54,10 +54,11 @@ class MusicProvider extends ChangeNotifier {
   Set<String> _likedTrackIds = {};
   Timer? _positionTimer;
   Timer? _playerPollTimer;
-  String _serverUrl = 'http://192.168.188.25:8095';
-  String _authToken = StorageService.defaultToken;
+  String _serverUrl = 'http://homeassistant.local:8095';
+  String _authToken = '';
   bool _isInitialized = false;
   bool _isAuthenticated = false;
+  bool _hasCompletedWelcomeGuide = false;
   UserProfile? _currentUser;
   bool _isLoggingIn = false;
   String? _loginError;
@@ -197,12 +198,36 @@ class MusicProvider extends ChangeNotifier {
   String? get dspError => _dspError;
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
+  bool get hasCompletedWelcomeGuide => _hasCompletedWelcomeGuide;
+  String get appVersion => '1.10.6';
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
   AppUpdateInfo? get updateInfo => _updateInfo;
   bool get isCheckingForUpdates => _isCheckingForUpdates;
   bool get hasUpdate => _updateInfo?.hasUpdate ?? false;
+
+  Future<void> completeWelcomeGuide() async {
+    _hasCompletedWelcomeGuide = true;
+    await _storage.setWelcomeGuideCompleted(true);
+    notifyListeners();
+  }
+
+  Future<void> resetWelcomeGuide() async {
+    _hasCompletedWelcomeGuide = false;
+    await _storage.setWelcomeGuideCompleted(false);
+    notifyListeners();
+  }
+
+  /// Prüft eigenständig, ob ein Server erreichbar ist
+  Future<Map<String, dynamic>> testServerConnection([String? url]) async {
+    return await MassApiService.testConnection(url ?? _serverUrl);
+  }
+
+  /// Sucht automatisch nach Music Assistant Instanzen im lokalen WLAN
+  Future<List<String>> discoverLocalServers() async {
+    return await MassApiService.discoverLocalServers();
+  }
 
   // Offline Mode & Downloads
   bool get isOfflineMode => _isOfflineMode;
@@ -253,6 +278,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> initialize() async {
     try {
+      _hasCompletedWelcomeGuide = await _storage.hasCompletedWelcomeGuide();
       _serverUrl = await _storage.loadServerUrl();
       final token = await _storage.loadAuthToken();
       _currentUser = await _storage.loadUserProfile();
@@ -324,7 +350,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.5');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.6');
   }
 
   void _connectAndRefresh() {
@@ -808,9 +834,9 @@ class MusicProvider extends ChangeNotifier {
   Future<void> updateUserProfile({String? displayName, String? avatarUrl}) async {
     if (_currentUser == null) {
       _currentUser = UserProfile(
-        userId: 'tim_id',
-        username: 'tim-m',
-        displayName: displayName,
+        userId: 'local_user',
+        username: 'user',
+        displayName: displayName ?? 'Music Assistant Hörer',
         avatarUrl: avatarUrl,
       );
     } else {

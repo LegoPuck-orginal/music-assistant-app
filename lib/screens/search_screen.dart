@@ -30,7 +30,7 @@ class _SearchScreenState extends State<SearchScreen> {
     {'name': 'Charts & Top 50', 'color': Color(0xFF0D73EC), 'icon': Icons.trending_up},
     {'name': 'Fokus & Ambient', 'color': Color(0xFFBC5900), 'icon': Icons.psychology},
     {'name': 'Gaming', 'color': Color(0xFF477D95), 'icon': Icons.sports_esports},
-    {'name': 'Home Assistant Radio', 'color': Color(0xFF1DB954), 'icon': Icons.home},
+    {'name': 'Home Assistant Radio', 'color': Color(0xFFFF5C00), 'icon': Icons.home},
   ];
 
   @override

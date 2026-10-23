@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
+import '../services/storage_service.dart';
 import '../theme/spotify_colors.dart';
+import 'welcome_guide_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -17,6 +19,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   late final TextEditingController _passwordController;
   bool _obscurePassword = true;
   bool _showAdvancedServer = false;
+  bool _isTesting = false;
+  String? _testMessage;
+  bool? _testSuccess;
 
   @override
   void initState() {
@@ -25,12 +30,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     _serverController = TextEditingController(
       text: prov.serverUrl.isNotEmpty
           ? prov.serverUrl
-          : 'http://192.168.188.25:8095',
+          : 'http://homeassistant.local:8095',
     );
     _usernameController = TextEditingController(
       text: prov.currentUser?.username.isNotEmpty == true
           ? prov.currentUser!.username
-          : 'tim-m',
+          : '',
     );
     _passwordController = TextEditingController();
   }
@@ -80,6 +85,35 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
+  Future<void> _handleTestConnection() async {
+    final server = _serverController.text.trim();
+    if (server.isEmpty) {
+      _showErrorSnackBar('Bitte gib eine Server-Adresse ein.');
+      return;
+    }
+    setState(() {
+      _isTesting = true;
+      _testMessage = null;
+      _testSuccess = null;
+    });
+
+    final prov = context.read<MusicProvider>();
+    final res = await prov.testServerConnection(server);
+
+    if (!mounted) return;
+    setState(() {
+      _isTesting = false;
+      if (res['success'] == true) {
+        _testSuccess = true;
+        _testMessage =
+            '✓ Verbunden! Music Assistant v${res['serverVersion'] ?? '2.x'} ist erreichbar.';
+      } else {
+        _testSuccess = false;
+        _testMessage = '✗ ${res['error'] ?? 'Server antwortet nicht.'}';
+      }
+    });
+  }
+
   void _showTokenLoginDialog() {
     final tokenController = TextEditingController();
     showDialog(
@@ -115,6 +149,17 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 10),
+            TextButton.icon(
+              icon: const Icon(Icons.code, size: 14, color: SpotifyColors.orange),
+              label: const Text(
+                'Entwickler-Token einfügen (Dev)',
+                style: TextStyle(color: SpotifyColors.orange, fontSize: 11),
+              ),
+              onPressed: () {
+                tokenController.text = StorageService.defaultAdminToken;
+              },
+            ),
           ],
         ),
         actions: [
@@ -125,7 +170,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: SpotifyColors.green,
+              backgroundColor: SpotifyColors.orange,
               foregroundColor: Colors.black,
             ),
             onPressed: () {
@@ -276,7 +321,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   textInputAction: TextInputAction.next,
                   style: const TextStyle(color: Colors.white, fontSize: 15),
                   decoration: _inputDecoration(
-                    hint: 'z. B. tim-m',
+                    hint: 'z. B. admin oder dein Name',
                     icon: Icons.person_outline,
                   ),
                 ),
@@ -346,28 +391,84 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
                 if (_showAdvancedServer) ...[
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: _serverController,
-                    keyboardType: TextInputType.url,
-                    textInputAction: TextInputAction.next,
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                    decoration: _inputDecoration(
-                      hint: 'http://192.168.188.25:8095',
-                      icon: Icons.dns_outlined,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _serverController,
+                          keyboardType: TextInputType.url,
+                          textInputAction: TextInputAction.next,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          decoration: _inputDecoration(
+                            hint: 'http://homeassistant.local:8095',
+                            icon: Icons.dns_outlined,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: SpotifyColors.surfaceHighlight,
+                            foregroundColor: SpotifyColors.orange,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: _isTesting ? null : _handleTestConnection,
+                          child: _isTesting
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation(
+                                        SpotifyColors.orange),
+                                  ),
+                                )
+                              : const Text('Testen',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold, fontSize: 12)),
+                        ),
+                      ),
+                    ],
                   ),
+                  if (_testMessage != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _testSuccess == true
+                            ? Colors.green.withValues(alpha: 0.15)
+                            : Colors.red.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _testMessage!,
+                        style: TextStyle(
+                          color: _testSuccess == true
+                              ? Colors.greenAccent
+                              : Colors.redAccent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
 
-                const SizedBox(height: 28),
+                const SizedBox(height: 24),
 
                 // Login Button
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: SpotifyColors.green,
+                    backgroundColor: SpotifyColors.orange,
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     elevation: 4,
-                    shadowColor: SpotifyColors.green.withValues(alpha: 0.4),
+                    shadowColor: SpotifyColors.orange.withValues(alpha: 0.4),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),
@@ -391,6 +492,33 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             letterSpacing: 0.4,
                           ),
                         ),
+                ),
+                const SizedBox(height: 14),
+
+                // Button: Willkommens-Guide öffnen
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: SpotifyColors.orange,
+                    side: const BorderSide(color: SpotifyColors.surfaceHighlight),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const WelcomeGuideScreen(isStandalone: true),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.explore_rounded, size: 18),
+                  label: const Text(
+                    'Willkommens-Guide & Server-Assistent',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
                 ),
                 const SizedBox(height: 18),
 

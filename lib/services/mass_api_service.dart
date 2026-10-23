@@ -8,7 +8,7 @@ import '../models/recommendation.dart';
 import '../models/track.dart';
 
 class MassApiService {
-  String _serverUrl = 'http://192.168.188.25:8095';
+  String _serverUrl = 'http://homeassistant.local:8095';
   String _token = '';
   WebSocketChannel? _channel;
   bool _isConnected = false;
@@ -31,6 +31,120 @@ class MassApiService {
   bool get isConnected => _isConnected;
   String get serverUrl => _serverUrl;
   Map<String, dynamic>? get currentUser => _currentUser;
+
+  /// Prüft eigenständig, ob unter der angegebenen Server-URL ein erreichbarer Music Assistant Server läuft
+  static Future<Map<String, dynamic>> testConnection(String url) async {
+    final cleanUrl = url.trim().replaceAll(RegExp(r'/+$'), '');
+    if (cleanUrl.isEmpty) {
+      return {
+        'success': false,
+        'error': 'Bitte gib eine Server-Adresse ein.',
+      };
+    }
+
+    final wsUrl = '${cleanUrl.replaceFirst(RegExp(r'^http'), 'ws')}/ws';
+    final completer = Completer<Map<String, dynamic>>();
+    WebSocketChannel? testChannel;
+
+    try {
+      testChannel = WebSocketChannel.connect(Uri.parse(wsUrl));
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Verbindung fehlgeschlagen ($e)',
+      };
+    }
+
+    final timer = Timer(const Duration(milliseconds: 2500), () {
+      if (!completer.isCompleted) {
+        testChannel?.sink.close();
+        completer.complete({
+          'success': false,
+          'error': 'Zeitüberschreitung (Timeout nach 2,5s). Server antwortet nicht.',
+        });
+      }
+    });
+
+    testChannel.stream.listen(
+      (rawData) {
+        try {
+          final json = jsonDecode(rawData as String) as Map<String, dynamic>;
+          if (json.containsKey('server_id')) {
+            timer.cancel();
+            testChannel?.sink.close();
+            if (!completer.isCompleted) {
+              final version = json['server_version']?.toString() ?? '2.x';
+              final serverId = json['server_id']?.toString() ?? '';
+              completer.complete({
+                'success': true,
+                'serverId': serverId,
+                'serverVersion': version,
+                'message': 'Music Assistant erreichbar (v$version)',
+              });
+            }
+          }
+        } catch (e) {
+          timer.cancel();
+          testChannel?.sink.close();
+          if (!completer.isCompleted) {
+            completer.complete({
+              'success': false,
+              'error': 'Ungültige Server-Antwort ($e)',
+            });
+          }
+        }
+      },
+      onError: (err) {
+        timer.cancel();
+        testChannel?.sink.close();
+        if (!completer.isCompleted) {
+          completer.complete({
+            'success': false,
+            'error': 'Server nicht erreichbar ($err)',
+          });
+        }
+      },
+      onDone: () {
+        timer.cancel();
+        if (!completer.isCompleted) {
+          completer.complete({
+            'success': false,
+            'error': 'Verbindung wurde vom Server vorzeitig geschlossen.',
+          });
+        }
+      },
+    );
+
+    return completer.future;
+  }
+
+  /// Durchsucht das lokale Netzwerk nach erreichbaren Music Assistant Instanzen
+  static Future<List<String>> discoverLocalServers() async {
+    final candidateHosts = [
+      'http://homeassistant.local:8095',
+      'http://mass.local:8095',
+      'http://homeassistant:8095',
+      'http://127.0.0.1:8095',
+      'http://192.168.188.25:8095',
+      'http://192.168.1.100:8095',
+      'http://192.168.178.1:8095',
+      'http://192.168.0.100:8095',
+    ];
+
+    final results = <String>[];
+    await Future.wait(
+      candidateHosts.map((host) async {
+        try {
+          final res = await testConnection(host);
+          if (res['success'] == true) {
+            results.add(host);
+          }
+        } catch (_) {}
+      }),
+    );
+
+    return results;
+  }
 
   void configure(String url, String token) {
     _serverUrl = url.trim().replaceAll(RegExp(r'/+$'), '');

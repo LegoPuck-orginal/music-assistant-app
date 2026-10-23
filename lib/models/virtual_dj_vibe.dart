@@ -32,7 +32,7 @@ class DjVibe {
       title: 'Deine Allzeit-Favoriten',
       subtitle: 'Meistgehörte Songs aus deiner Mediathek',
       icon: '🔥',
-      gradient: [Color(0xFF1DB954), Color(0xFF191414)],
+      gradient: [Color(0xFFFF5C00), Color(0xFF191414)],
       introPrompt:
           'Hey {user}! Hier ist dein persönlicher DJ. Ich hab deine Allzeit-Favoriten aus dem Hörverlauf geladen – los geht\'s mit deinen absoluten Lieblings-Tracks!',
     ),

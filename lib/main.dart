@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/music_provider.dart';
 import 'screens/main_navigation_screen.dart';
+import 'screens/welcome_guide_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'theme/spotify_colors.dart';
 import 'theme/spotify_theme.dart';
@@ -46,10 +47,13 @@ class MusicAssistantApp extends StatelessWidget {
               body: Center(
                 child: CircularProgressIndicator(
                   valueColor:
-                      AlwaysStoppedAnimation<Color>(SpotifyColors.green),
+                      AlwaysStoppedAnimation<Color>(SpotifyColors.orange),
                 ),
               ),
             );
+          }
+          if (!prov.hasCompletedWelcomeGuide) {
+            return const WelcomeGuideScreen();
           }
           if (!prov.isAuthenticated) {
             return const WelcomeScreen();

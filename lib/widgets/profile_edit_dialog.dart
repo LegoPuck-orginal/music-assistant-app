@@ -100,7 +100,7 @@ class _ProfileEditDialogState extends State<ProfileEditDialog> {
                 ),
               ),
               Text(
-                'Benutzerkonto: @${user?.username ?? "tim-m"} • ${user?.role ?? "Admin"}',
+                'Benutzerkonto: @${user?.username ?? "user"} • ${user?.role ?? "Hörer"}',
                 style: const TextStyle(
                   color: SpotifyColors.textSecondary,
                   fontSize: 12,

@@ -11,6 +11,7 @@ import '../widgets/equalizer_sheet.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_edit_dialog.dart';
 import '../widgets/update_dialog.dart';
+import 'welcome_guide_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -248,6 +249,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
 
+          const SizedBox(height: 12),
+
+          // Willkommens-Guide & Server-Assistent
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            tileColor: SpotifyColors.surfaceElevated,
+            leading: const Icon(Icons.explore_rounded,
+                color: SpotifyColors.orange, size: 28),
+            title: const Text('Willkommens-Guide & Server-Setup',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600)),
+            subtitle: const Text(
+                'Schritt-für-Schritt Einrichtung, Server-Scan & Demo-Modus',
+                style: TextStyle(
+                    color: SpotifyColors.textSecondary, fontSize: 12)),
+            trailing:
+                const Icon(Icons.chevron_right, color: SpotifyColors.textMuted),
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const WelcomeGuideScreen(isStandalone: true),
+                ),
+              );
+            },
+          ),
+
           const SizedBox(height: 24),
 
           // Section: Music Assistant Server Details
@@ -276,7 +306,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: SpotifyColors.surfaceHighlight,
-                    hintText: 'http://192.168.188.25:8095',
+                    hintText: 'http://homeassistant.local:8095',
                     hintStyle: const TextStyle(color: SpotifyColors.textMuted),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 12),
@@ -480,7 +510,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               borderRadius: BorderRadius.circular(10),
             ),
             tileColor: SpotifyColors.surfaceElevated,
-            leading: const Icon(Icons.record_voice_over_rounded, color: Color(0xFF1DB954), size: 28),
+            leading: const Icon(Icons.record_voice_over_rounded, color: SpotifyColors.orange, size: 28),
             title: const Text('DJ Stimme & KI-Modell',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
             subtitle: Text(
@@ -700,28 +730,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: SpotifyColors.surfaceElevated,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Column(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Music Assistant für iOS (Spotify-Edition)',
+                const Text(
+                  'Music Assistant für iOS (Adobe OLED & Orange Edition)',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
-                  'Version 1.1.0 • Echte Server-API & Equalizer',
-                  style: TextStyle(
+                  'Version ${prov.appVersion} (Build 25) • Echte Server-API & Equalizer',
+                  style: const TextStyle(
                     color: SpotifyColors.textSecondary,
                     fontSize: 12,
                   ),
                 ),
-                SizedBox(height: 8),
-                Text(
-                  'Steuert echte Music Assistant Multi-Room-Player (Sonos, AirPlay, Chromecast, Shield) und spielt Musik direkt lokal auf dem iPhone ab.',
+                const SizedBox(height: 8),
+                const Text(
+                  'Steuert echte Music Assistant Multi-Room-Player (Sonos, AirPlay, Chromecast, HomePod) und spielt Musik direkt lokal auf dem iPhone ab.',
                   style: TextStyle(
                     color: SpotifyColors.textMuted,
                     fontSize: 12,
