@@ -263,17 +263,50 @@ class TrackTile extends StatelessWidget {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.queue_play_next, color: Colors.white),
+                title: const Text('Als Nächstes abspielen',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await prov.playNext(track);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            '"${track.title}" wird als Nächstes abgespielt'),
+                        backgroundColor: SpotifyColors.surfaceElevated,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.add_to_queue, color: Colors.white),
+                title: const Text('An Warteschlange anhängen',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await prov.addToQueue(track);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            '"${track.title}" an Warteschlange angehängt'),
+                        backgroundColor: SpotifyColors.surfaceElevated,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.playlist_add, color: Colors.white),
                 title: const Text('Zu Playlist hinzufügen',
                     style: TextStyle(color: Colors.white)),
                 onTap: () {
                   Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('"${track.title}" zu Playlist hinzugefügt'),
-                      backgroundColor: SpotifyColors.surfaceElevated,
-                    ),
-                  );
+                  showAddToPlaylistDialog(context, track, prov);
                 },
               ),
               ListTile(
@@ -282,7 +315,7 @@ class TrackTile extends StatelessWidget {
                     style: TextStyle(color: Colors.white)),
                 onTap: () {
                   Navigator.pop(ctx);
-                  prov.playTrack(track);
+                  prov.startTrackRadio(track);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Song-Radio für "${track.title}" gestartet'),
@@ -295,20 +328,239 @@ class TrackTile extends StatelessWidget {
                 leading: const Icon(Icons.share, color: Colors.white),
                 title: const Text('Teilen',
                     style: TextStyle(color: Colors.white)),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Link für "${track.title}" kopiert!'),
-                      backgroundColor: SpotifyColors.surfaceElevated,
-                    ),
-                  );
+                  final shareText =
+                      '${track.title} – ${track.artist}${track.uri != null ? " (${track.uri})" : ""}';
+                  await Clipboard.setData(ClipboardData(text: shareText));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            '„${track.title}“ in die Zwischenablage kopiert!'),
+                        backgroundColor: SpotifyColors.surfaceElevated,
+                      ),
+                    );
+                  }
                 },
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  static void showAddToPlaylistDialog(
+      BuildContext context, Track track, MusicProvider prov) {
+    final userPlaylists =
+        prov.playlists.where((p) => p.type == 'playlist').toList();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SpotifyColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 16, 20, 12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.playlist_add, color: SpotifyColors.green),
+                      SizedBox(width: 10),
+                      Text(
+                        'Zu Playlist hinzufügen',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(color: SpotifyColors.borderSubtle, height: 1),
+                ListTile(
+                  leading: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: SpotifyColors.green.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.add, color: SpotifyColors.green),
+                  ),
+                  title: const Text(
+                    'Neue Playlist erstellen',
+                    style: TextStyle(
+                      color: SpotifyColors.green,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Erstellt eine neue Playlist mit diesem Song',
+                    style: TextStyle(
+                        color: SpotifyColors.textSecondary, fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _promptCreatePlaylistWithTrack(context, track, prov);
+                  },
+                ),
+                const Divider(color: SpotifyColors.borderSubtle, height: 1),
+                Flexible(
+                  child: userPlaylists.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'Noch keine eigenen Playlists vorhanden. Tippe oben auf „Neue Playlist erstellen“.',
+                            textAlign: TextAlign.center,
+                            style:
+                                TextStyle(color: SpotifyColors.textSecondary),
+                          ),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: userPlaylists.length,
+                          itemBuilder: (ctx, i) {
+                            final pl = userPlaylists[i];
+                            return ListTile(
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
+                                  color: SpotifyColors.surfaceElevated,
+                                  child: pl.imageUrl != null
+                                      ? Image.network(
+                                          pl.imageUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) => const Icon(
+                                              Icons.queue_music,
+                                              color: Colors.white70),
+                                        )
+                                      : const Icon(Icons.queue_music,
+                                          color: Colors.white70),
+                                ),
+                              ),
+                              title: Text(
+                                pl.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${pl.trackCount} Songs • ${pl.owner}',
+                                style: const TextStyle(
+                                  color: SpotifyColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              onTap: () async {
+                                HapticFeedback.lightImpact();
+                                Navigator.pop(sheetCtx);
+                                await prov.addTrackToPlaylist(pl, track);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          '„${track.title}“ zu „${pl.name}“ hinzugefügt'),
+                                      backgroundColor:
+                                          SpotifyColors.surfaceElevated,
+                                    ),
+                                  );
+                                }
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  static void _promptCreatePlaylistWithTrack(
+      BuildContext context, Track track, MusicProvider prov) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: SpotifyColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Neue Playlist erstellen',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Name der Playlist...',
+            hintStyle: const TextStyle(color: SpotifyColors.textSecondary),
+            filled: true,
+            fillColor: Colors.black26,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Abbrechen',
+                style: TextStyle(color: SpotifyColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: SpotifyColors.green,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () async {
+              final name = ctrl.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(dialogCtx);
+              final created = await prov.createPlaylist(name);
+              await prov.addTrackToPlaylist(created, track);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                        'Playlist „$name“ erstellt und „${track.title}“ hinzugefügt!'),
+                    backgroundColor: SpotifyColors.surfaceElevated,
+                  ),
+                );
+              }
+            },
+            child: const Text('Erstellen',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
     );
   }
 }

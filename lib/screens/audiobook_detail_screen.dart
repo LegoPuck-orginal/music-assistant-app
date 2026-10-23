@@ -37,14 +37,24 @@ class AudiobookDetailScreen extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.share_outlined, color: Colors.white),
                 tooltip: 'Teilen',
-                onPressed: () {
+                onPressed: () async {
                   HapticFeedback.lightImpact();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${audiobook.series} - ${audiobook.title} geteilt!'),
-                      duration: const Duration(seconds: 2),
+                  await Clipboard.setData(
+                    ClipboardData(
+                      text:
+                          '${audiobook.series} – Folge ${audiobook.episodeNumber}: ${audiobook.title}',
                     ),
                   );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            '„${audiobook.series} – ${audiobook.title}“ in die Zwischenablage kopiert!'),
+                        duration: const Duration(seconds: 2),
+                        backgroundColor: SpotifyColors.surfaceElevated,
+                      ),
+                    );
+                  }
                 },
               ),
             ],

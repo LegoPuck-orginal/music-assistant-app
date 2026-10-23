@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/adaptive_eq_settings.dart';
 import '../models/dj_voice_settings.dart';
 import '../models/equalizer_settings.dart';
+import '../models/playlist.dart';
+import '../models/track.dart';
 import '../models/user_profile.dart';
 
 class StorageService {
@@ -19,6 +22,12 @@ class StorageService {
   static const String _keyAvatarUrl = 'mass_avatar_url';
   static const String _keyIsGuest = 'mass_is_guest';
   static const String _keyWelcomeGuideCompleted = 'mass_welcome_guide_completed';
+  static const String _keyAllowLocalPlayback = 'mass_allow_local_playback';
+  static const String _keyLosslessStreaming = 'mass_lossless_streaming';
+  static const String _keyCrossfadeEnabled = 'mass_crossfade_enabled';
+  static const String _keyDontStopTheMusic = 'mass_dont_stop_the_music';
+  static const String _keyCustomPlaylists = 'mass_custom_playlists';
+  static const String _keyRecentlyPlayed = 'mass_recently_played';
 
   // Standardmäßiger lokaler Entwickler-Token (optional für Tests)
   static const String defaultAdminToken =
@@ -179,5 +188,95 @@ class StorageService {
   Future<void> saveAdaptiveEqSettings(AdaptiveEqSettings settings) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyAdaptiveEqSettings, settings.toJsonString());
+  }
+
+  Future<bool> loadAllowLocalPlayback() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyAllowLocalPlayback) ?? true;
+  }
+
+  Future<void> saveAllowLocalPlayback(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAllowLocalPlayback, value);
+  }
+
+  Future<bool> loadLosslessStreaming() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyLosslessStreaming) ?? true;
+  }
+
+  Future<void> saveLosslessStreaming(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyLosslessStreaming, value);
+  }
+
+  Future<bool> loadCrossfadeEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyCrossfadeEnabled) ?? true;
+  }
+
+  Future<void> saveCrossfadeEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyCrossfadeEnabled, value);
+  }
+
+  Future<bool> loadDontStopTheMusic() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyDontStopTheMusic) ?? true;
+  }
+
+  Future<void> saveDontStopTheMusic(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyDontStopTheMusic, value);
+  }
+
+  Future<List<Playlist>> loadCustomPlaylists() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString(_keyCustomPlaylists);
+      if (str != null && str.isNotEmpty) {
+        final decoded = jsonDecode(str);
+        if (decoded is List) {
+          return decoded
+              .whereType<Map>()
+              .map((e) => Playlist.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> saveCustomPlaylists(List<Playlist> playlists) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(playlists.map((p) => p.toJson()).toList());
+      await prefs.setString(_keyCustomPlaylists, encoded);
+    } catch (_) {}
+  }
+
+  Future<List<Track>> loadRecentlyPlayedTracks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString(_keyRecentlyPlayed);
+      if (str != null && str.isNotEmpty) {
+        final decoded = jsonDecode(str);
+        if (decoded is List) {
+          return decoded
+              .whereType<Map>()
+              .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> saveRecentlyPlayedTracks(List<Track> tracks) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(tracks.take(25).map((t) => t.toJson()).toList());
+      await prefs.setString(_keyRecentlyPlayed, encoded);
+    } catch (_) {}
   }
 }

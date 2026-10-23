@@ -47,6 +47,7 @@ class MusicProvider extends ChangeNotifier {
   List<Track> _queue = [];
   int _queueIndex = 0;
   List<Playlist> _playlists = [];
+  List<Playlist> _customPlaylists = [];
   List<Playlist> _podcasts = [];
   List<Playlist> _albums = [];
   List<Playlist> _artists = [];
@@ -54,6 +55,13 @@ class MusicProvider extends ChangeNotifier {
   List<PlayerDevice> _players = [];
   PlayerDevice? _activePlayer;
   Set<String> _likedTrackIds = {};
+  List<Track> _recentlyPlayedTracks = [];
+  bool _allowLocalPlayback = true;
+  bool _losslessStreaming = true;
+  bool _crossfadeEnabled = true;
+  bool _dontStopTheMusic = true;
+  DateTime? _sleepTimerEndTime;
+  Timer? _sleepTimerCountdown;
   Timer? _positionTimer;
   Timer? _positionTicker;
   Timer? _playerPollTimer;
@@ -207,13 +215,137 @@ class MusicProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
   bool get hasCompletedWelcomeGuide => _hasCompletedWelcomeGuide;
-  String get appVersion => '1.10.9';
+  String get appVersion => '1.11.0';
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
   AppUpdateInfo? get updateInfo => _updateInfo;
   bool get isCheckingForUpdates => _isCheckingForUpdates;
   bool get hasUpdate => _updateInfo?.hasUpdate ?? false;
+
+  bool get allowLocalPlayback => _allowLocalPlayback;
+  bool get losslessStreaming => _losslessStreaming;
+  bool get crossfadeEnabled => _crossfadeEnabled;
+  bool get dontStopTheMusic => _dontStopTheMusic;
+
+  List<Track> get recentlyPlayedTracks => _recentlyPlayedTracks.isNotEmpty
+      ? _recentlyPlayedTracks
+      : _queue.take(10).toList();
+
+  /// Alle als Favorit / Lieblingssong markierten Titel (aus Queue, Bibliothek, Playlists, Verlauf & Downloads)
+  List<Track> get likedTracks {
+    final Map<String, Track> map = {};
+    void consider(Track t) {
+      final liked = t.isLiked || _likedTrackIds.contains(t.id);
+      if (liked) {
+        t.isLiked = true;
+        final key = t.id.isNotEmpty ? t.id : '${t.title}_${t.artist}';
+        map.putIfAbsent(key, () => t);
+      }
+    }
+
+    if (_currentTrack != null) consider(_currentTrack!);
+    for (final t in _queue) {
+      consider(t);
+    }
+    for (final p in _playlists) {
+      for (final t in p.tracks) {
+        consider(t);
+      }
+    }
+    for (final p in _customPlaylists) {
+      for (final t in p.tracks) {
+        consider(t);
+      }
+    }
+    for (final t in _recentlyPlayedTracks) {
+      consider(t);
+    }
+    for (final t in downloadedTracks) {
+      consider(t);
+    }
+    return map.values.toList();
+  }
+
+  Duration? get sleepTimerRemaining {
+    if (_sleepTimerEndTime == null) return null;
+    final diff = _sleepTimerEndTime!.difference(DateTime.now());
+    if (diff.isNegative) return null;
+    return diff;
+  }
+
+  bool get hasActiveSleepTimer => sleepTimerRemaining != null;
+
+  String? get formattedSleepTimerRemaining {
+    final rem = sleepTimerRemaining;
+    if (rem == null) return null;
+    final mins = rem.inMinutes;
+    final secs = rem.inSeconds % 60;
+    return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> setAllowLocalPlayback(bool value) async {
+    _allowLocalPlayback = value;
+    await _storage.saveAllowLocalPlayback(value);
+    if (!value && _activePlayer?.isLocal == true) {
+      await _localAudioPlayer.pause();
+      _isPlaying = false;
+      final remote = _players.where((p) => !p.isLocal && p.isAvailable).firstOrNull;
+      if (remote != null) {
+        await setActivePlayer(remote);
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> setLosslessStreaming(bool value) async {
+    _losslessStreaming = value;
+    await _storage.saveLosslessStreaming(value);
+    notifyListeners();
+  }
+
+  Future<void> setCrossfadeEnabled(bool value) async {
+    _crossfadeEnabled = value;
+    await _storage.saveCrossfadeEnabled(value);
+    notifyListeners();
+    if (_activePlayer != null && !_activePlayer!.isLocal && _api.isConnected) {
+      try {
+        await _api.setCrossfade(_activePlayer!.id, value);
+      } catch (e) {
+        debugPrint('[MusicProvider] setCrossfadeEnabled error: $e');
+      }
+    }
+  }
+
+  Future<void> setDontStopTheMusic(bool value) async {
+    _dontStopTheMusic = value;
+    await _storage.saveDontStopTheMusic(value);
+    notifyListeners();
+    if (_activePlayer != null && !_activePlayer!.isLocal && _api.isConnected) {
+      try {
+        await _api.setDontStopTheMusic(_activePlayer!.id, value);
+      } catch (e) {
+        debugPrint('[MusicProvider] setDontStopTheMusic error: $e');
+      }
+    }
+  }
+
+  void _recordRecentlyPlayed(Track track) {
+    _recentlyPlayedTracks.removeWhere(
+      (t) => t.id == track.id || (t.title == track.title && t.artist == track.artist),
+    );
+    _recentlyPlayedTracks.insert(0, track);
+    if (_recentlyPlayedTracks.length > 25) {
+      _recentlyPlayedTracks = _recentlyPlayedTracks.sublist(0, 25);
+    }
+    _storage.saveRecentlyPlayedTracks(_recentlyPlayedTracks);
+  }
+
+  Future<void> clearRecentlyPlayed() async {
+    _recentlyPlayedTracks.clear();
+    await _storage.saveRecentlyPlayedTracks([]);
+    notifyListeners();
+  }
 
   Future<void> completeWelcomeGuide() async {
     _hasCompletedWelcomeGuide = true;
@@ -295,6 +427,24 @@ class MusicProvider extends ChangeNotifier {
       _equalizerSettings = await _storage.loadEqualizerSettings();
       _adaptiveEqSettings = await _storage.loadAdaptiveEqSettings();
       _djVoiceSettings = await _storage.loadDjVoiceSettings();
+      _allowLocalPlayback = await _storage.loadAllowLocalPlayback();
+      _losslessStreaming = await _storage.loadLosslessStreaming();
+      _crossfadeEnabled = await _storage.loadCrossfadeEnabled();
+      _dontStopTheMusic = await _storage.loadDontStopTheMusic();
+      _customPlaylists = await _storage.loadCustomPlaylists();
+      _recentlyPlayedTracks = await _storage.loadRecentlyPlayedTracks();
+
+      for (final t in _queue) {
+        if (_likedTrackIds.contains(t.id)) t.isLiked = true;
+      }
+      if (_customPlaylists.isNotEmpty) {
+        final existingIds = _playlists.map((p) => p.id).toSet();
+        for (final cp in _customPlaylists.reversed) {
+          if (!existingIds.contains(cp.id)) {
+            _playlists.insert(0, cp);
+          }
+        }
+      }
 
       if (token != null && token.isNotEmpty) {
         _authToken = token;
@@ -358,7 +508,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.9');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.11.0');
   }
 
   void _connectAndRefresh() {
@@ -880,8 +1030,23 @@ class MusicProvider extends ChangeNotifier {
             _isPlaying = isQueuePlaying;
             _positionTracker.setPlaying(queueId, isQueuePlaying);
           }
+          if (data['shuffle_enabled'] is bool) {
+            _isShuffle = data['shuffle_enabled'] as bool;
+          }
+          if (data['repeat_mode'] is String) {
+            final rm = data['repeat_mode'] as String;
+            _repeatMode = rm == 'all' ? 1 : (rm == 'one' ? 2 : 0);
+          }
+          if (data['crossfade_enabled'] is bool) {
+            _crossfadeEnabled = data['crossfade_enabled'] as bool;
+          }
+          if (data['dont_stop_the_music_enabled'] is bool) {
+            _dontStopTheMusic = data['dont_stop_the_music_enabled'] as bool;
+          }
           if (track != null) {
+            if (_likedTrackIds.contains(track.id)) track.isLiked = true;
             _currentTrack = track;
+            _recordRecentlyPlayed(track);
             if (trackDuration != null && trackDuration > 0) {
               _totalDuration = Duration(seconds: trackDuration.round());
             } else if (track.durationSeconds > 0) {
@@ -1174,6 +1339,25 @@ class MusicProvider extends ChangeNotifier {
         p.isSelected = (p.id == _activePlayer?.id);
       }
 
+      if (_activePlayer != null) {
+        final activeQ = queueMap[_activePlayer!.id];
+        if (activeQ != null) {
+          if (activeQ['shuffle_enabled'] is bool) {
+            _isShuffle = activeQ['shuffle_enabled'] as bool;
+          }
+          if (activeQ['repeat_mode'] is String) {
+            final rm = activeQ['repeat_mode'] as String;
+            _repeatMode = rm == 'all' ? 1 : (rm == 'one' ? 2 : 0);
+          }
+          if (activeQ['crossfade_enabled'] is bool) {
+            _crossfadeEnabled = activeQ['crossfade_enabled'] as bool;
+          }
+          if (activeQ['dont_stop_the_music_enabled'] is bool) {
+            _dontStopTheMusic = activeQ['dont_stop_the_music_enabled'] as bool;
+          }
+        }
+      }
+
       // 2. Fetch real library tracks, playlists, podcasts, albums, artists in parallel
       final results = await Future.wait([
         _api.fetchLibraryPlaylists(limit: 50),
@@ -1193,7 +1377,13 @@ class MusicProvider extends ChangeNotifier {
       _albums = libraryAlbums;
       _artists = libraryArtists;
 
+      final serverPlaylistIds = libraryPlaylists.map((p) => p.id).toSet();
+      final customOnly = _customPlaylists
+          .where((cp) => !serverPlaylistIds.contains(cp.id))
+          .toList();
+
       _playlists = [
+        ...customOnly,
         ...libraryPlaylists,
         ...libraryPodcasts,
         ...libraryAlbums,
@@ -1202,6 +1392,7 @@ class MusicProvider extends ChangeNotifier {
 
       if (libraryTracks.isNotEmpty) {
         for (final t in libraryTracks) {
+          if (t.isLiked) _likedTrackIds.add(t.id);
           if (_likedTrackIds.contains(t.id)) t.isLiked = true;
         }
         _queue = libraryTracks;
@@ -1431,14 +1622,17 @@ class MusicProvider extends ChangeNotifier {
     await playTrack(targetChapter, newQueue: List<Track>.from(book.chapters));
   }
 
-  Future<void> playTrack(Track track, {List<Track>? newQueue}) async {
+  Future<void> playTrack(Track track,
+      {List<Track>? newQueue, bool radioMode = false}) async {
+    if (_likedTrackIds.contains(track.id)) track.isLiked = true;
     _currentTrack = track;
     _isPlaying = true;
     _currentPosition = Duration.zero;
     _totalDuration = Duration(seconds: track.durationSeconds);
+    _recordRecentlyPlayed(track);
 
     if (newQueue != null && newQueue.isNotEmpty) {
-      _queue = newQueue;
+      _queue = List<Track>.from(newQueue);
       _queueIndex = _queue.indexWhere((t) => t.id == track.id);
       if (_queueIndex == -1) _queueIndex = 0;
     } else {
@@ -1527,12 +1721,125 @@ class MusicProvider extends ChangeNotifier {
       _startPositionTimer();
       final mediaUri = track.uri ?? 'library://track/${track.id}';
       try {
-        await _api.playMedia(_activePlayer!.id, mediaUri);
+        if (!radioMode && newQueue != null && newQueue.length > 1) {
+          final uris = newQueue
+              .map((t) => t.uri ?? 'library://track/${t.id}')
+              .toList();
+          await _api.playMedia(
+            _activePlayer!.id,
+            uris,
+            option: 'replace',
+            startItem: mediaUri,
+          );
+        } else {
+          await _api.playMedia(
+            _activePlayer!.id,
+            mediaUri,
+            option: 'replace',
+            radioMode: radioMode,
+          );
+        }
       } catch (e) {
         debugPrint('[MusicProvider] Remote playMedia error: $e');
         await _api.playerPlay(_activePlayer!.id);
       }
     }
+  }
+
+  /// Startet das Song-Radio (Endlos-Mix ähnlicher Titel) für einen Track
+  Future<void> startTrackRadio(Track track) async {
+    await playTrack(track, radioMode: true);
+  }
+
+  /// Reiht einen einzelnen Track direkt als nächsten Titel in die Warteschlange ein
+  Future<void> playNext(Track track) async {
+    await enqueueTracks([track], playNext: true);
+  }
+
+  /// Fügt einen einzelnen Track ans Ende der Warteschlange an
+  Future<void> addToQueue(Track track) async {
+    await enqueueTracks([track], playNext: false);
+  }
+
+  /// Fügt eine Liste von Tracks zur Warteschlange hinzu (als Nächstes oder am Ende)
+  Future<void> enqueueTracks(List<Track> tracks, {bool playNext = false}) async {
+    if (tracks.isEmpty) return;
+    if (playNext && _queue.isNotEmpty) {
+      final insertIdx = (_queueIndex + 1).clamp(0, _queue.length);
+      _queue.insertAll(insertIdx, tracks);
+    } else {
+      _queue.addAll(tracks);
+    }
+    notifyListeners();
+
+    if (!isLocalPlayback && _activePlayer != null && _api.isConnected) {
+      try {
+        final uris =
+            tracks.map((t) => t.uri ?? 'library://track/${t.id}').toList();
+        await _api.playMedia(
+          _activePlayer!.id,
+          uris,
+          option: playNext ? 'next' : 'add',
+        );
+      } catch (e) {
+        debugPrint('[MusicProvider] enqueueTracks remote error: $e');
+      }
+    }
+  }
+
+  /// Erstellt eine neue Playlist (auf dem Music Assistant Server + lokal persistent)
+  Future<Playlist> createPlaylist(String name) async {
+    final trimmed = name.trim();
+    Playlist? created;
+    if (_api.isConnected) {
+      created = await _api.createPlaylist(trimmed);
+    }
+    created ??= Playlist(
+      id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+      name: trimmed,
+      owner: _currentUser?.effectiveName ?? 'Du',
+      trackCount: 0,
+      type: 'playlist',
+      provider: 'library',
+      tracks: [],
+    );
+
+    _customPlaylists.removeWhere((p) => p.id == created!.id);
+    _customPlaylists.insert(0, created);
+    await _storage.saveCustomPlaylists(_customPlaylists);
+
+    _playlists.removeWhere((p) => p.id == created!.id);
+    _playlists.insert(0, created);
+    notifyListeners();
+    return created;
+  }
+
+  /// Fügt einen Track zu einer Playlist hinzu (auf dem Server + lokal persistent)
+  Future<bool> addTrackToPlaylist(Playlist playlist, Track track) async {
+    final alreadyExists = playlist.tracks.any((t) => t.id == track.id);
+    if (!alreadyExists) {
+      playlist.tracks.add(track);
+      playlist.trackCount = playlist.tracks.length;
+    }
+
+    final customIdx = _customPlaylists.indexWhere((p) => p.id == playlist.id);
+    if (customIdx != -1) {
+      _customPlaylists[customIdx] = playlist;
+    } else {
+      _customPlaylists.insert(0, playlist);
+    }
+    await _storage.saveCustomPlaylists(_customPlaylists);
+    notifyListeners();
+
+    if (_api.isConnected && !playlist.id.startsWith('custom_') && !playlist.id.startsWith('fallback_')) {
+      try {
+        final uri = track.uri ?? 'library://track/${track.id}';
+        await _api.addTracksToPlaylist(playlist.id, [uri]);
+      } catch (e) {
+        debugPrint('[MusicProvider] addTrackToPlaylist server error: $e');
+      }
+    }
+    return !alreadyExists;
   }
 
   bool _isImageUrl(String url) {
@@ -1690,8 +1997,37 @@ class MusicProvider extends ChangeNotifier {
     } else {
       _likedTrackIds.remove(track.id);
     }
+
+    if (_currentTrack?.id == track.id) {
+      _currentTrack!.isLiked = track.isLiked;
+    }
+    for (final t in _queue) {
+      if (t.id == track.id) t.isLiked = track.isLiked;
+    }
+    for (final p in _playlists) {
+      for (final t in p.tracks) {
+        if (t.id == track.id) t.isLiked = track.isLiked;
+      }
+    }
+    for (final t in _recentlyPlayedTracks) {
+      if (t.id == track.id) t.isLiked = track.isLiked;
+    }
+
     await _storage.saveLikedTrackIds(_likedTrackIds);
     notifyListeners();
+
+    if (_api.isConnected) {
+      try {
+        if (track.isLiked) {
+          final uri = track.uri ?? 'library://track/${track.id}';
+          await _api.addFavorite(uri);
+        } else {
+          await _api.removeFavorite(track.id, mediaType: 'track');
+        }
+      } catch (e) {
+        debugPrint('[MusicProvider] toggleLike server sync error: $e');
+      }
+    }
   }
 
   Future<void> setActivePlayer(PlayerDevice player) async {
@@ -1896,14 +2232,48 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> setSleepTimer(Duration duration) async {
-    if (_activePlayer != null && !_activePlayer!.isLocal) {
-      await _api.setSleepTimer(_activePlayer!.id, duration.inSeconds);
+    _sleepTimerCountdown?.cancel();
+    _sleepTimerEndTime = DateTime.now().add(duration);
+    _sleepTimerCountdown = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_sleepTimerEndTime == null) {
+        timer.cancel();
+        return;
+      }
+      if (DateTime.now().isAfter(_sleepTimerEndTime!)) {
+        timer.cancel();
+        _sleepTimerEndTime = null;
+        if (_isPlaying) {
+          togglePlayPause();
+        } else {
+          notifyListeners();
+        }
+      } else {
+        notifyListeners();
+      }
+    });
+    notifyListeners();
+
+    if (_activePlayer != null && !_activePlayer!.isLocal && _api.isConnected) {
+      try {
+        await _api.setSleepTimer(_activePlayer!.id, duration.inSeconds);
+      } catch (e) {
+        debugPrint('[MusicProvider] setSleepTimer server error: $e');
+      }
     }
   }
 
   Future<void> clearSleepTimer() async {
-    if (_activePlayer != null && !_activePlayer!.isLocal) {
-      await _api.clearSleepTimer(_activePlayer!.id);
+    _sleepTimerCountdown?.cancel();
+    _sleepTimerCountdown = null;
+    _sleepTimerEndTime = null;
+    notifyListeners();
+
+    if (_activePlayer != null && !_activePlayer!.isLocal && _api.isConnected) {
+      try {
+        await _api.clearSleepTimer(_activePlayer!.id);
+      } catch (e) {
+        debugPrint('[MusicProvider] clearSleepTimer server error: $e');
+      }
     }
   }
 
@@ -2315,6 +2685,7 @@ class MusicProvider extends ChangeNotifier {
     _positionTimer?.cancel();
     _positionTicker?.cancel();
     _playerPollTimer?.cancel();
+    _sleepTimerCountdown?.cancel();
     _localAudioPlayer.dispose();
     _api.dispose();
     try {

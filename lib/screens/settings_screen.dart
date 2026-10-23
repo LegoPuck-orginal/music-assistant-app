@@ -23,7 +23,12 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _urlCtrl;
   late TextEditingController _tokenCtrl;
+  late TextEditingController _usernameCtrl;
+  late TextEditingController _passwordCtrl;
   bool _isTesting = false;
+  bool _isDiscovering = false;
+  bool _usePasswordAuth = false;
+  bool _obscurePassword = true;
   String? _statusMessage;
   bool _obscureToken = true;
 
@@ -33,13 +38,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prov = context.read<MusicProvider>();
     _urlCtrl = TextEditingController(text: prov.serverUrl);
     _tokenCtrl = TextEditingController(text: prov.authToken);
+    _usernameCtrl =
+        TextEditingController(text: prov.currentUser?.username ?? '');
+    _passwordCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
     _urlCtrl.dispose();
     _tokenCtrl.dispose();
+    _usernameCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _discoverServers() async {
+    setState(() {
+      _isDiscovering = true;
+      _statusMessage = 'Suche Music Assistant Server im lokalen WLAN...';
+    });
+    final prov = context.read<MusicProvider>();
+    final found = await prov.discoverLocalServers();
+    if (!mounted) return;
+    setState(() {
+      _isDiscovering = false;
+      if (found.isNotEmpty) {
+        _urlCtrl.text = found.first;
+        _statusMessage = 'Server gefunden: ${found.first}';
+      } else {
+        _statusMessage =
+            'Kein Server automatisch gefunden. Bitte URL manuell prüfen.';
+      }
+    });
   }
 
   Future<void> _saveAndTest() async {
@@ -49,16 +79,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     final prov = context.read<MusicProvider>();
+    final cleanUrl = _urlCtrl.text.trim();
+
+    if (_usePasswordAuth &&
+        _usernameCtrl.text.trim().isNotEmpty &&
+        _passwordCtrl.text.isNotEmpty) {
+      final ok = await prov.login(
+        serverUrl: cleanUrl,
+        username: _usernameCtrl.text.trim(),
+        password: _passwordCtrl.text,
+      );
+      if (!mounted) return;
+      if (ok) {
+        _tokenCtrl.text = prov.authToken;
+      }
+      setState(() {
+        _isTesting = false;
+        _statusMessage = ok
+            ? 'Erfolgreich angemeldet als ${prov.currentUser?.effectiveName ?? _usernameCtrl.text.trim()}!'
+            : (prov.loginError ?? 'Anmeldung fehlgeschlagen.');
+      });
+      return;
+    }
+
     await prov.updateServerSettings(
-      _urlCtrl.text.trim(),
+      cleanUrl,
       _tokenCtrl.text.trim(),
     );
 
+    if (!mounted) return;
     setState(() {
       _isTesting = false;
       _statusMessage = prov.isServerConnected
           ? 'Erfolgreich mit Music Assistant verbunden! ${prov.players.length} Player & ${prov.queue.length} Songs aktiv.'
-          : 'Server erreichbar! Authentifizierung wird aktualisiert.';
+          : 'Server-Einstellungen gespeichert & Synchronisierung gestartet.';
     });
   }
 
@@ -281,7 +335,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 24),
 
           // Section: Music Assistant Server Details
-          _sectionTitle('SERVER-ADRESSE & API-TOKEN'),
+          _sectionTitle('SERVER-VERBINDUNG & ANMELDUNG'),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -291,13 +345,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Server-Adresse (URL)',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Server-Adresse (URL)',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: SpotifyColors.green,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: _isDiscovering ? null : _discoverServers,
+                      icon: _isDiscovering
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.8,
+                                color: SpotifyColors.green,
+                              ),
+                            )
+                          : const Icon(Icons.radar, size: 15),
+                      label: const Text(
+                        'Im WLAN suchen',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -317,44 +401,166 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
-                  'Music Assistant API Token (Long-Lived)',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                // Auth Method Toggle (Password vs Token)
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: SpotifyColors.surfaceHighlight,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _tokenCtrl,
-                  obscureText: _obscureToken,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: SpotifyColors.surfaceHighlight,
-                    hintText: 'Music Assistant Access Token (JWT)',
-                    hintStyle: const TextStyle(color: SpotifyColors.textMuted),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureToken ? Icons.visibility_off : Icons.visibility,
-                        color: SpotifyColors.textSecondary,
-                        size: 20,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _usePasswordAuth = false);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 7),
+                            decoration: BoxDecoration(
+                              color: !_usePasswordAuth
+                                  ? SpotifyColors.green
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Center(
+                              child: Text(
+                                'API-Token (JWT)',
+                                style: TextStyle(
+                                  color: !_usePasswordAuth
+                                      ? Colors.black
+                                      : Colors.white70,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscureToken = !_obscureToken;
-                        });
-                      },
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _usePasswordAuth = true);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 7),
+                            decoration: BoxDecoration(
+                              color: _usePasswordAuth
+                                  ? SpotifyColors.green
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Center(
+                              child: Text(
+                                'Benutzer & Passwort',
+                                style: TextStyle(
+                                  color: _usePasswordAuth
+                                      ? Colors.black
+                                      : Colors.white70,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                if (_usePasswordAuth) ...[
+                  TextField(
+                    controller: _usernameCtrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: SpotifyColors.surfaceHighlight,
+                      hintText: 'Music Assistant Benutzername',
+                      hintStyle:
+                          const TextStyle(color: SpotifyColors.textMuted),
+                      prefixIcon: const Icon(Icons.person_outline,
+                          color: SpotifyColors.textSecondary, size: 18),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _passwordCtrl,
+                    obscureText: _obscurePassword,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: SpotifyColors.surfaceHighlight,
+                      hintText: 'Passwort',
+                      hintStyle:
+                          const TextStyle(color: SpotifyColors.textMuted),
+                      prefixIcon: const Icon(Icons.lock_outline,
+                          color: SpotifyColors.textSecondary, size: 18),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: SpotifyColors.textSecondary,
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  TextField(
+                    controller: _tokenCtrl,
+                    obscureText: _obscureToken,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: SpotifyColors.surfaceHighlight,
+                      hintText: 'Music Assistant Access Token (JWT)',
+                      hintStyle:
+                          const TextStyle(color: SpotifyColors.textMuted),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureToken
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: SpotifyColors.textSecondary,
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscureToken = !_obscureToken;
+                          });
+                        },
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Row(
                   children: [
@@ -376,9 +582,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 color: Colors.black,
                               ),
                             )
-                          : const Icon(Icons.sync, size: 18),
-                      label: const Text('Speichern & Synchronisieren',
-                          style: TextStyle(fontWeight: FontWeight.w700)),
+                          : Icon(_usePasswordAuth ? Icons.login : Icons.sync,
+                              size: 18),
+                      label: Text(
+                          _usePasswordAuth
+                              ? 'Anmelden & Verbinden'
+                              : 'Speichern & Synchronisieren',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
                     ),
                   ],
                 ),
@@ -472,9 +682,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'iPhone Lautsprecher & Kopfhörer',
                   subtitle: 'Direktes Audio-Streaming auf dem Smartphone erlauben',
                   trailing: Switch(
-                    value: true,
+                    value: prov.allowLocalPlayback,
                     activeThumbColor: SpotifyColors.green,
-                    onChanged: (val) {},
+                    onChanged: (val) {
+                      HapticFeedback.lightImpact();
+                      prov.setAllowLocalPlayback(val);
+                    },
                   ),
                 ),
                 const Divider(color: SpotifyColors.borderSubtle, height: 1),
@@ -482,19 +695,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Lossless Streaming (FLAC / Hi-Res)',
                   subtitle: 'Bit-perfektes Streaming über lokales WLAN',
                   trailing: Switch(
-                    value: true,
+                    value: prov.losslessStreaming,
                     activeThumbColor: SpotifyColors.green,
-                    onChanged: (val) {},
+                    onChanged: (val) {
+                      HapticFeedback.lightImpact();
+                      prov.setLosslessStreaming(val);
+                    },
                   ),
                 ),
                 const Divider(color: SpotifyColors.borderSubtle, height: 1),
                 _settingRow(
-                  title: 'Gapless Playback',
-                  subtitle: 'Nahtloser Übergang zwischen Musiktiteln',
+                  title: 'Gapless & Crossfade',
+                  subtitle: 'Nahtloser Übergang zwischen Musiktiteln auf dem Server',
                   trailing: Switch(
-                    value: true,
+                    value: prov.crossfadeEnabled,
                     activeThumbColor: SpotifyColors.green,
-                    onChanged: (val) {},
+                    onChanged: (val) {
+                      HapticFeedback.lightImpact();
+                      prov.setCrossfadeEnabled(val);
+                    },
+                  ),
+                ),
+                const Divider(color: SpotifyColors.borderSubtle, height: 1),
+                _settingRow(
+                  title: 'Autoplay / Endlos-Mix',
+                  subtitle:
+                      'Spielt nach Warteschlangen-Ende automatisch ähnliche Titel weiter',
+                  trailing: Switch(
+                    value: prov.dontStopTheMusic,
+                    activeThumbColor: SpotifyColors.green,
+                    onChanged: (val) {
+                      HapticFeedback.lightImpact();
+                      prov.setDontStopTheMusic(val);
+                    },
                   ),
                 ),
               ],
@@ -630,7 +863,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'v${prov.updateInfo?.currentVersion ?? "1.10.5"} (Build 24)',
+                          'v${prov.updateInfo?.currentVersion ?? prov.appVersion} (Build 29)',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
@@ -743,7 +976,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version ${prov.appVersion} (Build 25) • Echte Server-API & Equalizer',
+                  'Version ${prov.appVersion} (Build 29) • Echte Server-API & Equalizer',
                   style: const TextStyle(
                     color: SpotifyColors.textSecondary,
                     fontSize: 12,

@@ -260,7 +260,19 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                     onTap: () {
                       HapticFeedback.mediumImpact();
                       if (tracks.isNotEmpty) {
-                        prov.playTrack(tracks.first, newQueue: tracks);
+                        final playList = List.of(tracks);
+                        if (prov.isShuffle && playList.length > 1) {
+                          playList.shuffle();
+                        }
+                        prov.playTrack(playList.first, newQueue: playList);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Diese Auswahl enthält aktuell noch keine Titel.'),
+                            backgroundColor: SpotifyColors.surfaceElevated,
+                          ),
+                        );
                       }
                     },
                     child: Container(
@@ -357,34 +369,66 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.share, color: Colors.white),
-              title: const Text('Playlist teilen',
+              leading: const Icon(Icons.queue_play_next, color: Colors.white),
+              title: const Text('Als Nächstes abspielen',
                   style: TextStyle(color: Colors.white)),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Playlist-Link in die Zwischenablage kopiert!'),
-                    backgroundColor: SpotifyColors.surfaceElevated,
-                  ),
-                );
+                final prov = context.read<MusicProvider>();
+                await prov.enqueueTracks(widget.playlist.tracks,
+                    playNext: true);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          '${widget.playlist.tracks.length} Songs werden als Nächstes abgespielt'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                }
               },
             ),
             ListTile(
-              leading: const Icon(Icons.queue_music, color: Colors.white),
+              leading: const Icon(Icons.add_to_queue, color: Colors.white),
               title: const Text('An Warteschlange anhängen',
                   style: TextStyle(color: Colors.white)),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(ctx);
                 final prov = context.read<MusicProvider>();
-                prov.queue.addAll(widget.playlist.tracks);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                        '${widget.playlist.tracks.length} Songs an die Warteschlange angehängt'),
-                    backgroundColor: SpotifyColors.surfaceElevated,
+                await prov.enqueueTracks(widget.playlist.tracks,
+                    playNext: false);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          '${widget.playlist.tracks.length} Songs an die Warteschlange angehängt'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share, color: Colors.white),
+              title: const Text('Playlist teilen',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await Clipboard.setData(
+                  ClipboardData(
+                    text:
+                        '${widget.playlist.name} (${widget.playlist.owner}) – ${widget.playlist.tracks.length} Songs',
                   ),
                 );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          '„${widget.playlist.name}“ in die Zwischenablage kopiert!'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                }
               },
             ),
           ],

@@ -7,6 +7,7 @@ import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/album_card.dart';
 import '../widgets/audiobook_card.dart';
+import '../widgets/device_picker_sheet.dart';
 import '../widgets/downloads_sheet.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_edit_dialog.dart';
@@ -1069,37 +1070,135 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Neuigkeiten & Mitteilungen',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+        return Consumer<MusicProvider>(
+          builder: (ctx, prov, _) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Systemstatus & Mitteilungen',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          prov.refreshServerData();
+                        },
+                        icon: const Icon(Icons.sync,
+                            size: 16, color: SpotifyColors.green),
+                        label: const Text(
+                          'Sync',
+                          style: TextStyle(
+                            color: SpotifyColors.green,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 16),
-                ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: SpotifyColors.surfaceHighlight,
-                      shape: BoxShape.circle,
+                  const Divider(color: SpotifyColors.borderSubtle),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: SpotifyColors.surfaceHighlight,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        prov.isServerConnected
+                            ? Icons.cloud_done
+                            : Icons.cloud_off,
+                        color: prov.isServerConnected
+                            ? SpotifyColors.green
+                            : Colors.amber,
+                        size: 20,
+                      ),
                     ),
-                    child: const Icon(Icons.check, color: SpotifyColors.green, size: 20),
+                    title: Text(
+                      prov.isServerConnected
+                          ? 'Music Assistant Server verbunden'
+                          : 'Lokaler / Offline-Modus aktiv',
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      '${prov.serverUrl} • ${prov.players.length} Wiedergabegeräte erkannt',
+                      style: const TextStyle(
+                          color: SpotifyColors.textSecondary, fontSize: 12),
+                    ),
                   ),
-                  title: const Text('Music Assistant 2.10 ist online',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Alle Lautsprecher im Homelab sind betriebsbereit.',
-                      style: TextStyle(color: SpotifyColors.textSecondary, fontSize: 12)),
-                ),
-              ],
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: SpotifyColors.surfaceHighlight,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.speaker_group,
+                          color: SpotifyColors.green, size: 20),
+                    ),
+                    title: Text(
+                      'Aktiver Ausgang: ${prov.activePlayer?.name ?? "iPhone"}',
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      prov.isPlaying
+                          ? 'Spielt gerade: ${prov.currentTrack?.title ?? "Musik"}'
+                          : 'Bereit für Multiroom-Streaming',
+                      style: const TextStyle(
+                          color: SpotifyColors.textSecondary, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: SpotifyColors.textSecondary),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => const DevicePickerSheet(),
+                      );
+                    },
+                  ),
+                  if (prov.hasActiveSleepTimer)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(
+                          color: SpotifyColors.surfaceHighlight,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.bedtime,
+                            color: SpotifyColors.green, size: 20),
+                      ),
+                      title: Text(
+                        'Einschlaftimer aktiv (${prov.formattedSleepTimerRemaining})',
+                        style: const TextStyle(
+                            color: SpotifyColors.green,
+                            fontWeight: FontWeight.bold),
+                      ),
+                      trailing: TextButton(
+                        onPressed: () => prov.clearSleepTimer(),
+                        child: const Text('Stoppen',
+                            style: TextStyle(color: Colors.redAccent)),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         );
@@ -1115,45 +1214,103 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
-                child: Text(
-                  'Zuletzt gehört',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+        return Consumer<MusicProvider>(
+          builder: (ctx, liveProv, _) {
+            final history = liveProv.recentlyPlayedTracks;
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 16, 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Zuletzt gehört',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (history.isNotEmpty)
+                          TextButton(
+                            onPressed: () => liveProv.clearRecentlyPlayed(),
+                            child: const Text(
+                              'Verlauf leeren',
+                              style: TextStyle(
+                                color: SpotifyColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
+                  const Divider(color: SpotifyColors.borderSubtle, height: 1),
+                  Flexible(
+                    child: history.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Center(
+                              child: Text(
+                                'Noch keine kürzlich gehörten Titel.',
+                                style: TextStyle(
+                                    color: SpotifyColors.textSecondary),
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: history.length,
+                            itemBuilder: (c, idx) {
+                              final Track item = history[idx];
+                              return ListTile(
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Container(
+                                    width: 42,
+                                    height: 42,
+                                    color: SpotifyColors.surfaceElevated,
+                                    child: item.imageUrl != null
+                                        ? Image.network(
+                                            item.imageUrl!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, _, _) =>
+                                                const Icon(Icons.music_note,
+                                                    color: SpotifyColors.green),
+                                          )
+                                        : const Icon(Icons.music_note,
+                                            color: SpotifyColors.green),
+                                  ),
+                                ),
+                                title: Text(item.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600)),
+                                subtitle: Text(item.artist,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        color: SpotifyColors.textSecondary)),
+                                trailing: const Icon(Icons.play_circle_outline,
+                                    color: SpotifyColors.green),
+                                onTap: () {
+                                  liveProv.playTrack(item);
+                                  Navigator.pop(ctx);
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: prov.queue.take(8).length,
-                  itemBuilder: (c, idx) {
-                    final Track item = prov.queue[idx];
-                    return ListTile(
-                      leading: const Icon(Icons.music_note, color: SpotifyColors.green),
-                      title: Text(item.title,
-                          style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.w600)),
-                      subtitle: Text(item.artist,
-                          style: const TextStyle(color: SpotifyColors.textSecondary)),
-                      onTap: () {
-                        prov.playTrack(item);
-                        Navigator.pop(ctx);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

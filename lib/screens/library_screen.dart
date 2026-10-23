@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/playlist.dart';
-import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
+import '../widgets/profile_avatar.dart';
+import '../widgets/profile_edit_dialog.dart';
 import 'audiobook_detail_screen.dart';
 import 'playlist_detail_screen.dart';
 
@@ -17,10 +18,22 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   String _selectedFilter = 'Playlists';
+  String _sortMode = 'recent'; // 'recent', 'alpha', 'tracks'
   bool _isGridView = false;
   bool _isSearching = false;
   final TextEditingController _librarySearchCtrl = TextEditingController();
   String _searchQuery = '';
+
+  String get _sortLabel {
+    switch (_sortMode) {
+      case 'alpha':
+        return 'Alphabetisch (A–Z)';
+      case 'tracks':
+        return 'Meiste Titel';
+      default:
+        return 'Kürzlich hinzugefügt';
+    }
+  }
 
   @override
   void dispose() {
@@ -66,15 +79,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
           .toList();
     }
 
-    // Collect all liked tracks across library
-    final likedTracks = <Track>[];
-    for (final p in allPlaylists) {
-      for (final t in p.tracks) {
-        if (t.isLiked && !likedTracks.any((x) => x.id == t.id)) {
-          likedTracks.add(t);
-        }
-      }
+    // Apply interactive sorting
+    if (_sortMode == 'alpha') {
+      filteredPlaylists.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+    } else if (_sortMode == 'tracks') {
+      filteredPlaylists.sort((a, b) => b.trackCount.compareTo(a.trackCount));
     }
+
+    final likedTracks = prov.likedTracks;
 
     return Scaffold(
       backgroundColor: SpotifyColors.pureBlack,
@@ -89,19 +103,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
               title: Row(
                 children: [
                   GestureDetector(
-                    onTap: () => _showProfileDialog(context),
-                    child: const CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Color(0xFF535353),
-                      child: Text(
-                        'T',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
+                    onTap: () => ProfileEditDialog.show(context),
+                    child: ProfileAvatar(user: prov.currentUser, radius: 17),
                   ),
                   const SizedBox(width: 12),
                   const Text(
@@ -206,15 +209,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.swap_vert,
-                        color: SpotifyColors.textSecondary, size: 18),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'Kürzlich hinzugefügt',
-                      style: TextStyle(
-                        color: SpotifyColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        _showSortSheet(context);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.swap_vert,
+                                color: SpotifyColors.green, size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              _sortLabel,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const Spacer(),
@@ -529,42 +548,91 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  void _showProfileDialog(BuildContext context) {
-    showDialog(
+  void _showSortSheet(BuildContext context) {
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: SpotifyColors.surfaceElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: SpotifyColors.green,
-              child: Text('T',
-                  style: TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.bold)),
-            ),
-            SizedBox(width: 12),
-            Text('Tim Marquardt', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: const Column(
+      backgroundColor: SpotifyColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Rolle: Administrator',
-                style: TextStyle(color: SpotifyColors.textSecondary)),
-            SizedBox(height: 4),
-            Text('Server: Music Assistant 2.10',
-                style: TextStyle(color: SpotifyColors.textSecondary)),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+              child: Text(
+                'Sortieren nach',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const Divider(color: SpotifyColors.borderSubtle),
+            ListTile(
+              title: Text(
+                'Kürzlich hinzugefügt',
+                style: TextStyle(
+                  color: _sortMode == 'recent'
+                      ? SpotifyColors.green
+                      : Colors.white,
+                  fontWeight: _sortMode == 'recent'
+                      ? FontWeight.w700
+                      : FontWeight.normal,
+                ),
+              ),
+              trailing: _sortMode == 'recent'
+                  ? const Icon(Icons.check, color: SpotifyColors.green)
+                  : null,
+              onTap: () {
+                setState(() => _sortMode = 'recent');
+                Navigator.pop(ctx);
+              },
+            ),
+            ListTile(
+              title: Text(
+                'Alphabetisch (A–Z)',
+                style: TextStyle(
+                  color:
+                      _sortMode == 'alpha' ? SpotifyColors.green : Colors.white,
+                  fontWeight: _sortMode == 'alpha'
+                      ? FontWeight.w700
+                      : FontWeight.normal,
+                ),
+              ),
+              trailing: _sortMode == 'alpha'
+                  ? const Icon(Icons.check, color: SpotifyColors.green)
+                  : null,
+              onTap: () {
+                setState(() => _sortMode = 'alpha');
+                Navigator.pop(ctx);
+              },
+            ),
+            ListTile(
+              title: Text(
+                'Meiste Titel',
+                style: TextStyle(
+                  color: _sortMode == 'tracks'
+                      ? SpotifyColors.green
+                      : Colors.white,
+                  fontWeight: _sortMode == 'tracks'
+                      ? FontWeight.w700
+                      : FontWeight.normal,
+                ),
+              ),
+              trailing: _sortMode == 'tracks'
+                  ? const Icon(Icons.check, color: SpotifyColors.green)
+                  : null,
+              onTap: () {
+                setState(() => _sortMode = 'tracks');
+                Navigator.pop(ctx);
+              },
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            child: const Text('Schließen',
-                style: TextStyle(color: SpotifyColors.green)),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-        ],
       ),
     );
   }
@@ -577,7 +645,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         backgroundColor: SpotifyColors.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Neue Playlist erstellen',
-            style: TextStyle(color: Colors.white)),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
         content: TextField(
           controller: textCtrl,
           autofocus: true,
@@ -598,25 +666,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
               backgroundColor: SpotifyColors.green,
               foregroundColor: Colors.black,
             ),
-            child: const Text('Erstellen'),
-            onPressed: () {
+            child: const Text('Erstellen',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+            onPressed: () async {
               final name = textCtrl.text.trim();
               if (name.isNotEmpty) {
-                final newPlaylist = Playlist(
-                  id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
-                  name: name,
-                  owner: 'Tim Marquardt',
-                  trackCount: 0,
-                  tracks: [],
-                );
-                prov.playlists.insert(0, newPlaylist);
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Playlist "$name" erstellt!'),
-                    backgroundColor: SpotifyColors.surfaceElevated,
-                  ),
-                );
+                await prov.createPlaylist(name);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Playlist „$name“ erstellt!'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                }
               }
             },
           ),

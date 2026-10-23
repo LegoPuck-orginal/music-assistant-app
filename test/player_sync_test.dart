@@ -1,8 +1,27 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:music_assistant_app/models/track.dart';
+import 'package:music_assistant_app/providers/music_provider.dart';
 import 'package:music_assistant_app/services/player_position_tracker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  const MethodChannel channelGlobal =
+      MethodChannel('xyz.luan/audioplayers.global');
+  const MethodChannel channelPlayer = MethodChannel('xyz.luan/audioplayers');
+
+  setUpAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channelGlobal, (MethodCall methodCall) async {
+      return 1;
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channelPlayer, (MethodCall methodCall) async {
+      return 1;
+    });
+  });
 
   group('PlayerPositionTracker & Live Playback Sync Tests', () {
     late PlayerPositionTracker tracker;
@@ -113,6 +132,106 @@ void main() {
       final dur = tracker.getPositionDuration('player_test');
       expect(dur.inSeconds, 65);
       expect(dur.inMilliseconds, 65432);
+    });
+  });
+
+  group('MusicProvider End-to-End Feature Tests', () {
+    late MusicProvider provider;
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      provider = MusicProvider();
+    });
+
+    tearDown(() {
+      provider.dispose();
+    });
+
+    test('createPlaylist and addTrackToPlaylist work and persist', () async {
+      final pl = await provider.createPlaylist('Wochenend-Mix');
+      expect(pl.name, 'Wochenend-Mix');
+      expect(provider.playlists.first.name, 'Wochenend-Mix');
+
+      final testTrack = Track(
+        id: 'track_999',
+        title: 'Starlight',
+        artist: 'Muse',
+        album: 'Black Holes and Revelations',
+        durationSeconds: 240,
+      );
+
+      final added = await provider.addTrackToPlaylist(pl, testTrack);
+      expect(added, isTrue);
+      expect(pl.tracks.length, 1);
+      expect(pl.trackCount, 1);
+      expect(pl.tracks.first.title, 'Starlight');
+    });
+
+    test('playNext and addToQueue update queue accurately', () async {
+      final initialLen = provider.queue.length;
+      final nextTrack = Track(
+        id: 'next_1',
+        title: 'Next Song',
+        artist: 'Artist A',
+        album: 'Album A',
+        durationSeconds: 180,
+      );
+      final endTrack = Track(
+        id: 'end_1',
+        title: 'End Song',
+        artist: 'Artist B',
+        album: 'Album B',
+        durationSeconds: 200,
+      );
+
+      await provider.playNext(nextTrack);
+      expect(provider.queue.length, initialLen + 1);
+      expect(provider.queue[1].id, 'next_1');
+
+      await provider.addToQueue(endTrack);
+      expect(provider.queue.length, initialLen + 2);
+      expect(provider.queue.last.id, 'end_1');
+    });
+
+    test('toggleLike updates likedTracks across library and queue', () async {
+      final track = provider.queue.first;
+      expect(provider.likedTracks.any((t) => t.id == track.id), isFalse);
+
+      await provider.toggleLike(track);
+      expect(track.isLiked, isTrue);
+      expect(provider.likedTracks.any((t) => t.id == track.id), isTrue);
+
+      await provider.toggleLike(track);
+      expect(track.isLiked, isFalse);
+      expect(provider.likedTracks.any((t) => t.id == track.id), isFalse);
+    });
+
+    test('Sleep Timer sets active countdown and clears cleanly', () async {
+      expect(provider.hasActiveSleepTimer, isFalse);
+      expect(provider.formattedSleepTimerRemaining, isNull);
+
+      await provider.setSleepTimer(const Duration(minutes: 15));
+      expect(provider.hasActiveSleepTimer, isTrue);
+      expect(provider.formattedSleepTimerRemaining, isNotNull);
+
+      await provider.clearSleepTimer();
+      expect(provider.hasActiveSleepTimer, isFalse);
+      expect(provider.formattedSleepTimerRemaining, isNull);
+    });
+
+    test('Audio & Playback settings toggle and persist', () async {
+      expect(provider.allowLocalPlayback, isTrue);
+      expect(provider.losslessStreaming, isTrue);
+      expect(provider.crossfadeEnabled, isTrue);
+      expect(provider.dontStopTheMusic, isTrue);
+
+      await provider.setLosslessStreaming(false);
+      await provider.setCrossfadeEnabled(false);
+      await provider.setDontStopTheMusic(false);
+
+      expect(provider.losslessStreaming, isFalse);
+      expect(provider.crossfadeEnabled, isFalse);
+      expect(provider.dontStopTheMusic, isFalse);
     });
   });
 }

@@ -867,21 +867,36 @@ class MassApiService {
       sendCommand('players/cmd/volume_mute',
           {'player_id': playerId, 'muted': muted});
 
-  Future<void> playerShuffle(String playerId, bool shuffle) =>
-      sendCommand('players/cmd/shuffle',
-          {'player_id': playerId, 'shuffle_enabled': shuffle});
+  Future<void> playerShuffle(String queueId, bool shuffle) =>
+      sendCommand('player_queues/shuffle',
+          {'queue_id': queueId, 'shuffle_enabled': shuffle});
 
-  Future<void> playerRepeat(String playerId, String mode) =>
-      sendCommand('players/cmd/repeat',
-          {'player_id': playerId, 'repeat_mode': mode});
+  Future<void> playerRepeat(String queueId, String mode) =>
+      sendCommand('player_queues/repeat',
+          {'queue_id': queueId, 'repeat_mode': mode});
 
-  /// Spielt einen Track oder eine Playlist auf einem Music Assistant Player ab
-  Future<void> playMedia(String playerId, String mediaUri) =>
-      sendCommand('player_queues/play_media', {
-        'queue_id': playerId,
-        'media': mediaUri,
-        'option': 'replace',
-      });
+  /// Spielt einen Track, eine Liste von Tracks oder eine Playlist auf einem Music Assistant Player ab.
+  /// [option] kann 'replace', 'play', 'next' oder 'add' sein.
+  /// [radioMode] startet den Endlos-Mix / Song-Radio auf dem Server.
+  Future<void> playMedia(
+    String playerId,
+    dynamic mediaUriOrList, {
+    String option = 'replace',
+    bool radioMode = false,
+    String? startItem,
+  }) {
+    final mediaArg = mediaUriOrList is List ? mediaUriOrList : [mediaUriOrList];
+    final args = <String, dynamic>{
+      'queue_id': playerId,
+      'media': mediaArg,
+      'option': option,
+      'radio_mode': radioMode,
+    };
+    if (startItem != null && startItem.isNotEmpty) {
+      args['start_item'] = startItem;
+    }
+    return sendCommand('player_queues/play_media', args);
+  }
 
   /// Nahtlose Übergabe der Wiedergabe (Queue Transfer von einem Speaker zu einem anderen)
   Future<void> transferQueue(String sourceQueueId, String targetQueueId,
@@ -893,36 +908,98 @@ class MassApiService {
       });
 
   /// Synchronisiert einen Lautsprecher mit einem Master-Lautsprecher (Multiroom-Gruppe)
-  Future<void> syncPlayer(String playerId, String targetPlayerId) =>
-      sendCommand('players/cmd/sync', {
+  Future<void> syncPlayer(String playerId, String targetPlayerId) async {
+    try {
+      await sendCommand('players/cmd/set_members', {
+        'target_player': targetPlayerId,
+        'player_ids_to_add': [playerId],
+      });
+    } catch (_) {
+      await sendCommand('players/cmd/sync', {
         'player_id': playerId,
         'target_player': targetPlayerId,
       });
+    }
+  }
 
   /// Hebt die Multiroom-Synchronisierung eines Lautsprechers auf
-  Future<void> unsyncPlayer(String playerId) =>
-      sendCommand('players/cmd/unsync', {
+  Future<void> unsyncPlayer(String playerId) async {
+    try {
+      await sendCommand('players/cmd/ungroup', {
         'player_id': playerId,
       });
+    } catch (_) {
+      await sendCommand('players/cmd/unsync', {
+        'player_id': playerId,
+      });
+    }
+  }
 
   /// Power an/aus für einen Lautsprecher
-  Future<void> setPower(String playerId, bool power) =>
+  Future<void> setPower(String playerId, bool powered) =>
       sendCommand('players/cmd/power', {
         'player_id': playerId,
-        'power': power,
+        'powered': powered,
       });
 
   /// Einschlaftimer / Sleep Timer setzen (in Sekunden)
   Future<void> setSleepTimer(String playerId, int durationSeconds) =>
       sendCommand('players/sleep_timer/set', {
         'player_id': playerId,
-        'duration': durationSeconds,
+        'seconds': durationSeconds,
       });
 
   /// Einschlaftimer löschen
   Future<void> clearSleepTimer(String playerId) =>
       sendCommand('players/sleep_timer/clear', {
         'player_id': playerId,
+      });
+
+  /// Erstellt eine neue Playlist auf dem Music Assistant Server
+  Future<Playlist?> createPlaylist(String name) async {
+    try {
+      final res = await sendCommand('music/playlists/create_playlist', {
+        'name': name.trim(),
+      });
+      if (res is Map<String, dynamic>) {
+        return _parsePlaylist(res, defaultType: 'playlist', defaultProvider: 'library');
+      } else if (res is Map) {
+        return _parsePlaylist(Map<String, dynamic>.from(res),
+            defaultType: 'playlist', defaultProvider: 'library');
+      }
+    } catch (e) {
+      debugPrint('[MassApi] createPlaylist error: $e');
+    }
+    return null;
+  }
+
+  /// Fügt Tracks zu einer bestehenden Server-Playlist hinzu
+  Future<void> addTracksToPlaylist(String playlistId, List<String> trackUris) =>
+      sendCommand('music/playlists/add_playlist_tracks', {
+        'db_playlist_id': playlistId,
+        'uris': trackUris,
+      });
+
+  /// Entfernt Tracks an bestimmten Positionen aus einer Server-Playlist
+  Future<void> removeTracksFromPlaylist(
+          String playlistId, List<int> positionsToRemove) =>
+      sendCommand('music/playlists/remove_playlist_tracks', {
+        'db_playlist_id': playlistId,
+        'positions_to_remove': positionsToRemove,
+      });
+
+  /// Fügt ein Element zu den Music Assistant Favoriten hinzu
+  Future<void> addFavorite(String itemUri) =>
+      sendCommand('music/favorites/add_item', {
+        'item': itemUri,
+      });
+
+  /// Entfernt ein Element aus den Music Assistant Favoriten
+  Future<void> removeFavorite(String libraryItemId,
+          {String mediaType = 'track'}) =>
+      sendCommand('music/favorites/remove_item', {
+        'library_item_id': libraryItemId,
+        'media_type': mediaType,
       });
 
   /// Sprachansage / Announcement auf Lautsprecher abspielen

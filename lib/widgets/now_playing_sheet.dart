@@ -8,6 +8,7 @@ import 'audio_waveform_scrubber.dart';
 import 'device_picker_sheet.dart';
 import 'equalizer_sheet.dart';
 import 'lyrics_sheet.dart';
+import 'track_tile.dart';
 
 class NowPlayingSheet extends StatefulWidget {
   const NowPlayingSheet({super.key});
@@ -572,19 +573,41 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                         },
                       ),
                       IconButton(
+                        icon: Icon(
+                          Icons.bedtime_outlined,
+                          color: prov.hasActiveSleepTimer
+                              ? SpotifyColors.green
+                              : SpotifyColors.textSecondary,
+                          size: 20,
+                        ),
+                        tooltip: prov.hasActiveSleepTimer
+                            ? 'Sleep Timer aktiv (${prov.formattedSleepTimerRemaining})'
+                            : 'Sleep Timer',
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          _showSleepTimerDialog(context, prov);
+                        },
+                      ),
+                      IconButton(
                         icon: const Icon(Icons.share_outlined,
                             color: SpotifyColors.textSecondary, size: 20),
                         tooltip: 'Teilen',
-                        onPressed: () {
+                        onPressed: () async {
                           HapticFeedback.lightImpact();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                  'Titel-Link für "${track.title}" in die Zwischenablage kopiert!'),
-                              duration: const Duration(seconds: 2),
-                              backgroundColor: SpotifyColors.surfaceElevated,
-                            ),
-                          );
+                          final shareText =
+                              '${track.title} – ${track.artist}${track.uri != null ? " (${track.uri})" : ""}';
+                          await Clipboard.setData(
+                              ClipboardData(text: shareText));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    '„${track.title}“ in die Zwischenablage kopiert!'),
+                                duration: const Duration(seconds: 2),
+                                backgroundColor: SpotifyColors.surfaceElevated,
+                              ),
+                            );
+                          }
                         },
                       ),
                       IconButton(
@@ -779,106 +802,129 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
-              child: Row(
-                children: [
-                  Icon(Icons.bedtime, color: SpotifyColors.green),
-                  SizedBox(width: 8),
-                  Text(
-                    'Sleep Timer (Einschlaftimer)',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
+      builder: (ctx) => Consumer<MusicProvider>(
+        builder: (ctx, liveProv, _) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.bedtime, color: SpotifyColors.green),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Sleep Timer (Einschlaftimer)',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                    if (liveProv.hasActiveSleepTimer)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: SpotifyColors.green.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: SpotifyColors.green),
+                        ),
+                        child: Text(
+                          'Aktiv: ${liveProv.formattedSleepTimerRemaining}',
+                          style: const TextStyle(
+                            color: SpotifyColors.green,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            const Divider(color: SpotifyColors.borderSubtle),
-            ListTile(
-              leading: const Icon(Icons.timer_10, color: Colors.white),
-              title: const Text('15 Minuten',
-                  style: TextStyle(color: Colors.white)),
-              onTap: () {
-                prov.setSleepTimer(const Duration(minutes: 15));
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Einschlaftimer auf 15 Minuten gestellt'),
-                    backgroundColor: SpotifyColors.surfaceElevated,
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.timer, color: Colors.white),
-              title: const Text('30 Minuten',
-                  style: TextStyle(color: Colors.white)),
-              onTap: () {
-                prov.setSleepTimer(const Duration(minutes: 30));
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Einschlaftimer auf 30 Minuten gestellt'),
-                    backgroundColor: SpotifyColors.surfaceElevated,
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.timer, color: Colors.white),
-              title: const Text('45 Minuten',
-                  style: TextStyle(color: Colors.white)),
-              onTap: () {
-                prov.setSleepTimer(const Duration(minutes: 45));
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Einschlaftimer auf 45 Minuten gestellt'),
-                    backgroundColor: SpotifyColors.surfaceElevated,
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.timer, color: Colors.white),
-              title:
-                  const Text('1 Stunde', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                prov.setSleepTimer(const Duration(hours: 1));
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Einschlaftimer auf 1 Stunde gestellt'),
-                    backgroundColor: SpotifyColors.surfaceElevated,
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading:
-                  const Icon(Icons.timer_off, color: Colors.redAccent),
-              title: const Text('Timer ausschalten',
-                  style: TextStyle(color: Colors.redAccent)),
-              onTap: () {
-                prov.clearSleepTimer();
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Einschlaftimer deaktiviert'),
-                    backgroundColor: SpotifyColors.surfaceElevated,
-                  ),
-                );
-              },
-            ),
-          ],
+              const Divider(color: SpotifyColors.borderSubtle),
+              ListTile(
+                leading: const Icon(Icons.timer_10, color: Colors.white),
+                title: const Text('15 Minuten',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  liveProv.setSleepTimer(const Duration(minutes: 15));
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Einschlaftimer auf 15 Minuten gestellt'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer, color: Colors.white),
+                title: const Text('30 Minuten',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  liveProv.setSleepTimer(const Duration(minutes: 30));
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Einschlaftimer auf 30 Minuten gestellt'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer, color: Colors.white),
+                title: const Text('45 Minuten',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  liveProv.setSleepTimer(const Duration(minutes: 45));
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Einschlaftimer auf 45 Minuten gestellt'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer, color: Colors.white),
+                title:
+                    const Text('1 Stunde', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  liveProv.setSleepTimer(const Duration(hours: 1));
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Einschlaftimer auf 1 Stunde gestellt'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                },
+              ),
+              if (liveProv.hasActiveSleepTimer)
+                ListTile(
+                  leading:
+                      const Icon(Icons.timer_off, color: Colors.redAccent),
+                  title: const Text('Timer ausschalten',
+                      style: TextStyle(color: Colors.redAccent)),
+                  onTap: () {
+                    liveProv.clearSleepTimer();
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Einschlaftimer deaktiviert'),
+                        backgroundColor: SpotifyColors.surfaceElevated,
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -998,6 +1044,30 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.playlist_add, color: Colors.white),
+                title: const Text('Zu Playlist hinzufügen',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  TrackTile.showAddToPlaylistDialog(context, track, prov);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.radio, color: Colors.white),
+                title: const Text('Song-Radio starten',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  prov.startTrackRadio(track);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Song-Radio für „${track.title}“ gestartet'),
+                      backgroundColor: SpotifyColors.surfaceElevated,
+                    ),
+                  );
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.tune, color: Colors.white),
                 title: const Text('Equalizer anpassen',
                     style: TextStyle(color: Colors.white)),
@@ -1026,9 +1096,22 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.bedtime, color: Colors.white),
-                title: const Text('Sleep Timer / Einschlaftimer',
-                    style: TextStyle(color: Colors.white)),
+                leading: Icon(
+                  Icons.bedtime,
+                  color: prov.hasActiveSleepTimer
+                      ? SpotifyColors.green
+                      : Colors.white,
+                ),
+                title: Text(
+                  prov.hasActiveSleepTimer
+                      ? 'Sleep Timer aktiv (${prov.formattedSleepTimerRemaining})'
+                      : 'Sleep Timer / Einschlaftimer',
+                  style: TextStyle(
+                    color: prov.hasActiveSleepTimer
+                        ? SpotifyColors.green
+                        : Colors.white,
+                  ),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showSleepTimerDialog(context, prov);
@@ -1047,15 +1130,20 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 leading: const Icon(Icons.share, color: Colors.white),
                 title: const Text('Titel teilen',
                     style: TextStyle(color: Colors.white)),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          'Link für "${track.title}" in die Zwischenablage kopiert!'),
-                      backgroundColor: SpotifyColors.surfaceElevated,
-                    ),
-                  );
+                  final shareText =
+                      '${track.title} – ${track.artist}${track.uri != null ? " (${track.uri})" : ""}';
+                  await Clipboard.setData(ClipboardData(text: shareText));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            '„${track.title}“ in die Zwischenablage kopiert!'),
+                        backgroundColor: SpotifyColors.surfaceElevated,
+                      ),
+                    );
+                  }
                 },
               ),
             ],
