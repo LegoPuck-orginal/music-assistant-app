@@ -436,6 +436,22 @@ class MassApiService {
     return [];
   }
 
+  /// Ruft alle aktiven Player-Queues vom Music Assistant Server ab
+  Future<List<Map<String, dynamic>>> fetchPlayerQueues() async {
+    try {
+      final res = await sendCommand('player_queues/all');
+      if (res is List) {
+        return res
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchPlayerQueues error: $e');
+    }
+    return [];
+  }
+
   /// Ruft echte Playlists aus der Music Assistant Bibliothek ab
   Future<List<Playlist>> fetchLibraryPlaylists({int limit = 50}) async {
     try {

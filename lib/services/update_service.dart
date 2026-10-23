@@ -11,7 +11,7 @@ import '../models/app_update_info.dart';
 class UpdateService {
   static const String repoOwner = 'LegoPuck-orginal';
   static const String repoName = 'music-assistant-app';
-  static const String defaultCurrentVersion = '1.10.8';
+  static const String defaultCurrentVersion = '1.10.9';
 
   final http.Client _client;
 

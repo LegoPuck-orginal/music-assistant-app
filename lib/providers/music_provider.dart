@@ -19,6 +19,7 @@ import '../services/download_service.dart';
 import '../services/apple_now_playing_service.dart';
 import '../services/live_activity_service.dart';
 import '../services/mass_api_service.dart';
+import '../services/player_position_tracker.dart';
 import '../services/storage_service.dart';
 import '../services/update_service.dart';
 import '../services/virtual_dj_service.dart';
@@ -30,6 +31,7 @@ class MusicProvider extends ChangeNotifier {
   final AudioPlayer _localAudioPlayer = AudioPlayer();
   final UpdateService _updateService = UpdateService();
   final DownloadService _downloadService = DownloadService();
+  final PlayerPositionTracker _positionTracker = PlayerPositionTracker();
 
   bool _isOfflineMode = false;
   AppUpdateInfo? _updateInfo;
@@ -53,6 +55,7 @@ class MusicProvider extends ChangeNotifier {
   PlayerDevice? _activePlayer;
   Set<String> _likedTrackIds = {};
   Timer? _positionTimer;
+  Timer? _positionTicker;
   Timer? _playerPollTimer;
   final Map<String, int> _pendingTargetVolumes = {};
   final Map<String, Timer> _volumeDebounceTimers = {};
@@ -204,7 +207,7 @@ class MusicProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
   bool get hasCompletedWelcomeGuide => _hasCompletedWelcomeGuide;
-  String get appVersion => '1.10.8';
+  String get appVersion => '1.10.9';
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
@@ -355,7 +358,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.8');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.10.9');
   }
 
   void _connectAndRefresh() {
@@ -379,9 +382,22 @@ class MusicProvider extends ChangeNotifier {
 
       refreshServerData();
 
-      // Aktive Überwachung aller Lautsprecher im 4-Sekunden-Takt
+      // Kontinuierliche, flüssige Taktung der Live-Position auf Basis der echten Server-Anker
+      _positionTicker?.cancel();
+      _positionTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+        if (_isPlaying && _activePlayer != null && !_activePlayer!.isLocal) {
+          final effectiveDuration =
+              _positionTracker.getPositionDuration(_activePlayer!.id);
+          if ((effectiveDuration.inMilliseconds - _currentPosition.inMilliseconds).abs() >= 100) {
+            _currentPosition = effectiveDuration;
+            notifyListeners();
+          }
+        }
+      });
+
+      // Aktive Überwachung aller Lautsprecher im 3-Sekunden-Takt (Multiroom & Remote Status)
       _playerPollTimer?.cancel();
-      _playerPollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+      _playerPollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
         if (_api.isConnected && _isAuthenticated) {
           await _pollPlayersStatus();
         }
@@ -404,24 +420,98 @@ class MusicProvider extends ChangeNotifier {
   /// Fragt im Hintergrund aktiv den Status aller Lautsprecher ab, um aktive Wiedergabe sofort zu erkennen
   Future<void> _pollPlayersStatus() async {
     try {
-      final remotePlayers = await _api.fetchPlayers();
+      final remotePlayersFuture = _api.fetchPlayers();
+      final remoteQueuesFuture = _api.fetchPlayerQueues();
+      final results = await Future.wait([remotePlayersFuture, remoteQueuesFuture]);
+      final remotePlayers = results[0] as List<PlayerDevice>;
+      final remoteQueues = results[1] as List<Map<String, dynamic>>;
+
       if (remotePlayers.isEmpty) return;
 
+      final Map<String, Map<String, dynamic>> queueMap = {};
+      for (final q in remoteQueues) {
+        final qId = q['queue_id']?.toString();
+        if (qId != null) queueMap[qId] = q;
+      }
+
       bool changed = false;
+      PlayerDevice? activePlayingDevice;
+
       for (final rp in remotePlayers) {
-        final idx = _players.indexWhere((p) => p.id == rp.id);
+        final q = queueMap[rp.id];
+        String effectiveState = rp.state;
+        String? effectiveTitle = rp.currentTitle;
+        String? effectiveArtist = rp.currentArtist;
+        String? effectiveAlbum = rp.currentAlbum;
+        String? effectiveImageUrl = rp.currentImageUrl;
+        int? effectiveDuration = rp.currentDurationSeconds;
+        int? effectiveElapsed = rp.elapsedTimeSeconds;
+
+        if (q != null) {
+          final qState = q['state']?.toString();
+          if (qState != null && qState.isNotEmpty) effectiveState = qState;
+
+          final qElapsed = (q['elapsed_time'] as num?)?.toDouble();
+          if (qElapsed != null) {
+            effectiveElapsed = qElapsed.round();
+            _positionTracker.setAnchor(
+              queueId: rp.id,
+              elapsedSec: qElapsed,
+              isPlaying: (effectiveState == 'playing'),
+              durationSec: (q['duration'] as num?)?.toDouble(),
+            );
+          }
+
+          final currentItem = q['current_item'] as Map<dynamic, dynamic>?;
+          if (currentItem != null) {
+            final cMap = Map<String, dynamic>.from(currentItem);
+            final cDur = (cMap['duration'] as num?)?.toInt();
+            if (cDur != null && cDur > 0) effectiveDuration = cDur;
+
+            final mediaItem = cMap['media_item'] as Map<dynamic, dynamic>?;
+            if (mediaItem != null) {
+              final parsed = _api.parseTrack(Map<String, dynamic>.from(mediaItem));
+              effectiveTitle = parsed.title;
+              effectiveArtist = parsed.artist;
+              effectiveAlbum = parsed.album;
+              effectiveImageUrl = parsed.imageUrl;
+            } else {
+              final parsedFallback = _parseQueueItemFallback(cMap);
+              effectiveTitle = parsedFallback.title;
+              effectiveArtist = parsedFallback.artist;
+              effectiveAlbum = parsedFallback.album;
+              effectiveImageUrl = parsedFallback.imageUrl;
+            }
+          }
+        }
+
         final isAdjusting = _isVolumeRecentlyAdjusted(rp.id);
+        final idx = _players.indexWhere((p) => p.id == rp.id);
         final effectiveVolume = isAdjusting
             ? ((idx != -1) ? _players[idx].volume : rp.volume)
             : rp.volume;
-        final rpEffective = rp.copyWith(volume: effectiveVolume);
+
+        final rpEffective = rp.copyWith(
+          state: effectiveState,
+          volume: effectiveVolume,
+          currentTitle: effectiveTitle,
+          currentArtist: effectiveArtist,
+          currentAlbum: effectiveAlbum,
+          currentImageUrl: effectiveImageUrl,
+          currentDurationSeconds: effectiveDuration,
+          elapsedTimeSeconds: effectiveElapsed,
+        );
+
+        if (rpEffective.isPlaying && activePlayingDevice == null) {
+          activePlayingDevice = rpEffective;
+        }
 
         if (idx != -1) {
           final existing = _players[idx];
-          if (existing.state != rp.state ||
-              existing.currentTitle != rp.currentTitle ||
-              (!isAdjusting && existing.volume != rp.volume) ||
-              existing.syncedTo != rp.syncedTo) {
+          if (existing.state != rpEffective.state ||
+              existing.currentTitle != rpEffective.currentTitle ||
+              (!isAdjusting && existing.volume != rpEffective.volume) ||
+              existing.syncedTo != rpEffective.syncedTo) {
             _players[idx] = rpEffective.copyWith(isSelected: existing.isSelected);
             changed = true;
           }
@@ -429,28 +519,56 @@ class MusicProvider extends ChangeNotifier {
           _players.insert(0, rpEffective);
           changed = true;
         }
+      }
 
-        // Falls dies der aktive Lautsprecher ist, Titel & Position angleichen
-        if (_activePlayer?.id == rp.id) {
-          _activePlayer = rpEffective.copyWith(isSelected: true);
-          if (rp.hasActiveTrack && _currentTrack?.title != rp.currentTitle) {
-            _currentTrack = Track(
-              id: rp.id,
-              title: rp.currentTitle!,
-              artist: rp.currentArtist ?? '',
-              album: rp.currentAlbum ?? '',
-              durationSeconds: rp.currentDurationSeconds ?? 180,
-              imageUrl: rp.currentImageUrl,
-              uri: rp.currentUri,
-              isLiked: _likedTrackIds.contains(rp.id),
-            );
-            _totalDuration = Duration(seconds: rp.currentDurationSeconds ?? 180);
-            changed = true;
-          }
-          if (rp.isPlaying != _isPlaying) {
-            _isPlaying = rp.isPlaying;
-            changed = true;
-          }
+      // Falls aktuell kein Lautsprecher aktiv spielt, aber im Haus Musik läuft: Automatisch ankoppeln!
+      if (activePlayingDevice != null &&
+          (_activePlayer == null || !_activePlayer!.isPlaying)) {
+        _activePlayer = activePlayingDevice.copyWith(isSelected: true);
+        _isPlaying = true;
+        if (activePlayingDevice.hasActiveTrack) {
+          _currentTrack = Track(
+            id: activePlayingDevice.id,
+            title: activePlayingDevice.currentTitle!,
+            artist: activePlayingDevice.currentArtist ?? '',
+            album: activePlayingDevice.currentAlbum ?? '',
+            durationSeconds: activePlayingDevice.currentDurationSeconds ?? 180,
+            imageUrl: activePlayingDevice.currentImageUrl,
+            uri: activePlayingDevice.currentUri,
+            isLiked: _likedTrackIds.contains(activePlayingDevice.id),
+          );
+          _totalDuration = Duration(
+              seconds: activePlayingDevice.currentDurationSeconds ?? 180);
+        }
+        if (activePlayingDevice.elapsedTimeSeconds != null) {
+          _currentPosition =
+              Duration(seconds: activePlayingDevice.elapsedTimeSeconds!);
+        }
+        changed = true;
+      } else if (_activePlayer != null) {
+        // Falls der aktive Lautsprecher läuft, dessen Werte nachführen
+        final matching = _players.firstWhere((p) => p.id == _activePlayer!.id,
+            orElse: () => _activePlayer!);
+        _activePlayer = matching.copyWith(isSelected: true);
+        if (matching.hasActiveTrack &&
+            (_currentTrack == null || _currentTrack!.title != matching.currentTitle)) {
+          _currentTrack = Track(
+            id: matching.id,
+            title: matching.currentTitle!,
+            artist: matching.currentArtist ?? '',
+            album: matching.currentAlbum ?? '',
+            durationSeconds: matching.currentDurationSeconds ?? 180,
+            imageUrl: matching.currentImageUrl,
+            uri: matching.currentUri,
+            isLiked: _likedTrackIds.contains(matching.id),
+          );
+          _totalDuration =
+              Duration(seconds: matching.currentDurationSeconds ?? 180);
+          changed = true;
+        }
+        if (matching.isPlaying != _isPlaying) {
+          _isPlaying = matching.isPlaying;
+          changed = true;
         }
       }
 
@@ -632,74 +750,238 @@ class MusicProvider extends ChangeNotifier {
     });
   }
 
+  Track _parseQueueItemFallback(Map<String, dynamic> item) {
+    final name = item['name']?.toString() ?? 'Unbekannter Titel';
+    final duration = (item['duration'] as num?)?.toInt() ?? 180;
+    String? imageUrl;
+    String artistName = 'Unbekannter Künstler';
+    String albumName = '';
+
+    final streamDetails = item['streamdetails'] as Map<dynamic, dynamic>?;
+    if (streamDetails != null) {
+      final meta = streamDetails['stream_metadata'] as Map<dynamic, dynamic>?;
+      if (meta != null) {
+        if (meta['artist'] != null) artistName = meta['artist'].toString();
+        if (meta['album'] != null) albumName = meta['album'].toString();
+        if (meta['image_url'] != null) imageUrl = meta['image_url'].toString();
+      }
+    }
+
+    if (imageUrl == null && item['image'] != null) {
+      if (item['image'] is String) {
+        imageUrl = item['image'].toString();
+      } else if (item['image'] is Map && item['image']['path'] != null) {
+        imageUrl = item['image']['path'].toString();
+      }
+    }
+
+    return Track(
+      id: item['queue_item_id']?.toString() ?? 'remote_track',
+      title: name,
+      artist: artistName,
+      album: albumName,
+      durationSeconds: duration,
+      imageUrl: imageUrl,
+      uri: item['uri']?.toString(),
+    );
+  }
+
   void _handleServerEvent(Map<String, dynamic> event) {
     try {
       final eventName = event['event']?.toString();
-      final data = event['data'] as Map<String, dynamic>?;
+      final dynamic rawData = event['data'];
+      final objectId = event['object_id']?.toString();
 
-      if (eventName == 'player_updated' && data != null) {
-        final playerId = data['player_id']?.toString();
-        final state = data['playback_state']?.toString() ??
-            data['state']?.toString();
+      // 1. Live Sub-Sekunden Positions-Sync direkt vom Music Assistant Server
+      if (eventName == 'queue_time_updated') {
+        final queueId = objectId ?? (rawData is Map ? rawData['queue_id']?.toString() : null);
+        final double? elapsedSec = (rawData is num)
+            ? rawData.toDouble()
+            : double.tryParse(rawData?.toString() ?? '');
+        if (queueId != null && elapsedSec != null) {
+          final isThisActive = _activePlayer?.id == queueId;
+          _positionTracker.setAnchor(
+            queueId: queueId,
+            elapsedSec: elapsedSec,
+            isPlaying: isThisActive ? _isPlaying : null,
+          );
+          if (isThisActive) {
+            _currentPosition = Duration(milliseconds: (elapsedSec * 1000).round());
+            notifyListeners();
+          }
+        }
+        return;
+      }
+
+      // 2. Queue Updates (Songwechsel, Queue-Fortschritt, Playback State)
+      if (eventName == 'queue_updated' && rawData is Map) {
+        final data = Map<String, dynamic>.from(rawData);
+        final queueId = data['queue_id']?.toString() ?? objectId;
+        final state = data['state']?.toString();
+        final isQueuePlaying = (state == 'playing');
+        final currentItem = data['current_item'] as Map<dynamic, dynamic>?;
+        final elapsed = (data['elapsed_time'] as num?)?.toDouble();
+
+        Track? track;
+        double? trackDuration;
+        if (currentItem != null) {
+          final currentMap = Map<String, dynamic>.from(currentItem);
+          trackDuration = (currentMap['duration'] as num?)?.toDouble();
+          final mediaItem = currentMap['media_item'] as Map<dynamic, dynamic>?;
+          if (mediaItem != null) {
+            track = _api.parseTrack(Map<String, dynamic>.from(mediaItem));
+          } else {
+            track = _parseQueueItemFallback(currentMap);
+          }
+        }
+
+        if (queueId != null && elapsed != null) {
+          _positionTracker.setAnchor(
+            queueId: queueId,
+            elapsedSec: elapsed,
+            isPlaying: state != null ? isQueuePlaying : null,
+            durationSec: trackDuration,
+          );
+        }
+
+        if (queueId != null) {
+          final pIdx = _players.indexWhere((p) => p.id == queueId);
+          if (pIdx != -1) {
+            final p = _players[pIdx];
+            _players[pIdx] = p.copyWith(
+              state: state ?? p.state,
+              currentTitle: track?.title ?? p.currentTitle,
+              currentArtist: track?.artist ?? p.currentArtist,
+              currentAlbum: track?.album ?? p.currentAlbum,
+              currentImageUrl: track?.imageUrl ?? p.currentImageUrl,
+              currentDurationSeconds: trackDuration?.round() ?? track?.durationSeconds ?? p.currentDurationSeconds,
+              elapsedTimeSeconds: elapsed?.round() ?? p.elapsedTimeSeconds,
+            );
+          }
+        }
+
+        final shouldAdopt = _activePlayer == null ||
+            _activePlayer!.id == queueId ||
+            (!_activePlayer!.isPlaying && isQueuePlaying);
+
+        if (shouldAdopt && queueId != null) {
+          if (_activePlayer?.id != queueId) {
+            final matching = _players.firstWhere(
+              (p) => p.id == queueId,
+              orElse: () => PlayerDevice(
+                id: queueId,
+                name: queueId,
+                type: 'Speaker',
+              ),
+            );
+            _activePlayer = matching.copyWith(isSelected: true);
+          }
+          if (state != null) {
+            _isPlaying = isQueuePlaying;
+            _positionTracker.setPlaying(queueId, isQueuePlaying);
+          }
+          if (track != null) {
+            _currentTrack = track;
+            if (trackDuration != null && trackDuration > 0) {
+              _totalDuration = Duration(seconds: trackDuration.round());
+            } else if (track.durationSeconds > 0) {
+              _totalDuration = Duration(seconds: track.durationSeconds);
+            }
+          }
+          if (elapsed != null) {
+            _currentPosition = Duration(milliseconds: (elapsed * 1000).round());
+          }
+          notifyListeners();
+        }
+        return;
+      }
+
+      // 3. Player Updates (Lautstärke, Power, Status)
+      if (eventName == 'player_updated' && rawData is Map) {
+        final data = Map<String, dynamic>.from(rawData);
+        final playerId = data['player_id']?.toString() ?? objectId;
+        final state = data['playback_state']?.toString() ?? data['state']?.toString();
         final volume = (data['volume_level'] as num?)?.toInt();
         final syncedTo = data['synced_to']?.toString();
         final groupChilds = (data['group_childs'] as List?)
             ?.map((e) => e.toString())
             .toList();
 
-        final currentMedia = data['current_media'] as Map<String, dynamic>?;
+        final currentMedia = data['current_media'] as Map<dynamic, dynamic>?;
         final currentTitle = currentMedia?['title']?.toString();
         final currentArtist = currentMedia?['artist']?.toString();
         final currentAlbum = currentMedia?['album']?.toString();
         final currentImageUrl = currentMedia?['image_url']?.toString();
         final currentDuration = (currentMedia?['duration'] as num?)?.toInt();
-        final elapsedTime = (data['elapsed_time'] as num?)?.toInt();
+        final elapsedTime = (data['elapsed_time'] as num?)?.toDouble() ??
+            (currentMedia?['elapsed_time'] as num?)?.toDouble();
         final currentUri = currentMedia?['uri']?.toString();
 
-        // Update matching player in list with full playback metadata
         final isAdjusting = playerId != null && _isVolumeRecentlyAdjusted(playerId);
+
         for (int i = 0; i < _players.length; i++) {
           if (_players[i].id == playerId) {
-            final effectiveVolume = isAdjusting ? _players[i].volume : (volume ?? _players[i].volume);
+            final effectiveVolume =
+                isAdjusting ? _players[i].volume : (volume ?? _players[i].volume);
             _players[i] = _players[i].copyWith(
               volume: effectiveVolume,
               state: state,
               syncedTo: syncedTo,
               groupChilds: groupChilds,
-              currentTitle: currentTitle,
-              currentArtist: currentArtist,
-              currentAlbum: currentAlbum,
-              currentImageUrl: currentImageUrl,
-              currentDurationSeconds: currentDuration,
-              elapsedTimeSeconds: elapsedTime,
-              currentUri: currentUri,
+              currentTitle: currentTitle ?? _players[i].currentTitle,
+              currentArtist: currentArtist ?? _players[i].currentArtist,
+              currentAlbum: currentAlbum ?? _players[i].currentAlbum,
+              currentImageUrl: currentImageUrl ?? _players[i].currentImageUrl,
+              currentDurationSeconds: currentDuration ?? _players[i].currentDurationSeconds,
+              elapsedTimeSeconds: elapsedTime?.round() ?? _players[i].elapsedTimeSeconds,
+              currentUri: currentUri ?? _players[i].currentUri,
             );
           }
         }
 
-        // If active player is the updated external player, update playback state
-        if (_activePlayer != null && _activePlayer!.id == playerId) {
-          if (state != null) {
-            _isPlaying = (state == 'playing');
+        final isNowPlaying = (state == 'playing');
+        if (playerId != null && state != null) {
+          _positionTracker.setPlaying(playerId, isNowPlaying);
+        }
+
+        final shouldAdopt = _activePlayer == null ||
+            _activePlayer!.id == playerId ||
+            (!_activePlayer!.isPlaying && isNowPlaying);
+
+        if (shouldAdopt && playerId != null) {
+          if (_activePlayer?.id != playerId) {
+            final matching = _players.firstWhere(
+              (p) => p.id == playerId,
+              orElse: () => PlayerDevice(
+                id: playerId,
+                name: playerId,
+                type: 'Speaker',
+              ),
+            );
+            _activePlayer = matching.copyWith(isSelected: true);
           }
-          final effectiveVolume = isAdjusting ? _activePlayer!.volume : (volume ?? _activePlayer!.volume);
+          if (state != null) {
+            _isPlaying = isNowPlaying;
+          }
+          final effectiveVolume =
+              isAdjusting ? _activePlayer!.volume : (volume ?? _activePlayer!.volume);
           _activePlayer = _activePlayer!.copyWith(
             volume: effectiveVolume,
             state: state,
             syncedTo: syncedTo,
             groupChilds: groupChilds,
-            currentTitle: currentTitle,
-            currentArtist: currentArtist,
-            currentAlbum: currentAlbum,
-            currentImageUrl: currentImageUrl,
-            currentDurationSeconds: currentDuration,
-            elapsedTimeSeconds: elapsedTime,
-            currentUri: currentUri,
+            currentTitle: currentTitle ?? _activePlayer!.currentTitle,
+            currentArtist: currentArtist ?? _activePlayer!.currentArtist,
+            currentAlbum: currentAlbum ?? _activePlayer!.currentAlbum,
+            currentImageUrl: currentImageUrl ?? _activePlayer!.currentImageUrl,
+            currentDurationSeconds: currentDuration ?? _activePlayer!.currentDurationSeconds,
+            elapsedTimeSeconds: elapsedTime?.round() ?? _activePlayer!.elapsedTimeSeconds,
+            currentUri: currentUri ?? _activePlayer!.currentUri,
           );
 
           if (currentTitle != null && currentTitle.isNotEmpty) {
             _currentTrack = Track(
-              id: playerId ?? 'remote',
+              id: playerId,
               title: currentTitle,
               artist: currentArtist ?? '',
               album: currentAlbum ?? '',
@@ -710,30 +992,15 @@ class MusicProvider extends ChangeNotifier {
             );
             _totalDuration = Duration(seconds: currentDuration ?? 180);
           }
-          if (elapsedTime != null) {
-            _currentPosition = Duration(seconds: elapsedTime);
-          }
-        }
-        notifyListeners();
-      }
 
-      if (eventName == 'queue_updated' && data != null) {
-        final queueId = data['queue_id']?.toString();
-        if (_activePlayer != null && _activePlayer!.id == queueId) {
-          final currentItem = data['current_item'] as Map<String, dynamic>?;
-          if (currentItem != null) {
-            final mediaItem = currentItem['media_item'] as Map<String, dynamic>? ?? currentItem;
-            _currentTrack = _api.parseTrack(mediaItem, defaultProvider: 'library');
-            final dur = (currentItem['duration'] as num?)?.toInt() ?? _currentTrack!.durationSeconds;
-            _totalDuration = Duration(seconds: dur);
-          }
-          final state = data['state']?.toString();
-          if (state != null) {
-            _isPlaying = (state == 'playing');
-          }
-          final elapsedTime = (data['elapsed_time'] as num?)?.toInt();
           if (elapsedTime != null) {
-            _currentPosition = Duration(seconds: elapsedTime);
+            _positionTracker.setAnchor(
+              queueId: playerId,
+              elapsedSec: elapsedTime,
+              isPlaying: isNowPlaying,
+              durationSec: currentDuration?.toDouble(),
+            );
+            _currentPosition = Duration(milliseconds: (elapsedTime * 1000).round());
           }
           notifyListeners();
         }
@@ -745,47 +1012,166 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> refreshServerData() async {
     try {
-      // 1. Fetch real players from server
-      final remotePlayers = await _api.fetchPlayers();
+      // 1. Fetch real players and queues from server in parallel
+      final resultsPlayers = await Future.wait([
+        _api.fetchPlayers(),
+        _api.fetchPlayerQueues(),
+      ]);
+      final remotePlayers = resultsPlayers[0] as List<PlayerDevice>;
+      final remoteQueues = resultsPlayers[1] as List<Map<String, dynamic>>;
+
+      final Map<String, Map<String, dynamic>> queueMap = {};
+      for (final q in remoteQueues) {
+        final qId = q['queue_id']?.toString();
+        if (qId != null) queueMap[qId] = q;
+      }
+
+      final List<PlayerDevice> enrichedPlayers = [];
+      PlayerDevice? activelyPlaying;
+
+      for (final rp in remotePlayers) {
+        final q = queueMap[rp.id];
+        String effectiveState = rp.state;
+        String? effectiveTitle = rp.currentTitle;
+        String? effectiveArtist = rp.currentArtist;
+        String? effectiveAlbum = rp.currentAlbum;
+        String? effectiveImageUrl = rp.currentImageUrl;
+        int? effectiveDuration = rp.currentDurationSeconds;
+        int? effectiveElapsed = rp.elapsedTimeSeconds;
+
+        if (q != null) {
+          final qState = q['state']?.toString();
+          if (qState != null && qState.isNotEmpty) effectiveState = qState;
+
+          final qElapsed = (q['elapsed_time'] as num?)?.toDouble();
+          if (qElapsed != null) {
+            effectiveElapsed = qElapsed.round();
+            _positionTracker.setAnchor(
+              queueId: rp.id,
+              elapsedSec: qElapsed,
+              isPlaying: (effectiveState == 'playing'),
+              durationSec: (q['duration'] as num?)?.toDouble(),
+            );
+          }
+
+          final currentItem = q['current_item'] as Map<dynamic, dynamic>?;
+          if (currentItem != null) {
+            final cMap = Map<String, dynamic>.from(currentItem);
+            final cDur = (cMap['duration'] as num?)?.toInt();
+            if (cDur != null && cDur > 0) effectiveDuration = cDur;
+
+            final mediaItem = cMap['media_item'] as Map<dynamic, dynamic>?;
+            if (mediaItem != null) {
+              final parsed = _api.parseTrack(Map<String, dynamic>.from(mediaItem));
+              effectiveTitle = parsed.title;
+              effectiveArtist = parsed.artist;
+              effectiveAlbum = parsed.album;
+              effectiveImageUrl = parsed.imageUrl;
+            } else {
+              final parsedFallback = _parseQueueItemFallback(cMap);
+              effectiveTitle = parsedFallback.title;
+              effectiveArtist = parsedFallback.artist;
+              effectiveAlbum = parsedFallback.album;
+              effectiveImageUrl = parsedFallback.imageUrl;
+            }
+          }
+        }
+
+        final p = rp.copyWith(
+          state: effectiveState,
+          currentTitle: effectiveTitle,
+          currentArtist: effectiveArtist,
+          currentAlbum: effectiveAlbum,
+          currentImageUrl: effectiveImageUrl,
+          currentDurationSeconds: effectiveDuration,
+          elapsedTimeSeconds: effectiveElapsed,
+        );
+        enrichedPlayers.add(p);
+
+        if (p.isPlaying && activelyPlaying == null) {
+          activelyPlaying = p;
+        }
+      }
+
       final localIPhone = PlayerDevice.localIPhone(
         isSelected: false,
         volume: 60,
       );
 
       // Put real Multiroom network speakers first
-      _players = [...remotePlayers, localIPhone];
+      _players = [...enrichedPlayers, localIPhone];
 
-      final savedPlayerId = await _storage.loadActivePlayerId();
-      if (savedPlayerId != null) {
-        final match = _players.firstWhere(
-          (p) => p.id == savedPlayerId,
-          orElse: () => _players.first,
+      // Priorität 1: Ein Lautsprecher spielt gerade aktiv im Netzwerk
+      if (activelyPlaying != null) {
+        _activePlayer = activelyPlaying.copyWith(isSelected: true);
+        _isPlaying = true;
+        _currentTrack = Track(
+          id: activelyPlaying.id,
+          title: activelyPlaying.currentTitle ?? 'Wiedergabe',
+          artist: activelyPlaying.currentArtist ?? '',
+          album: activelyPlaying.currentAlbum ?? '',
+          durationSeconds: activelyPlaying.currentDurationSeconds ?? 180,
+          imageUrl: activelyPlaying.currentImageUrl,
+          uri: activelyPlaying.currentUri,
+          isLiked: _likedTrackIds.contains(activelyPlaying.id),
         );
-        _activePlayer = match;
-      } else {
-        // Auto-select Tim's room speaker if available, or first active/available remote player
-        PlayerDevice? preferred;
-        for (final p in remotePlayers) {
-          if (p.isAvailable && p.name.toLowerCase().contains('tim')) {
-            preferred = p;
-            break;
-          }
+        _totalDuration = Duration(
+            seconds: activelyPlaying.currentDurationSeconds ?? 180);
+        if (activelyPlaying.elapsedTimeSeconds != null) {
+          _currentPosition =
+              Duration(seconds: activelyPlaying.elapsedTimeSeconds!);
         }
-        preferred ??= remotePlayers.firstWhere(
-          (p) => p.isAvailable && p.state == 'playing',
-          orElse: () => remotePlayers.firstWhere(
+        await _storage.saveActivePlayerId(_activePlayer!.id);
+      } else {
+        // Priorität 2: Gespeicherter Lautsprecher oder Standard
+        final savedPlayerId = await _storage.loadActivePlayerId();
+        if (savedPlayerId != null) {
+          final match = _players.firstWhere(
+            (p) => p.id == savedPlayerId,
+            orElse: () => _players.first,
+          );
+          _activePlayer = match;
+        } else {
+          PlayerDevice? preferred;
+          for (final p in enrichedPlayers) {
+            if (p.isAvailable && p.name.toLowerCase().contains('tim')) {
+              preferred = p;
+              break;
+            }
+          }
+          preferred ??= enrichedPlayers.firstWhere(
             (p) => p.isAvailable,
             orElse: () => localIPhone,
-          ),
-        );
-        _activePlayer = preferred;
-        if (_activePlayer != null) {
-          await _storage.saveActivePlayerId(_activePlayer!.id);
+          );
+          _activePlayer = preferred;
+          if (_activePlayer != null) {
+            await _storage.saveActivePlayerId(_activePlayer!.id);
+          }
+        }
+
+        if (_activePlayer != null && _activePlayer!.hasActiveTrack) {
+          _currentTrack = Track(
+            id: _activePlayer!.id,
+            title: _activePlayer!.currentTitle!,
+            artist: _activePlayer!.currentArtist ?? '',
+            album: _activePlayer!.currentAlbum ?? '',
+            durationSeconds: _activePlayer!.currentDurationSeconds ?? 180,
+            imageUrl: _activePlayer!.currentImageUrl,
+            uri: _activePlayer!.currentUri,
+            isLiked: _likedTrackIds.contains(_activePlayer!.id),
+          );
+          _totalDuration = Duration(
+              seconds: _activePlayer!.currentDurationSeconds ?? 180);
+          _isPlaying = _activePlayer!.isPlaying;
+          if (_activePlayer!.elapsedTimeSeconds != null) {
+            _currentPosition =
+                Duration(seconds: _activePlayer!.elapsedTimeSeconds!);
+          }
         }
       }
 
       for (final p in _players) {
-        p.isSelected = (p.id == _activePlayer!.id);
+        p.isSelected = (p.id == _activePlayer?.id);
       }
 
       // 2. Fetch real library tracks, playlists, podcasts, albums, artists in parallel
@@ -819,8 +1205,10 @@ class MusicProvider extends ChangeNotifier {
           if (_likedTrackIds.contains(t.id)) t.isLiked = true;
         }
         _queue = libraryTracks;
-        _currentTrack ??= libraryTracks.first;
-        _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
+        if (_currentTrack == null) {
+          _currentTrack = libraryTracks.first;
+          _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
+        }
       }
 
       if (_activePlayer != null) {
@@ -1246,6 +1634,14 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> seekTo(Duration position) async {
     _currentPosition = position;
+    if (_activePlayer != null && !_activePlayer!.isLocal) {
+      _positionTracker.setAnchor(
+        queueId: _activePlayer!.id,
+        elapsedSec: position.inMilliseconds / 1000.0,
+        isPlaying: _isPlaying,
+        durationSec: _totalDuration.inSeconds.toDouble(),
+      );
+    }
     notifyListeners();
 
     if (isLocalPlayback) {
@@ -1352,6 +1748,28 @@ class MusicProvider extends ChangeNotifier {
     }
     _activePlayer = player;
     await _storage.saveActivePlayerId(player.id);
+
+    if (player.hasActiveTrack) {
+      _currentTrack = Track(
+        id: player.id,
+        title: player.currentTitle!,
+        artist: player.currentArtist ?? '',
+        album: player.currentAlbum ?? '',
+        imageUrl: player.currentImageUrl,
+        durationSeconds: player.currentDurationSeconds ?? 180,
+        uri: player.currentUri,
+        isLiked: _likedTrackIds.contains(player.id),
+      );
+      _totalDuration = Duration(seconds: player.currentDurationSeconds ?? 180);
+      _currentPosition = Duration(seconds: player.elapsedTimeSeconds ?? 0);
+      _isPlaying = player.isPlaying;
+      _positionTracker.setAnchor(
+        queueId: player.id,
+        elapsedSec: (player.elapsedTimeSeconds ?? 0).toDouble(),
+        isPlaying: _isPlaying,
+        durationSec: (player.currentDurationSeconds ?? 180).toDouble(),
+      );
+    }
     notifyListeners();
     loadDspForPlayer(player.id);
   }
@@ -1895,6 +2313,7 @@ class MusicProvider extends ChangeNotifier {
     _authSubscription?.cancel();
     _eventsSubscription?.cancel();
     _positionTimer?.cancel();
+    _positionTicker?.cancel();
     _playerPollTimer?.cancel();
     _localAudioPlayer.dispose();
     _api.dispose();

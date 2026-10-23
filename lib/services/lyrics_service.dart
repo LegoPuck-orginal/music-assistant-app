@@ -150,7 +150,7 @@ class LyricsService {
     if (cleanTitle.isEmpty) return [];
 
     const userAgent =
-        'MusicAssistantApp/1.10.8 (https://github.com/LegoPuck-orginal/music-assistant-app)';
+        'MusicAssistantApp/1.10.9 (https://github.com/LegoPuck-orginal/music-assistant-app)';
     final headers = {'User-Agent': userAgent};
 
     // Versuch 1: Exakte Suche mit /api/get (cleanTitle + primaryArtist)

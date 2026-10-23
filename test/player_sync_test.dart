@@ -1,0 +1,118 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:music_assistant_app/services/player_position_tracker.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('PlayerPositionTracker & Live Playback Sync Tests', () {
+    late PlayerPositionTracker tracker;
+
+    setUp(() {
+      tracker = PlayerPositionTracker();
+    });
+
+    test('initial position is 0.0 for unknown queue', () {
+      expect(tracker.getPosition('unknown_player'), 0.0);
+      expect(tracker.hasAnchor('unknown_player'), isFalse);
+    });
+
+    test('setAnchor sets paused elapsed time without advancing', () async {
+      tracker.setAnchor(
+        queueId: 'player_livingroom',
+        elapsedSec: 42.0,
+        isPlaying: false,
+        durationSec: 180.0,
+      );
+
+      expect(tracker.hasAnchor('player_livingroom'), isTrue);
+      expect(tracker.getPosition('player_livingroom'), 42.0);
+
+      // Wait 100ms: position should remain static because isPlaying is false
+      await Future.delayed(const Duration(milliseconds: 100));
+      expect(tracker.getPosition('player_livingroom'), 42.0);
+    });
+
+    test('playing anchor smoothly advances with wall-clock time', () async {
+      tracker.setAnchor(
+        queueId: 'player_kitchen',
+        elapsedSec: 10.0,
+        isPlaying: true,
+        durationSec: 180.0,
+      );
+
+      // Wait 250ms
+      await Future.delayed(const Duration(milliseconds: 250));
+      final pos = tracker.getPosition('player_kitchen');
+      expect(pos, greaterThanOrEqualTo(10.2));
+      expect(pos, lessThan(11.0));
+    });
+
+    test('setPlaying pauses and snapshots without drifting', () async {
+      tracker.setAnchor(
+        queueId: 'player_bedroom',
+        elapsedSec: 20.0,
+        isPlaying: true,
+        durationSec: 200.0,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 150));
+      tracker.setPlaying('player_bedroom', false);
+
+      final snapshotted = tracker.getPosition('player_bedroom');
+      expect(snapshotted, greaterThan(20.0));
+
+      await Future.delayed(const Duration(milliseconds: 100));
+      expect(tracker.getPosition('player_bedroom'), snapshotted);
+    });
+
+    test('clamped to durationSec when track reaches end', () {
+      tracker.setAnchor(
+        queueId: 'player_office',
+        elapsedSec: 199.9,
+        isPlaying: true,
+        durationSec: 200.0,
+      );
+
+      // Even if effectiveNow calculates 205.0 with wall clock delta, it should clamp to 200.0
+      final anchor = PlayerPositionAnchor(
+        elapsedSec: 199.0,
+        wallMs: DateTime.now().millisecondsSinceEpoch - 5000,
+        isPlaying: true,
+        durationSec: 200.0,
+      );
+      expect(anchor.effectiveNow(), 200.0);
+    });
+
+    test('speed scaling works accurately for audiobooks and podcasts', () {
+      final anchor1x = PlayerPositionAnchor(
+        elapsedSec: 10.0,
+        wallMs: DateTime.now().millisecondsSinceEpoch - 1000,
+        isPlaying: true,
+        durationSec: 100.0,
+        speed: 1.0,
+      );
+      final anchor2x = PlayerPositionAnchor(
+        elapsedSec: 10.0,
+        wallMs: DateTime.now().millisecondsSinceEpoch - 1000,
+        isPlaying: true,
+        durationSec: 100.0,
+        speed: 2.0,
+      );
+
+      expect(anchor1x.effectiveNow(), closeTo(11.0, 0.1));
+      expect(anchor2x.effectiveNow(), closeTo(12.0, 0.1));
+    });
+
+    test('getPositionDuration converts to Duration with millisecond accuracy', () {
+      tracker.setAnchor(
+        queueId: 'player_test',
+        elapsedSec: 65.432,
+        isPlaying: false,
+      );
+
+      final dur = tracker.getPositionDuration('player_test');
+      expect(dur.inSeconds, 65);
+      expect(dur.inMilliseconds, 65432);
+    });
+  });
+}
