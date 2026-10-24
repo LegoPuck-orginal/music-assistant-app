@@ -101,13 +101,13 @@ void main() {
       // 1. Initial player without artwork URL
       await provider.setActivePlayer(
         PlayerDevice(
-          id: 'RINCON_TIM',
-          name: 'Tim',
+          id: 'RINCON_SPEAKER',
+          name: 'Wohnzimmer',
           type: 'Sonos',
           state: 'playing',
-          currentTitle: 'Krieg',
-          currentArtist: 'Yu',
-          currentAlbum: 'Krieg',
+          currentTitle: 'Nightcall',
+          currentArtist: 'Kavinsky',
+          currentAlbum: 'OutRun',
           currentDurationSeconds: 161,
         ),
       );
@@ -120,14 +120,14 @@ void main() {
       // 2. Same track receives resolved artwork URL -> must NOT be skipped by signature check!
       await provider.setActivePlayer(
         PlayerDevice(
-          id: 'RINCON_TIM',
-          name: 'Tim',
+          id: 'RINCON_SPEAKER',
+          name: 'Wohnzimmer',
           type: 'Sonos',
           state: 'playing',
-          currentTitle: 'Krieg',
-          currentArtist: 'Yu',
-          currentAlbum: 'Krieg',
-          currentImageUrl: 'http://192.168.188.25:8095/imageproxy/abc123?size=512&fmt=jpg',
+          currentTitle: 'Nightcall',
+          currentArtist: 'Kavinsky',
+          currentAlbum: 'OutRun',
+          currentImageUrl: 'http://192.168.1.50:8095/imageproxy/abc123?size=512&fmt=jpg',
           currentDurationSeconds: 161,
         ),
       );
@@ -135,13 +135,13 @@ void main() {
       final secondArgs = nowPlayingCalls.last.arguments as Map;
       expect(
         secondArgs['artworkUrl'],
-        equals('http://192.168.188.25:8095/imageproxy/abc123?size=512&fmt=jpg'),
+        equals('http://192.168.1.50:8095/imageproxy/abc123?size=512&fmt=jpg'),
       );
     });
 
     test('MassApiService.resolveImageUrl resolves proxy_id, https, and relative paths', () {
       final api = MassApiService();
-      api.configure('http://192.168.188.25:8095', 'test_token');
+      api.configure('http://192.168.1.50:8095', 'test_token');
 
       expect(
         api.resolveImageUrl({
@@ -158,12 +158,12 @@ void main() {
           'remotely_accessible': false,
           'proxy_id': 'ff1b60b9',
         }),
-        equals('http://192.168.188.25:8095/imageproxy/ff1b60b9?size=512&fmt=jpg'),
+        equals('http://192.168.1.50:8095/imageproxy/ff1b60b9?size=512&fmt=jpg'),
       );
 
       expect(
         api.resolveImageUrl('/imageproxy/custom123?size=512'),
-        equals('http://192.168.188.25:8095/imageproxy/custom123?size=512'),
+        equals('http://192.168.1.50:8095/imageproxy/custom123?size=512'),
       );
       api.dispose();
     });

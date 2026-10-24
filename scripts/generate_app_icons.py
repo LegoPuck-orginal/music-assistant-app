@@ -181,7 +181,8 @@ def generate_all_icons(base_image, dest_dir):
         print(f"Generated {out_path} ({w}x{h})")
 
 if __name__ == "__main__":
-    app_icon_dir = "/home/tim-m/IdeaProjects/music_assistant_app/ios/Runner/Assets.xcassets/AppIcon.appiconset"
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    app_icon_dir = os.path.join(repo_root, "ios", "Runner", "Assets.xcassets", "AppIcon.appiconset")
     base_icon = create_base_icon(1024)
     generate_all_icons(base_icon, app_icon_dir)
     print("All iOS App Icons successfully created!")

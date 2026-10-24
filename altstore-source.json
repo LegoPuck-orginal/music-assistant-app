@@ -1,18 +1,18 @@
 {
-  "name": "Tim's Music Assistant Source",
-  "identifier": "com.timm.musicassistant.source",
+  "name": "Music Assistant iOS Source",
+  "identifier": "de.musicassistant.ios.source",
   "apps": [
     {
-      "name": "Music Assistant (Spotify Edition)",
-      "bundleIdentifier": "com.example.musicAssistantApp",
-      "developerName": "Tim Marquardt",
-      "version": "1.0.0",
-      "versionDate": "2026-10-22",
-      "versionDescription": "Spotify-style client for Music Assistant 2.0 with Sonos, AirPlay, and Chromecast support.",
+      "name": "Music Assistant (iOS Edition)",
+      "bundleIdentifier": "de.timm.musicAssistantApp",
+      "developerName": "LegoPuck-orginal",
+      "version": "1.11.3",
+      "versionDate": "2026-10-24",
+      "versionDescription": "iOS Client für Music Assistant 2.0 mit KI-DJ, Live-Lyrics, Sonos, AirPlay und Chromecast.",
       "downloadURL": "https://github.com/LegoPuck-orginal/music-assistant-app/releases/download/latest/music-assistant.ipa",
-      "localizedDescription": "Eleganter Spotify-inspirierter Client für Music Assistant (http://192.168.188.25:8095). Unterstützt Multi-Room-Wiedergabe auf Sonos, AirPlay, Google Cast und Snapcast Lautsprechern.",
+      "localizedDescription": "Moderner iOS-Client für Music Assistant. Unterstützt Multi-Room-Wiedergabe auf Sonos, AirPlay, Google Cast und Snapcast Lautsprechern.",
       "iconURL": "https://raw.githubusercontent.com/music-assistant/frontend/main/public/icon.png",
-      "tintColor": "1DB954",
+      "tintColor": "FF5C00",
       "size": 25000000
     }
   ]

@@ -116,6 +116,10 @@ class MusicProvider extends ChangeNotifier {
   // Virtual DJ & Dynamic Island State
   final VirtualDjService _djService = VirtualDjService();
   DjVoiceSettings _djVoiceSettings = const DjVoiceSettings();
+  List<Track> _libraryTracks = [];
+  final Set<String> _djPlayedTrackIds = {};
+  int _djTracksSinceLastModeration = 0;
+  String? _lastDjCustomPrompt;
   bool _isDjActive = false;
   bool _isDjSpeaking = false;
   bool _isDjVoiceEnabled = true;
@@ -130,9 +134,13 @@ class MusicProvider extends ChangeNotifier {
   bool get isDjVoiceEnabled => _isDjVoiceEnabled;
   DjVibe get currentDjVibe => _currentDjVibe;
   String? get djSpeechText => _djSpeechText;
+  String? get lastDjCustomPrompt => _lastDjCustomPrompt;
 
   void toggleDjVoice() {
     _isDjVoiceEnabled = !_isDjVoiceEnabled;
+    if (!_isDjVoiceEnabled && _isDjSpeaking) {
+      unawaited(skipDjSpeech());
+    }
     notifyListeners();
   }
 
@@ -143,7 +151,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> previewDjVoice() async {
-    final userName = _currentUser?.effectiveName.split(' ').first ?? 'Tim';
+    final userName = _currentUser?.effectiveName.split(' ').first ?? 'Musikfreund';
     await _djService.previewVoice(_djVoiceSettings, userName);
   }
 
@@ -151,6 +159,7 @@ class MusicProvider extends ChangeNotifier {
     // Populate with fallback data immediately so UI never shows a blank screen
     _playlists = _api.getFallbackPlaylists();
     _queue = _api.getFallbackTracks();
+    _libraryTracks = List.from(_queue);
     if (_queue.isNotEmpty) {
       _currentTrack = _queue.first;
       _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
@@ -492,20 +501,21 @@ class MusicProvider extends ChangeNotifier {
     if (_isAuthenticated && _authToken.isNotEmpty) {
       _connectAndRefresh();
     } else if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
-      // Automatische Erkennung im Heimnetz (z. B. 192.168.188.25:8095), falls noch kein Token gespeichert war
+      // Automatische Erkennung im Heimnetz, falls ein Server im lokalen Netz erreichbar ist
       _tryAutoConnectLocalServer();
     }
   }
 
   Future<void> _tryAutoConnectLocalServer() async {
     try {
+      final savedToken = await _storage.loadAuthToken();
+      if (savedToken == null || savedToken.isEmpty) return;
       final discovered = await discoverLocalServers();
       if (discovered.isNotEmpty) {
         _serverUrl = discovered.first;
-        _authToken = StorageService.defaultAdminToken;
+        _authToken = savedToken;
         _isAuthenticated = true;
         await _storage.saveServerUrl(_serverUrl);
-        await _storage.saveAuthToken(_authToken);
         _connectAndRefresh();
         notifyListeners();
       }
@@ -548,10 +558,13 @@ class MusicProvider extends ChangeNotifier {
       }
     }
 
-    // 3. Bevorzugter Raum-Lautsprecher ('Tim')
-    for (final p in realSpeakers) {
-      if (p.isAvailable && p.name.toLowerCase().contains('tim')) {
-        return p;
+    // 3. Dynamischer Profil-Lautsprecher (falls Raumname zum angemeldeten Benutzerprofil passt)
+    final profileFirst = _currentUser?.effectiveName.split(' ').first.toLowerCase();
+    if (profileFirst != null && profileFirst.isNotEmpty) {
+      for (final p in realSpeakers) {
+        if (p.isAvailable && p.name.toLowerCase().contains(profileFirst)) {
+          return p;
+        }
       }
     }
 
@@ -1189,6 +1202,7 @@ class MusicProvider extends ChangeNotifier {
             _dontStopTheMusic = data['dont_stop_the_music_enabled'] as bool;
           }
           if (track != null) {
+            final previousTrack = _currentTrack;
             if (_likedTrackIds.contains(track.id)) track.isLiked = true;
             _currentTrack = track;
             _recordRecentlyPlayed(track);
@@ -1196,6 +1210,18 @@ class MusicProvider extends ChangeNotifier {
               _totalDuration = Duration(seconds: trackDuration.round());
             } else if (track.durationSeconds > 0) {
               _totalDuration = Duration(seconds: track.durationSeconds);
+            }
+            if (previousTrack != null &&
+                previousTrack.id != track.id &&
+                _isDjActive &&
+                _isDjVoiceEnabled &&
+                !_isDjSpeaking) {
+              _djPlayedTrackIds.add(track.id);
+              _djTracksSinceLastModeration++;
+              if (_djTracksSinceLastModeration >= 3) {
+                _djTracksSinceLastModeration = 0;
+                unawaited(_moderateAutoTransition(previousTrack, track));
+              }
             }
           }
           if (elapsed != null) {
@@ -1448,7 +1474,7 @@ class MusicProvider extends ChangeNotifier {
         }
         await _storage.saveActivePlayerId(_activePlayer!.id);
       } else if (enrichedPlayers.isNotEmpty) {
-        // Priorität 2: Gespeicherter echter Lautsprecher oder bevorzugter Raum-Lautsprecher ('Tim')
+        // Priorität 2: Gespeicherter echter Lautsprecher oder erster verfügbarer Raum-Lautsprecher
         // WICHTIG: Niemals 'local_iphone' bevorzugen, wenn echte Netzwerk-Lautsprecher verfügbar sind!
         final savedPlayerId = await _storage.loadActivePlayerId();
         final preferred = _selectPreferredRealSpeaker(
@@ -1545,6 +1571,7 @@ class MusicProvider extends ChangeNotifier {
           if (t.isLiked) _likedTrackIds.add(t.id);
           if (_likedTrackIds.contains(t.id)) t.isLiked = true;
         }
+        _libraryTracks = List.from(libraryTracks);
         _queue = libraryTracks;
         if (_currentTrack == null) {
           _currentTrack = libraryTracks.first;
@@ -1602,6 +1629,59 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Baut einen deduplizierten Gesamt-Pool aller verfügbaren Songs für den KI-DJ
+  List<Track> _buildDjTrackPool() {
+    final Map<String, Track> byId = {};
+    for (final row in _recommendations) {
+      for (final item in row.items) {
+        if (item.mediaType == 'track' || item.mediaType.isEmpty) {
+          final t = item.toTrack();
+          if (t.id.isNotEmpty) byId[t.id] = t;
+        }
+      }
+    }
+    for (final t in _libraryTracks) {
+      if (t.id.isNotEmpty) byId[t.id] = t;
+    }
+    for (final t in _recentlyPlayedTracks) {
+      if (t.id.isNotEmpty) byId[t.id] = t;
+    }
+    for (final t in _queue) {
+      if (t.id.isNotEmpty) byId[t.id] = t;
+    }
+    return byId.values.toList();
+  }
+
+  /// Filtert bereits gespielte DJ-Tracks heraus und mischt die Auswahl frisch durch
+  List<Track> _curateFreshDjMix(List<Track> candidates, List<Track> fullPool) {
+    final currentId = _currentTrack?.id;
+    List<Track> base = candidates.isNotEmpty ? List.from(candidates) : List.from(fullPool);
+
+    // Falls weniger als 8 Kandidaten vorhanden sind, mit passenden Songs aus dem Pool auffüllen
+    if (base.length < 8 && fullPool.isNotEmpty) {
+      final existingIds = base.map((t) => t.id).toSet();
+      final extras = fullPool.where((t) => !existingIds.contains(t.id)).toList()..shuffle();
+      base.addAll(extras.take(15 - base.length));
+    }
+
+    // Bereits in dieser Session gespielte Songs und aktuellen Song ausfiltern
+    var fresh = base
+        .where((t) => t.id != currentId && !_djPlayedTrackIds.contains(t.id))
+        .toList();
+
+    if (fresh.length < 3) {
+      _djPlayedTrackIds.clear();
+      fresh = base.where((t) => t.id != currentId).toList();
+    }
+    if (fresh.isEmpty) {
+      fresh = List.from(base);
+    }
+
+    // Frisch mischen, damit jeder Klick auf "Vibe wechseln" einen neuen Song startet!
+    fresh.shuffle();
+    return fresh.take(20).toList();
+  }
+
   /// Startet den virtuellen Spotify KI-DJ
   Future<void> startVirtualDj({DjVibeCategory? category}) async {
     _isDjActive = true;
@@ -1612,6 +1692,7 @@ class MusicProvider extends ChangeNotifier {
   /// Wechselt die Musikstimmung (Vibe) des virtuellen DJs
   Future<void> switchDjVibe({DjVibeCategory? category, bool isInitial = false}) async {
     _isDjActive = true;
+    _lastDjCustomPrompt = null;
     final vibes = DjVibe.allVibes;
     final DjVibe chosenVibe;
 
@@ -1624,73 +1705,262 @@ class MusicProvider extends ChangeNotifier {
     }
     _currentDjVibe = chosenVibe;
 
-    // Songs passend zur Stimmung ermitteln
-    List<Track> vibeTracks = [];
+    final fullPool = _buildDjTrackPool();
+    List<Track> rawCandidates = [];
 
     switch (chosenVibe.category) {
       case DjVibeCategory.allTimeFavorites:
         final mostPlayedRow = _recommendations.where((r) => r.id.contains('most_played')).firstOrNull;
         if (mostPlayedRow != null && mostPlayedRow.items.isNotEmpty) {
-          vibeTracks = mostPlayedRow.items.where((i) => i.mediaType == 'track' || i.mediaType.isEmpty).map((i) => i.toTrack()).toList();
+          rawCandidates.addAll(
+            mostPlayedRow.items
+                .where((i) => i.mediaType == 'track' || i.mediaType.isEmpty)
+                .map((i) => i.toTrack()),
+          );
         }
+        rawCandidates.addAll(
+          fullPool.where((t) => t.isLiked || _likedTrackIds.contains(t.id)),
+        );
+        rawCandidates.addAll(_recentlyPlayedTracks);
         break;
 
       case DjVibeCategory.rockClassics:
         final rockRow = _recommendations.where((r) => r.id.contains('similar_tracks')).firstOrNull;
         if (rockRow != null && rockRow.items.isNotEmpty) {
-          vibeTracks = rockRow.items.where((i) => i.mediaType == 'track' || i.mediaType.isEmpty).map((i) => i.toTrack()).toList();
+          rawCandidates.addAll(
+            rockRow.items
+                .where((i) => i.mediaType == 'track' || i.mediaType.isEmpty)
+                .map((i) => i.toTrack()),
+          );
         }
+        rawCandidates.addAll(
+          fullPool.where((t) {
+            final meta = '${t.title} ${t.artist} ${t.album}'.toLowerCase();
+            return meta.contains('rock') ||
+                meta.contains('metal') ||
+                meta.contains('punk') ||
+                meta.contains('indie') ||
+                meta.contains('alternative') ||
+                meta.contains('classic') ||
+                meta.contains('live') ||
+                meta.contains('guitar') ||
+                t.durationSeconds >= 175;
+          }),
+        );
         break;
 
       case DjVibeCategory.forgottenGems:
         final forgottenRow = _recommendations.where((r) => r.id.contains('forgotten')).firstOrNull;
         if (forgottenRow != null && forgottenRow.items.isNotEmpty) {
-          vibeTracks = forgottenRow.items.where((i) => i.mediaType == 'track' || i.mediaType.isEmpty).map((i) => i.toTrack()).toList();
+          rawCandidates.addAll(
+            forgottenRow.items
+                .where((i) => i.mediaType == 'track' || i.mediaType.isEmpty)
+                .map((i) => i.toTrack()),
+          );
         }
+        final recentIds = _recentlyPlayedTracks.map((t) => t.id).toSet();
+        rawCandidates.addAll(fullPool.where((t) => !recentIds.contains(t.id)));
         break;
 
       case DjVibeCategory.artistDiscoveries:
         final discRow = _recommendations.where((r) => r.id.contains('similar_artists')).firstOrNull;
         if (discRow != null && discRow.items.isNotEmpty) {
-          vibeTracks = discRow.items.where((i) => i.mediaType == 'track' || i.mediaType.isEmpty).map((i) => i.toTrack()).toList();
+          rawCandidates.addAll(
+            discRow.items
+                .where((i) => i.mediaType == 'track' || i.mediaType.isEmpty)
+                .map((i) => i.toTrack()),
+          );
+        }
+        // Abwechslungsreiche Künstler-Mischung (maximal 1 Track pro Künstler bevorzugen)
+        final seenArtists = <String>{};
+        for (final t in fullPool) {
+          final key = t.artist.toLowerCase().trim();
+          if (seenArtists.add(key)) {
+            rawCandidates.add(t);
+          }
         }
         break;
 
       case DjVibeCategory.partyVibes:
-        vibeTracks = _queue.where((t) =>
-            t.title.toLowerCase().contains('zipfelbuben') ||
-            t.artist.toLowerCase().contains('feine sahne') ||
-            t.title.toLowerCase().contains('berührt') ||
-            t.durationSeconds < 240).toList();
+        rawCandidates.addAll(
+          fullPool.where((t) => t.durationSeconds >= 120 && t.durationSeconds <= 245),
+        );
         break;
 
       case DjVibeCategory.lateNightChill:
-        vibeTracks = _queue.reversed.take(15).toList();
+        rawCandidates.addAll(
+          fullPool.where((t) => t.durationSeconds >= 185),
+        );
         break;
     }
 
-    if (vibeTracks.isEmpty && _queue.isNotEmpty) {
-      vibeTracks = List.from(_queue);
+    final vibeTracks = _curateFreshDjMix(rawCandidates, fullPool);
+    final previousTrack = _currentTrack;
+    final nextTrack = vibeTracks.isNotEmpty ? vibeTracks.first : null;
+    if (nextTrack != null) {
+      _djPlayedTrackIds.add(nextTrack.id);
+    }
+    _djTracksSinceLastModeration = 0;
+
+    // Wiedergabe des neuen Tracks direkt anstoßen, damit kein Stille-Loch entsteht
+    if (vibeTracks.isNotEmpty) {
+      unawaited(playTrack(vibeTracks.first, newQueue: vibeTracks));
     }
 
-    // Sprachansage formulieren (per lokalem Ollama LLM oder dynamischem Template)
-    final userName = _currentUser?.effectiveName.split(' ').first ?? 'Tim';
-    final nextTrack = vibeTracks.isNotEmpty ? vibeTracks.first : null;
-
+    final userName = _currentUser?.effectiveName.split(' ').first ?? 'Musikfreund';
     final speech = await _djService.composeDjSpeech(
       settings: _djVoiceSettings,
       vibe: chosenVibe,
       userName: userName,
       nextTrack: nextTrack,
+      previousTrack: isInitial ? null : previousTrack,
+      fallbackServerUrl: _serverUrl,
     );
 
-    // DJ-Kommentar sprechen und Dynamic Island öffnen
     await speakDjCommentary(speech);
+  }
 
-    // Wiedergabe starten
-    if (vibeTracks.isNotEmpty) {
-      await playTrack(vibeTracks.first, newQueue: vibeTracks);
+  /// Erfüllt einen freien Musik- oder Stimmungswunsch des Nutzers im KI-DJ
+  Future<void> askDjCustomPrompt(String userPrompt) async {
+    final trimmed = userPrompt.trim();
+    if (trimmed.isEmpty) return;
+
+    _isDjActive = true;
+    _lastDjCustomPrompt = trimmed;
+    final lower = trimmed.toLowerCase();
+
+    // Passenden Vibe aus Schlüsselwörtern ableiten
+    if (lower.contains('chill') ||
+        lower.contains('ruhig') ||
+        lower.contains('entspann') ||
+        lower.contains('nacht') ||
+        lower.contains('schlaf')) {
+      _currentDjVibe = DjVibe.allVibes.firstWhere(
+        (v) => v.category == DjVibeCategory.lateNightChill,
+      );
+    } else if (lower.contains('rock') ||
+        lower.contains('gitarre') ||
+        lower.contains('metal') ||
+        lower.contains('punk') ||
+        lower.contains('laut')) {
+      _currentDjVibe = DjVibe.allVibes.firstWhere(
+        (v) => v.category == DjVibeCategory.rockClassics,
+      );
+    } else if (lower.contains('party') ||
+        lower.contains('tanz') ||
+        lower.contains('energie') ||
+        lower.contains('laune') ||
+        lower.contains('beat')) {
+      _currentDjVibe = DjVibe.allVibes.firstWhere(
+        (v) => v.category == DjVibeCategory.partyVibes,
+      );
+    } else if (lower.contains('neu') ||
+        lower.contains('entdeck') ||
+        lower.contains('überrasch')) {
+      _currentDjVibe = DjVibe.allVibes.firstWhere(
+        (v) => v.category == DjVibeCategory.artistDiscoveries,
+      );
+    } else if (lower.contains('alt') ||
+        lower.contains('nostalgie') ||
+        lower.contains('früher') ||
+        lower.contains('schätz')) {
+      _currentDjVibe = DjVibe.allVibes.firstWhere(
+        (v) => v.category == DjVibeCategory.forgottenGems,
+      );
+    } else if (lower.contains('favorit') || lower.contains('liebling')) {
+      _currentDjVibe = DjVibe.allVibes.firstWhere(
+        (v) => v.category == DjVibeCategory.allTimeFavorites,
+      );
     }
+
+    final fullPool = _buildDjTrackPool();
+    final matched = <Track>[];
+
+    // 1. Lokalen Pool nach Künstler, Titel oder Album durchsuchen
+    for (final t in fullPool) {
+      final hay = '${t.title} ${t.artist} ${t.album}'.toLowerCase();
+      if (hay.contains(lower)) {
+        matched.add(t);
+      }
+    }
+
+    // 2. Falls verbunden, auch live über Music Assistant nach dem Wunsch suchen
+    if (matched.length < 5 && _api.isConnected) {
+      try {
+        final searchRes = await _api
+            .searchMusic(trimmed)
+            .timeout(const Duration(milliseconds: 2500));
+        final foundTracks = (searchRes['tracks'] as List<Track>?) ?? [];
+        matched.addAll(foundTracks);
+      } catch (e) {
+        debugPrint('[MusicProvider] askDjCustomPrompt search error: $e');
+      }
+    }
+
+    final curated = _curateFreshDjMix(matched, fullPool);
+    final nextTrack = curated.isNotEmpty ? curated.first : _currentTrack;
+    if (nextTrack != null) {
+      _djPlayedTrackIds.add(nextTrack.id);
+    }
+    _djTracksSinceLastModeration = 0;
+
+    if (curated.isNotEmpty) {
+      unawaited(playTrack(curated.first, newQueue: curated));
+    }
+
+    final userName = _currentUser?.effectiveName.split(' ').first ?? 'Musikfreund';
+    final speech = await _djService.composeDjSpeech(
+      settings: _djVoiceSettings,
+      vibe: _currentDjVibe,
+      userName: userName,
+      nextTrack: nextTrack,
+      customUserPrompt: trimmed,
+      fallbackServerUrl: _serverUrl,
+    );
+
+    await speakDjCommentary(speech);
+  }
+
+  /// Moderiert den aktuell laufenden Song auf Knopfdruck neu an
+  Future<void> triggerDjModerationNow() async {
+    _isDjActive = true;
+    final userName = _currentUser?.effectiveName.split(' ').first ?? 'Musikfreund';
+    final speech = await _djService.composeDjSpeech(
+      settings: _djVoiceSettings,
+      vibe: _currentDjVibe,
+      userName: userName,
+      nextTrack: _currentTrack,
+      customUserPrompt: _lastDjCustomPrompt,
+      fallbackServerUrl: _serverUrl,
+    );
+    await speakDjCommentary(speech);
+  }
+
+  /// Automatische Radio-Überleitung nach jedem 3. Song im aktiven DJ-Modus
+  Future<void> _moderateAutoTransition(Track previousTrack, Track nextTrack) async {
+    final userName = _currentUser?.effectiveName.split(' ').first ?? 'Musikfreund';
+    final speech = await _djService.composeDjSpeech(
+      settings: _djVoiceSettings,
+      vibe: _currentDjVibe,
+      userName: userName,
+      nextTrack: nextTrack,
+      previousTrack: previousTrack,
+      fallbackServerUrl: _serverUrl,
+    );
+    await speakDjCommentary(speech);
+  }
+
+  /// Überspringt die laufende DJ-Sprachansage sofort und stellt die Musiklautstärke wieder her
+  Future<void> skipDjSpeech() async {
+    _djSpeechTimer?.cancel();
+    _djSpeechSub?.cancel();
+    await _djService.stop();
+    _isDjSpeaking = false;
+    if (_preDuckingVolume != null) {
+      await setVolume(_preDuckingVolume!);
+      _preDuckingVolume = null;
+    }
+    notifyListeners();
   }
 
   int? _preDuckingVolume;
@@ -1703,10 +1973,37 @@ class MusicProvider extends ChangeNotifier {
     _djSpeechText = text;
     notifyListeners();
 
-    // Ducking: Musiklautstärke absenken während der Ansage
-    if (_djVoiceSettings.enableDucking && _isPlaying && _activePlayer != null) {
+    void finishSpeech() {
+      _djSpeechTimer?.cancel();
+      _djSpeechSub?.cancel();
+      if (!_isDjSpeaking && _preDuckingVolume == null) return;
+      _isDjSpeaking = false;
+      if (_preDuckingVolume != null) {
+        final restoreVol = _preDuckingVolume!;
+        _preDuckingVolume = null;
+        unawaited(setVolume(restoreVol));
+      }
+      notifyListeners();
+    }
+
+    // Listener VOR dem Start registrieren, damit schnelle Completion-Events nie verloren gehen
+    _djSpeechSub = _djService.onSpeechCompleted.listen((_) {
+      finishSpeech();
+    });
+
+    // Sicherheits-Timeout basierend auf der Satzlänge
+    final estSeconds = (text.length / 12.5).clamp(4.5, 14.0);
+    _djSpeechTimer = Timer(
+      Duration(milliseconds: (estSeconds * 1000).toInt()),
+      finishSpeech,
+    );
+
+    // Ducking: Musiklautstärke sanft absenken während der Ansage
+    if (_djVoiceSettings.enableDucking && _activePlayer != null) {
       _preDuckingVolume ??= _activePlayer!.volume;
-      await setVolume(_djVoiceSettings.duckingVolumePercent);
+      if (_preDuckingVolume! > _djVoiceSettings.duckingVolumePercent) {
+        await setVolume(_djVoiceSettings.duckingVolumePercent);
+      }
     }
 
     // Sprachausgabe über die konfigurierte Engine
@@ -1717,29 +2014,14 @@ class MusicProvider extends ChangeNotifier {
         activeRemotePlayerId: _activePlayer?.id,
         onMassAnnounce: (id, msg) => _api.playAnnouncement(id, msg),
       );
-    }
-
-    void finishSpeech() {
-      _djSpeechTimer?.cancel();
-      _djSpeechSub?.cancel();
-      _isDjSpeaking = false;
+    } else {
+      // Wenn Stimme stummgeschaltet ist, Text für 4 Sekunden einblenden ohne Audio-Ducking
       if (_preDuckingVolume != null) {
-        setVolume(_preDuckingVolume!);
+        final restoreVol = _preDuckingVolume!;
         _preDuckingVolume = null;
+        unawaited(setVolume(restoreVol));
       }
-      notifyListeners();
     }
-
-    // Basierend auf Textlänge berechnen oder auf Event warten
-    final estSeconds = (text.length / 14.0).clamp(4.0, 10.0);
-    _djSpeechTimer = Timer(
-      Duration(milliseconds: (estSeconds * 1000).toInt()),
-      finishSpeech,
-    );
-
-    _djSpeechSub = _djService.onSpeechCompleted.listen((_) {
-      finishSpeech();
-    });
   }
 
   /// Spielt einen empfohlenen Titel ab und reiht die restlichen Empfehlungen ein

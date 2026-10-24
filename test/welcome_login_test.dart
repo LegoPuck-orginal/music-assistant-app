@@ -36,18 +36,18 @@ void main() {
     test('UserProfile model parses json correctly', () {
       final json = {
         'user_id': 'u123',
-        'username': 'tim-m',
-        'display_name': 'Tim Marquardt',
+        'username': 'alex',
+        'display_name': 'Alex Demo',
         'role': 'admin',
       };
 
       final profile = UserProfile.fromJson(json);
       expect(profile.userId, 'u123');
-      expect(profile.username, 'tim-m');
-      expect(profile.displayName, 'Tim Marquardt');
+      expect(profile.username, 'alex');
+      expect(profile.displayName, 'Alex Demo');
       expect(profile.role, 'admin');
       expect(profile.isAdmin, isTrue);
-      expect(profile.effectiveName, 'Tim Marquardt');
+      expect(profile.effectiveName, 'Alex Demo');
     });
 
     testWidgets('WelcomeScreen renders all essential elements',

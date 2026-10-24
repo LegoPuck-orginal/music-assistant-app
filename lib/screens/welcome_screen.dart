@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
-import '../services/storage_service.dart';
 import '../theme/spotify_colors.dart';
 import 'welcome_guide_screen.dart';
 
@@ -148,17 +147,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   borderSide: BorderSide.none,
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextButton.icon(
-              icon: const Icon(Icons.code, size: 14, color: SpotifyColors.orange),
-              label: const Text(
-                'Entwickler-Token einfügen (Dev)',
-                style: TextStyle(color: SpotifyColors.orange, fontSize: 11),
-              ),
-              onPressed: () {
-                tokenController.text = StorageService.defaultAdminToken;
-              },
             ),
           ],
         ),

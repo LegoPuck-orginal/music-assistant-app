@@ -92,8 +92,12 @@ class _DjVoiceSettingsSheetState extends State<DjVoiceSettingsSheet> {
   }
 
   Future<void> _detectOllamaModels() async {
+    final serverUrl = context.read<MusicProvider>().serverUrl;
     setState(() => _isLoadingModels = true);
-    final models = await OllamaService().fetchInstalledModels(_ollamaHostCtrl.text.trim());
+    final models = await OllamaService().fetchInstalledModels(
+      _ollamaHostCtrl.text.trim(),
+      fallbackServerUrl: serverUrl,
+    );
     if (mounted) {
       setState(() {
         _isLoadingModels = false;

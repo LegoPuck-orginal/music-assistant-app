@@ -9,6 +9,7 @@ import '../widgets/album_card.dart';
 import '../widgets/audiobook_card.dart';
 import '../widgets/device_picker_sheet.dart';
 import '../widgets/downloads_sheet.dart';
+import '../widgets/feedback_sheet.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_edit_dialog.dart';
 import '../widgets/recommendation_card.dart';
@@ -137,6 +138,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.bug_report_outlined, color: Colors.white),
+                tooltip: 'Feedback & GitHub Issue erstellen',
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  FeedbackSheet.show(context);
+                },
+              ),
               IconButton(
                 icon: const Icon(Icons.campaign_outlined, color: Colors.white),
                 tooltip: 'Durchsage an Lautsprecher',

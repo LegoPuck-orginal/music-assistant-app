@@ -17,6 +17,8 @@ class SpotifyColors {
   static const Color orangeLight = Color(0xFFFF8533);
   static const Color orangeNeon = Color(0xFFFF6E1A);
   static const Color orangeDim = Color(0x28FF5C00);
+  static const Color amber = Color(0xFFFF9E00);
+  static const Color purple = Color(0xFF8A3FFC);
   static const Color accent = Color(0xFFFF5C00);
   static const Color accentGradientStart = Color(0xFFFF4D00);
   static const Color accentGradientEnd = Color(0xFFFF8800);
@@ -34,6 +36,7 @@ class SpotifyColors {
   // Präzise Hairline-Rahmen & Steuerungselemente
   static const Color borderSubtle = Color(0xFF1E1E28);
   static const Color borderHighlight = Color(0xFF2E2E3D);
+  static const Color glassBorder = Color(0xFF232330);
   static const Color heartActive = Color(0xFFFF5C00);
   static const Color sliderInactive = Color(0xFF262632);
   static const Color sliderActive = Color(0xFFFF5C00);
@@ -44,6 +47,7 @@ class SpotifyColors {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
+  static const LinearGradient primaryGradient = emberGradient;
 
   static const LinearGradient obsidianCardGradient = LinearGradient(
     colors: [Color(0xFF171720), Color(0xFF0E0E14)],

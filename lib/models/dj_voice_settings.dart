@@ -37,13 +37,13 @@ class DjVoiceSettings {
 
   // Lokale KI-Moderation (Ollama)
   final bool enableOllamaLlm; // Echte dynamische Song-Moderation per lokalem Ollama
-  final String ollamaHost; // z.B. http://192.168.188.244:11434 oder http://127.0.0.1:11434
+  final String ollamaHost; // z.B. http://homeassistant.local:11434 oder http://127.0.0.1:11434
   final String ollamaModel; // z.B. llama3.2:latest
 
   // Lokaler TTS-Server (Piper / Home Assistant / OpenAI-kompatibel)
-  final String localTtsUrl; // z.B. http://192.168.188.25:8123 oder http://127.0.0.1:5000/api/tts
+  final String localTtsUrl; // z.B. http://homeassistant.local:8123 oder http://127.0.0.1:5000/api/tts
   final String localTtsToken; // Optionaler Token / API-Key
-  final String openAiEndpoint; // z.B. http://192.168.188.25:8000/v1/audio/speech
+  final String openAiEndpoint; // z.B. http://homeassistant.local:8000/v1/audio/speech
   final String openAiVoice; // onyx (tiefe Radio-Stimme), alloy, echo, nova
 
   const DjVoiceSettings({

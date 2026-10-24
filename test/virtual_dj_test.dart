@@ -7,22 +7,22 @@ void main() {
   group('Profile & Avatar Tests', () {
     test('UserProfile copyWith updates avatarUrl and displayName correctly', () {
       const user = UserProfile(
-        userId: 'tim_123',
-        username: 'tim-m',
-        displayName: 'Tim',
+        userId: 'user_123',
+        username: 'alex',
+        displayName: 'Alex',
         role: 'admin',
       );
 
       final updated = user.copyWith(
-        displayName: 'Tim M.',
+        displayName: 'Alex D.',
         avatarUrl: 'preset:dj_neon',
       );
 
-      expect(updated.userId, equals('tim_123'));
-      expect(updated.username, equals('tim-m'));
-      expect(updated.displayName, equals('Tim M.'));
+      expect(updated.userId, equals('user_123'));
+      expect(updated.username, equals('alex'));
+      expect(updated.displayName, equals('Alex D.'));
       expect(updated.avatarUrl, equals('preset:dj_neon'));
-      expect(updated.effectiveName, equals('Tim M.'));
+      expect(updated.effectiveName, equals('Alex D.'));
     });
 
     test('ProfileAvatar contains curated preset collection', () {

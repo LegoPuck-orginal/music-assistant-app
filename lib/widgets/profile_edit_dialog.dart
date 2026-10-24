@@ -49,7 +49,7 @@ class _ProfileEditDialogState extends State<ProfileEditDialog> {
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
     final user = prov.currentUser;
-    final tempUser = (user ?? const UserProfile(userId: 'local', username: 'Tim')).copyWith(
+    final tempUser = (user ?? const UserProfile(userId: 'local', username: 'Musikfreund')).copyWith(
       displayName: _nameCtrl.text.isNotEmpty ? _nameCtrl.text : null,
       avatarUrl: _selectedAvatar,
     );

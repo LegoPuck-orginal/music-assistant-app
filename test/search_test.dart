@@ -75,7 +75,7 @@ void main() {
       final pl = Playlist(
         id: 'p1',
         name: 'Test Pl',
-        owner: 'Tim',
+        owner: 'Alex',
         trackCount: 0,
         provider: 'spotify',
         type: 'album',

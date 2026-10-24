@@ -8,6 +8,7 @@ import '../widgets/apple_watch_remote_sheet.dart';
 import '../widgets/dj_voice_settings_sheet.dart';
 import '../widgets/downloads_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
+import '../widgets/feedback_sheet.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_edit_dialog.dart';
 import '../widgets/update_dialog.dart';
@@ -827,6 +828,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Section: Feedback & GitHub Issues
+          _sectionTitle('FEEDBACK & FEHLER MELDEN'),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            tileColor: SpotifyColors.surfaceElevated,
+            leading: const Icon(
+              Icons.bug_report_rounded,
+              color: SpotifyColors.orange,
+              size: 28,
+            ),
+            title: const Text(
+              'Feedback geben / GitHub Issue erstellen',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              'Bugs, Wünsche oder KI-Feedback direkt an GitHub senden',
+              style: TextStyle(color: SpotifyColors.textSecondary, fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: SpotifyColors.textMuted),
+            onTap: () {
+              HapticFeedback.lightImpact();
+              FeedbackSheet.show(context);
+            },
           ),
 
           const SizedBox(height: 24),

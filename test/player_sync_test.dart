@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:music_assistant_app/models/player_device.dart';
 import 'package:music_assistant_app/models/track.dart';
 import 'package:music_assistant_app/providers/music_provider.dart';
+import 'package:music_assistant_app/services/github_feedback_service.dart';
 import 'package:music_assistant_app/services/player_position_tracker.dart';
 import 'package:music_assistant_app/services/storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -237,35 +238,35 @@ void main() {
     });
 
     test(
-        'selectPreferredRealSpeaker ignores saved local_iphone and prioritizes real speaker (Tim)',
+        'selectPreferredRealSpeaker ignores saved local_iphone and hue bridges, prioritizing real speaker',
         () {
       final local = PlayerDevice.localIPhone();
       final hueLight = PlayerDevice(
         id: 'hue-65d7c8a1ea3c43ec',
-        name: 'Hue: Tim-Razer',
+        name: 'Hue: Studio-Lampe',
         type: 'Companion',
         isAvailable: true,
       );
       final kitchen = PlayerDevice(
-        id: 'RINCON_38420B9E504201400',
+        id: 'RINCON_KITCHEN_01',
         name: 'Küche',
         type: 'Sonos',
         isAvailable: true,
       );
-      final timSonos = PlayerDevice(
-        id: 'RINCON_38420BB9399301400',
-        name: 'Tim',
+      final livingRoom = PlayerDevice(
+        id: 'RINCON_LIVING_02',
+        name: 'Wohnzimmer',
         type: 'Sonos',
         isAvailable: true,
       );
 
       final chosen = provider.selectPreferredRealSpeaker(
-        [local, hueLight, kitchen, timSonos],
+        [local, hueLight, kitchen, livingRoom],
         savedPlayerId: 'local_iphone',
       );
       expect(chosen, isNotNull);
-      expect(chosen!.id, 'RINCON_38420BB9399301400');
-      expect(chosen.name, 'Tim');
+      expect(chosen!.id, 'RINCON_KITCHEN_01');
+      expect(chosen.name, 'Küche');
     });
 
     test(
@@ -273,9 +274,9 @@ void main() {
         () {
       final spotifyTrackWithPreview = Track(
         id: '6x0aZr7BCu50xkl8TfmqSi',
-        title: '1000 mal berührt',
-        artist: 'Die Zipfelbuben',
-        album: 'Jetzt wird es heiss',
+        title: 'Demo Song',
+        artist: 'Demo Artist',
+        album: 'Demo Album',
         durationSeconds: 184,
         provider: 'spotify--4VhyAjjD',
         uri:
@@ -289,9 +290,9 @@ void main() {
 
       final libraryTrack = Track(
         id: '189',
-        title: '1000 mal berührt',
-        artist: 'Die Zipfelbuben',
-        album: 'Jetzt wird es heiss',
+        title: 'Demo Song',
+        artist: 'Demo Artist',
+        album: 'Demo Album',
         durationSeconds: 184,
         provider: 'library',
         uri: 'library://track/189',
@@ -306,12 +307,37 @@ void main() {
       expect(await storage.loadActivePlayerId(), isNull);
 
       final realSpeaker = PlayerDevice(
-        id: 'RINCON_38420BB9399301400',
-        name: 'Tim',
+        id: 'RINCON_LIVING_02',
+        name: 'Wohnzimmer',
         type: 'Sonos',
       );
       await provider.setActivePlayer(realSpeaker);
-      expect(await storage.loadActivePlayerId(), 'RINCON_38420BB9399301400');
+      expect(await storage.loadActivePlayerId(), 'RINCON_LIVING_02');
+    });
+
+    test('GitHubFeedbackService builds sanitized issue body and web URL without personal IPs', () {
+      final body = GitHubFeedbackService.formatIssueBody(
+        category: FeedbackCategory.bug,
+        description: 'Lyrics springen manchmal.',
+        stepsToReproduce: '1. Song abspielen\n2. Lyrics öffnen',
+        includeAppVersion: true,
+        appVersion: '1.11.3+32',
+      );
+
+      expect(body, contains('Fehler / Bug'));
+      expect(body, contains('Lyrics springen manchmal.'));
+      expect(body, contains('1.11.3+32'));
+      expect(body, isNot(contains('192.168.')));
+
+      final uri = GitHubFeedbackService.buildGitHubWebIssueUri(
+        category: FeedbackCategory.feature,
+        title: 'Neuer Equalizer-Modus',
+        body: body,
+      );
+      expect(uri.host, equals('github.com'));
+      expect(uri.path, equals('/LegoPuck-orginal/music-assistant-app/issues/new'));
+      expect(uri.queryParameters['title'], contains('[Feature] Neuer Equalizer-Modus'));
+      expect(uri.queryParameters['labels'], equals('enhancement'));
     });
   });
 }

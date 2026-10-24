@@ -11,18 +11,18 @@ import '../theme/spotify_colors.dart';
 
 /// Darstellungsmodus für die Buchstabe-für-Buchstabe (Letter-by-Letter) Lyrics
 enum LyricsDisplayMode {
-  /// Jeder Buchstabe springt, skaliert und leuchtet beim Singen einzeln in Adobe-Orange auf
+  /// Flüssiger Buchstabe-für-Buchstabe Glow-Sweep ohne Layout-Springen
   letterPop,
 
-  /// Buchstabe-für-Buchstabe Live-Buchstabieren mit leuchtendem Neon-Cursor (▋) & Wort-HUD
+  /// Buchstabe-für-Buchstabe Live-Buchstabieren mit leuchtendem Neon-Cursor (▋)
   letterTypewriter,
 
   /// Großer zentrierter Kino-Stage-Modus mit fließendem Buchstaben-Sweep
   cinemaStage,
 }
 
-/// Episches 60fps Buchstabe-für-Buchstabe (Letter-by-Letter) Karaoke & Synced Lyrics Sheet
-/// im Tiefschwarz / Adobe-Orange Design.
+/// 60fps Buchstabe-für-Buchstabe (Letter-by-Letter) Karaoke & Synced Lyrics Sheet
+/// im Obsidian / Neon-Ember Studio-Design.
 class LyricsSheet extends StatefulWidget {
   final Track track;
 
@@ -60,10 +60,11 @@ class _LyricsSheetState extends State<LyricsSheet>
   LyricsDisplayMode _displayMode = LyricsDisplayMode.letterPop;
   bool _showSyncTuner = false;
 
-  // 60fps Sub-Frame Position Interpolation für butterweiches Buchstabieren
+  // Monotone 60fps Sub-Frame Position Interpolation ohne Rückwärts-Sprünge
   late final Ticker _ticker;
   final Stopwatch _anchorWatch = Stopwatch();
-  Duration _lastProviderPosition = Duration.zero;
+  Duration _anchorPosition = Duration.zero;
+  Duration _lastSeenProviderPosition = Duration.zero;
   Duration _smoothPosition = Duration.zero;
   bool _wasPlaying = false;
 
@@ -77,13 +78,13 @@ class _LyricsSheetState extends State<LyricsSheet>
   void _onTick(Duration elapsed) {
     if (!mounted) return;
     if (_wasPlaying && _lines.isNotEmpty) {
-      final deltaMs = _anchorWatch.elapsedMilliseconds.clamp(0, 1200);
-      final interpolated =
-          _lastProviderPosition + Duration(milliseconds: deltaMs);
-      if ((interpolated.inMilliseconds - _smoothPosition.inMilliseconds).abs() >=
-          12) {
+      final deltaMs = _anchorWatch.elapsedMilliseconds.clamp(0, 2500);
+      final candidate = _anchorPosition + Duration(milliseconds: deltaMs);
+      // Monoton vorwärts laufen lassen, damit grobe Server-Sekunden-Updates nie ruckeln
+      final nextMs = math.max(_smoothPosition.inMilliseconds, candidate.inMilliseconds);
+      if ((nextMs - _smoothPosition.inMilliseconds).abs() >= 14) {
         setState(() {
-          _smoothPosition = interpolated;
+          _smoothPosition = Duration(milliseconds: nextMs);
         });
       }
     }
@@ -96,26 +97,54 @@ class _LyricsSheetState extends State<LyricsSheet>
       _initialLoaded = true;
       final prov = context.read<MusicProvider>();
       final activeTrack = prov.currentTrack ?? widget.track;
-      _syncPositionAnchor(prov.currentPosition, prov.isPlaying);
+      _syncPositionAnchor(prov.currentPosition, prov.isPlaying, force: true);
       _loadLyrics(activeTrack, prov: prov);
     }
   }
 
-  void _syncPositionAnchor(Duration providerPos, bool isPlaying) {
-    final posChanged = (providerPos.inMilliseconds -
-                _lastProviderPosition.inMilliseconds)
-            .abs() >
-        20;
-    if (posChanged || isPlaying != _wasPlaying) {
-      _lastProviderPosition = providerPos;
+  void _syncPositionAnchor(
+    Duration providerPos,
+    bool isPlaying, {
+    bool force = false,
+  }) {
+    final playChanged = isPlaying != _wasPlaying;
+    final providerDelta =
+        (providerPos.inMilliseconds - _lastSeenProviderPosition.inMilliseconds).abs();
+
+    if (!force && !playChanged && providerDelta < 15) {
+      return;
+    }
+
+    _lastSeenProviderPosition = providerPos;
+    _wasPlaying = isPlaying;
+
+    final driftFromSmooth =
+        providerPos.inMilliseconds - _smoothPosition.inMilliseconds;
+
+    if (force ||
+        playChanged ||
+        driftFromSmooth.abs() > 950 ||
+        providerPos.inMilliseconds == 0) {
+      // Echter Seek, Songstart oder große Abweichung -> hart synchronisieren
+      _anchorPosition = providerPos;
       _smoothPosition = providerPos;
-      _wasPlaying = isPlaying;
       _anchorWatch.reset();
-      if (isPlaying) {
-        _anchorWatch.start();
-      } else {
-        _anchorWatch.stop();
-      }
+    } else if (driftFromSmooth > 0) {
+      // Provider ist leicht voraus -> Anker sanft vorziehen ohne Rückwärtssprung
+      _anchorPosition = providerPos;
+      _smoothPosition = providerPos;
+      _anchorWatch.reset();
+    } else {
+      // Provider-Wert liegt leicht hinter unserer flüssigen Interpolation (z.B. gerundete Sekunde):
+      // Kein Rückwärtssprung! Wir behalten _smoothPosition als neuen Anker.
+      _anchorPosition = _smoothPosition;
+      _anchorWatch.reset();
+    }
+
+    if (isPlaying) {
+      if (!_anchorWatch.isRunning) _anchorWatch.start();
+    } else {
+      _anchorWatch.stop();
     }
   }
 
@@ -190,7 +219,10 @@ class _LyricsSheetState extends State<LyricsSheet>
 
     if (_lastTrackId != null && _lastTrackId != activeTrack.id) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _loadLyrics(activeTrack, prov: prov);
+        if (mounted) {
+          _syncPositionAnchor(Duration.zero, prov.isPlaying, force: true);
+          _loadLyrics(activeTrack, prov: prov);
+        }
       });
     }
 
@@ -217,12 +249,12 @@ class _LyricsSheetState extends State<LyricsSheet>
     return Container(
       height: MediaQuery.of(context).size.height * 0.94,
       decoration: const BoxDecoration(
-        color: Color(0xFF050505),
+        color: Color(0xFF050507),
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: Stack(
         children: [
-          // Epischer dynamischer Ambient-Spotlight-Hintergrund im Adobe-Orange-Look
+          // Ambient-Spotlight-Hintergrund im Obsidian/Ember-Look
           Positioned.fill(
             child: ClipRRect(
               borderRadius:
@@ -233,9 +265,9 @@ class _LyricsSheetState extends State<LyricsSheet>
                     center: const Alignment(0.0, -0.25),
                     radius: 1.15,
                     colors: [
-                      SpotifyColors.orange.withValues(alpha: 0.16),
-                      const Color(0xFF120804).withValues(alpha: 0.85),
-                      const Color(0xFF050505),
+                      SpotifyColors.orange.withValues(alpha: 0.14),
+                      const Color(0xFF100805).withValues(alpha: 0.85),
+                      const Color(0xFF050507),
                     ],
                     stops: const [0.0, 0.55, 1.0],
                   ),
@@ -262,20 +294,20 @@ class _LyricsSheetState extends State<LyricsSheet>
                   ),
                 ),
 
-                // Header mit Track-Info, Sync-Feintuning & Schließen
+                // Clean Header mit Track-Info, Sync-Feintuning & Schließen (ohne störendes Wort-Badge oben)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 14, 10),
                   child: Row(
                     children: [
                       Container(
-                        width: 46,
-                        height: 46,
+                        width: 44,
+                        height: 44,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
                           boxShadow: [
                             BoxShadow(
                               color:
-                                  SpotifyColors.orange.withValues(alpha: 0.35),
+                                  SpotifyColors.orange.withValues(alpha: 0.3),
                               blurRadius: 12,
                             ),
                           ],
@@ -309,54 +341,24 @@ class _LyricsSheetState extends State<LyricsSheet>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  margin: const EdgeInsets.only(right: 6),
-                                  decoration: BoxDecoration(
-                                    color: SpotifyColors.orange
-                                        .withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: SpotifyColors.orange
-                                          .withValues(alpha: 0.6),
-                                      width: 0.8,
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'LIVE BUCHSTABIERT',
-                                    style: TextStyle(
-                                      color: SpotifyColors.orange,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 0.8,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    activeTrack.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            Text(
+                              activeTrack.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                            const SizedBox(height: 3),
+                            const SizedBox(height: 2),
                             Text(
                               activeTrack.artist,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: SpotifyColors.textSecondary,
-                                fontSize: 12,
+                                fontSize: 12.5,
                               ),
                             ),
                           ],
@@ -389,7 +391,7 @@ class _LyricsSheetState extends State<LyricsSheet>
                   ),
                 ),
 
-                // Modus-Umschalter: Buchstaben-Puls | Buchstabieren ▋ | Kino-Fokus
+                // Modus-Umschalter: Studio-Glow | Buchstabieren ▋ | Kino-Fokus
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
@@ -419,14 +421,7 @@ class _LyricsSheetState extends State<LyricsSheet>
                 // Optionaler Sync-Tuner für Millisekunden-genaue Anpassung
                 if (_showSyncTuner) _buildSyncTunerBar(),
 
-                // Live-Buchstabier-HUD: Zeigt das aktuell gesungene Wort Buchstabe für Buchstabe oben an!
-                if (!_isLoading &&
-                    _lines.isNotEmpty &&
-                    activeSnapshot != null &&
-                    activeSnapshot.activeWord.isNotEmpty)
-                  _buildLiveSpellingHud(activeSnapshot),
-
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 const Divider(color: SpotifyColors.borderSubtle, height: 1),
 
                 // Haupt-Lyrics-Bühne
@@ -457,9 +452,10 @@ class _LyricsSheetState extends State<LyricsSheet>
                               },
                               child: ListView.builder(
                                 controller: _scrollController,
+                                physics: const BouncingScrollPhysics(),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 22,
-                                  vertical: 44,
+                                  vertical: 40,
                                 ),
                                 itemCount: _lines.length,
                                 itemBuilder: (context, index) {
@@ -468,7 +464,6 @@ class _LyricsSheetState extends State<LyricsSheet>
                                   final isPast = index < _currentLineIndex;
                                   final isNext = index == _currentLineIndex + 1;
 
-                                  // Prüfe ob vor dieser Zeile ein Instrumental-Einsatz-Countdown läuft
                                   final showCountdown =
                                       _shouldShowVocalCountdown(
                                           index, effectivePosition);
@@ -482,7 +477,7 @@ class _LyricsSheetState extends State<LyricsSheet>
                                         ? _lineKeys[index]
                                         : null,
                                     margin: EdgeInsets.symmetric(
-                                      vertical: isActive ? 10 : 4,
+                                      vertical: isActive ? 8 : 3,
                                     ),
                                     child: Column(
                                       crossAxisAlignment: _displayMode ==
@@ -500,7 +495,10 @@ class _LyricsSheetState extends State<LyricsSheet>
                                             HapticFeedback.lightImpact();
                                             prov.seekTo(line.timestamp);
                                             _syncPositionAnchor(
-                                                line.timestamp, prov.isPlaying);
+                                              line.timestamp,
+                                              prov.isPlaying,
+                                              force: true,
+                                            );
                                             setState(() {
                                               _currentLineIndex = index;
                                               _userIsScrolling = false;
@@ -510,55 +508,44 @@ class _LyricsSheetState extends State<LyricsSheet>
                                           borderRadius:
                                               BorderRadius.circular(16),
                                           splashColor: SpotifyColors.orange
-                                              .withValues(alpha: 0.18),
+                                              .withValues(alpha: 0.16),
                                           child: AnimatedContainer(
                                             duration: const Duration(
-                                                milliseconds: 240),
+                                                milliseconds: 260),
                                             curve: Curves.easeOutCubic,
                                             width: double.infinity,
                                             padding: EdgeInsets.symmetric(
-                                              horizontal: isActive ? 16 : 10,
-                                              vertical: isActive ? 14 : 8,
+                                              horizontal: isActive ? 16 : 12,
+                                              vertical: isActive ? 14 : 9,
                                             ),
-                                            decoration: isActive
-                                                ? BoxDecoration(
-                                                    gradient: LinearGradient(
+                                            decoration: BoxDecoration(
+                                              gradient: isActive
+                                                  ? LinearGradient(
                                                       colors: [
                                                         SpotifyColors.orange
                                                             .withValues(
-                                                                alpha: 0.16),
+                                                                alpha: 0.14),
                                                         SpotifyColors.orange
                                                             .withValues(
-                                                                alpha: 0.04),
+                                                                alpha: 0.03),
                                                         Colors.transparent,
                                                       ],
                                                       begin:
                                                           Alignment.centerLeft,
                                                       end:
                                                           Alignment.centerRight,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            16),
-                                                    border: Border.all(
-                                                      color: SpotifyColors
-                                                          .orange
-                                                          .withValues(
-                                                              alpha: 0.45),
-                                                      width: 1.1,
-                                                    ),
-                                                    boxShadow: [
-                                                      BoxShadow(
-                                                        color: SpotifyColors
-                                                            .orange
-                                                            .withValues(
-                                                                alpha: 0.14),
-                                                        blurRadius: 24,
-                                                        spreadRadius: 1,
-                                                      ),
-                                                    ],
-                                                  )
-                                                : null,
+                                                    )
+                                                  : null,
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
+                                              border: Border.all(
+                                                color: isActive
+                                                    ? SpotifyColors.orange
+                                                        .withValues(alpha: 0.42)
+                                                    : Colors.transparent,
+                                                width: 1.0,
+                                              ),
+                                            ),
                                             child: isActive &&
                                                     activeSnapshot != null
                                                 ? _buildActiveEpicLine(
@@ -588,10 +575,11 @@ class _LyricsSheetState extends State<LyricsSheet>
     );
   }
 
-  /// Baut die aktive Zeile mit Buchstabe-für-Buchstabe (Letter-by-Letter) Animation!
+  /// Baut die aktive Zeile mit butterweicher Buchstabe-für-Buchstabe Animation
+  /// ohne WidgetSpan-Umbruchfehler!
   Widget _buildActiveEpicLine(LyricLine line, LyricLineSnapshot snapshot) {
     final centerAlign = _displayMode == LyricsDisplayMode.cinemaStage;
-    final baseFontSize = centerAlign ? 26.0 : 23.0;
+    final baseFontSize = centerAlign ? 24.5 : 22.0;
 
     return Column(
       crossAxisAlignment:
@@ -600,155 +588,85 @@ class _LyricsSheetState extends State<LyricsSheet>
         if (_displayMode == LyricsDisplayMode.letterTypewriter)
           _buildTypewriterSpelledLine(snapshot, baseFontSize, centerAlign)
         else
-          _buildCharacterPopLine(snapshot, baseFontSize, centerAlign),
+          _buildSmoothCharacterGlowLine(snapshot, baseFontSize, centerAlign),
 
         const SizedBox(height: 10),
 
-        // Laser-Fortschrittsbalken + Buchstaben-Zähler unter der aktiven Zeile
-        Row(
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  height: 3.5,
-                  child: LinearProgressIndicator(
-                    value: snapshot.lineProgress.clamp(0.0, 1.0),
-                    backgroundColor: Colors.white.withValues(alpha: 0.12),
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      SpotifyColors.orange,
-                    ),
-                  ),
-                ),
+        // Feiner Laser-Fortschrittsbalken unter der aktiven Zeile
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: SizedBox(
+            height: 3.0,
+            child: LinearProgressIndicator(
+              value: snapshot.lineProgress.clamp(0.0, 1.0),
+              backgroundColor: Colors.white.withValues(alpha: 0.10),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                SpotifyColors.orange,
               ),
             ),
-            const SizedBox(width: 10),
-            Text(
-              '${(snapshot.activeCharIndex + 1).clamp(0, snapshot.chars.length)}/${snapshot.chars.length}',
-              style: TextStyle(
-                color: SpotifyColors.orange.withValues(alpha: 0.9),
-                fontSize: 10.5,
-                fontWeight: FontWeight.w800,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ],
+          ),
         ),
       ],
     );
   }
 
-  /// Modus 1 & 3: Jeder einzelne Buchstabe wird mit eigenem Fortschritt, Glow,
-  /// vertikalem Pop-Impuls und Laser-Punkt unter dem aktiven Buchstaben gerendert!
-  Widget _buildCharacterPopLine(
+  /// Modus 1 & 3: Reines natives TextSpan-Rendering pro Buchstabe!
+  /// Dadurch bleiben alle Wortgrenzen zu 100% erhalten (kein Umbruch mitten im Wort)
+  /// und die Buchstaben gleiten mit 60fps butterweich von gedimmt -> Neon-Ember -> Weiß!
+  Widget _buildSmoothCharacterGlowLine(
     LyricLineSnapshot snapshot,
     double baseFontSize,
     bool centerAlign,
   ) {
-    final spans = <InlineSpan>[];
+    final spans = <TextSpan>[];
 
     for (final chState in snapshot.chars) {
-      final p = chState.progress;
-      final isCurrent = chState.isCurrentActiveLetter ||
-          (p > 0.0 && p < 1.0);
+      final p = chState.progress.clamp(0.0, 1.0);
+      final isCurrent = chState.isCurrentActiveLetter || (p > 0.0 && p < 1.0);
       final isSung = p >= 1.0;
 
-      if (chState.char == ' ') {
-        spans.add(TextSpan(
-          text: ' ',
-          style: TextStyle(
-            fontSize: baseFontSize,
-            fontWeight: FontWeight.w800,
-          ),
-        ));
-        continue;
-      }
-
-      // Sinus-Impuls für den Moment, in dem der Buchstabe gesungen wird
-      final popWave = isCurrent
-          ? math.sin((p.clamp(0.15, 0.85)) * math.pi)
-          : 0.0;
-      final liftY = isCurrent ? (-4.0 * popWave) : (isSung ? -0.6 : 0.0);
-      final scale = isCurrent ? (1.0 + 0.16 * popWave) : 1.0;
-
       final Color letterColor;
+      List<Shadow>? shadows;
+
       if (isCurrent) {
+        final glowIntensity = math.sin(p * math.pi).clamp(0.2, 1.0);
         letterColor = Color.lerp(
+              Colors.white.withValues(alpha: 0.45),
               SpotifyColors.orange,
-              const Color(0xFFFFB380),
-              popWave,
+              p.clamp(0.3, 1.0),
             ) ??
             SpotifyColors.orange;
+        shadows = [
+          Shadow(
+            color: SpotifyColors.orange.withValues(alpha: 0.85 * glowIntensity),
+            blurRadius: 14,
+          ),
+          Shadow(
+            color: SpotifyColors.amber.withValues(alpha: 0.55 * glowIntensity),
+            blurRadius: 6,
+          ),
+        ];
       } else if (isSung) {
         letterColor = Colors.white;
+        shadows = [
+          Shadow(
+            color: SpotifyColors.orange.withValues(alpha: 0.32),
+            blurRadius: 8,
+          ),
+        ];
       } else {
-        letterColor = Colors.white.withValues(alpha: 0.26);
+        letterColor = Colors.white.withValues(alpha: 0.28);
       }
 
       spans.add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.baseline,
-          baseline: TextBaseline.alphabetic,
-          child: Transform.translate(
-            offset: Offset(0, liftY),
-            child: Transform.scale(
-              scale: scale,
-              alignment: Alignment.bottomCenter,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    chState.char,
-                    style: TextStyle(
-                      color: letterColor,
-                      fontSize: baseFontSize,
-                      fontWeight: FontWeight.w900,
-                      height: 1.25,
-                      shadows: isCurrent
-                          ? [
-                              const Shadow(
-                                color: SpotifyColors.orange,
-                                blurRadius: 18,
-                              ),
-                              Shadow(
-                                color: SpotifyColors.orange
-                                    .withValues(alpha: 0.85),
-                                blurRadius: 8,
-                              ),
-                            ]
-                          : isSung
-                              ? [
-                                  Shadow(
-                                    color: SpotifyColors.orange
-                                        .withValues(alpha: 0.45),
-                                    blurRadius: 10,
-                                  ),
-                                ]
-                              : null,
-                    ),
-                  ),
-                  // Kleiner glühender Laser-Funke direkt unter dem aktiv buchstabierten Buchstaben
-                  Container(
-                    width: isCurrent ? 5.0 : 0.0,
-                    height: 2.5,
-                    decoration: BoxDecoration(
-                      color: isCurrent
-                          ? SpotifyColors.orange
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(2),
-                      boxShadow: isCurrent
-                          ? [
-                              const BoxShadow(
-                                color: SpotifyColors.orange,
-                                blurRadius: 6,
-                              ),
-                            ]
-                          : null,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        TextSpan(
+          text: chState.char,
+          style: TextStyle(
+            color: letterColor,
+            fontSize: baseFontSize,
+            fontWeight: FontWeight.w800,
+            height: 1.32,
+            shadows: shadows,
           ),
         ),
       );
@@ -761,7 +679,7 @@ class _LyricsSheetState extends State<LyricsSheet>
   }
 
   /// Modus 2 („Buchstabieren ▋“): Buchstabe für Buchstabe Live-Typewriter mit
-  /// leuchtendem Adobe-Orange-Cursor `▋` direkt hinter dem aktuellen Buchstaben!
+  /// reinem TextSpan-Cursor `▋`, damit Wörter niemals zerrissen werden!
   Widget _buildTypewriterSpelledLine(
     LyricLineSnapshot snapshot,
     double baseFontSize,
@@ -770,7 +688,6 @@ class _LyricsSheetState extends State<LyricsSheet>
     final spelled = snapshot.spelledText;
     final remaining = snapshot.remainingText;
 
-    // Der letzte bereits enthüllte Buchstabe leuchtet kräftig in Adobe-Orange
     final String completedPrefix =
         spelled.length > 1 ? spelled.substring(0, spelled.length - 1) : '';
     final String activeLastChar =
@@ -781,7 +698,7 @@ class _LyricsSheetState extends State<LyricsSheet>
       text: TextSpan(
         style: TextStyle(
           fontSize: baseFontSize,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w800,
           height: 1.32,
         ),
         children: [
@@ -792,8 +709,8 @@ class _LyricsSheetState extends State<LyricsSheet>
                 color: Colors.white,
                 shadows: [
                   Shadow(
-                    color: SpotifyColors.orange.withValues(alpha: 0.45),
-                    blurRadius: 12,
+                    color: SpotifyColors.orange.withValues(alpha: 0.35),
+                    blurRadius: 10,
                   ),
                 ],
               ),
@@ -806,125 +723,31 @@ class _LyricsSheetState extends State<LyricsSheet>
                 shadows: [
                   Shadow(
                     color: SpotifyColors.orange,
-                    blurRadius: 18,
+                    blurRadius: 14,
                   ),
                 ],
               ),
             ),
-          // Leuchtender Adobe-Orange Buchstabier-Cursor
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Container(
-              width: 3.5,
-              height: baseFontSize * 0.95,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              decoration: BoxDecoration(
-                color: SpotifyColors.orange,
-                borderRadius: BorderRadius.circular(2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: SpotifyColors.orange,
-                    blurRadius: 10,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
+          const TextSpan(
+            text: '▋',
+            style: TextStyle(
+              color: SpotifyColors.orange,
+              shadows: [
+                Shadow(
+                  color: SpotifyColors.orange,
+                  blurRadius: 10,
+                ),
+              ],
             ),
           ),
           if (remaining.isNotEmpty)
             TextSpan(
               text: remaining,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.16),
+                color: Colors.white.withValues(alpha: 0.22),
                 fontWeight: FontWeight.w700,
               ),
             ),
-        ],
-      ),
-    );
-  }
-
-  /// Live-Buchstabier-HUD oberhalb der Liste: Zeigt das aktuell gesungene Wort
-  /// Buchstabe für Buchstabe aufgeschlüsselt an (z. B. `F · A · N · T · A · S · Y`).
-  Widget _buildLiveSpellingHud(LyricLineSnapshot snapshot) {
-    final word = snapshot.activeWord;
-    final spelledLen = snapshot.activeWordSpelled.length;
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 4, 20, 6),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF141414),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: SpotifyColors.orange.withValues(alpha: 0.35),
-          width: 0.9,
-        ),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.graphic_eq_rounded,
-            color: SpotifyColors.orange,
-            size: 16,
-          ),
-          const SizedBox(width: 8),
-          const Text(
-            'WORT:',
-            style: TextStyle(
-              color: SpotifyColors.textMuted,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.0,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: List.generate(word.length, (i) {
-                  final ch = word[i].toUpperCase();
-                  final isSung = i < spelledLen;
-                  final isCurrent = i == spelledLen - 1;
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 90),
-                    margin: const EdgeInsets.only(right: 4),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isCurrent
-                          ? SpotifyColors.orange
-                          : isSung
-                              ? SpotifyColors.orange.withValues(alpha: 0.18)
-                              : Colors.white.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: isCurrent
-                            ? Colors.white
-                            : isSung
-                                ? SpotifyColors.orange.withValues(alpha: 0.6)
-                                : Colors.white12,
-                        width: 0.8,
-                      ),
-                    ),
-                    child: Text(
-                      ch,
-                      style: TextStyle(
-                        color: isCurrent
-                            ? Colors.black
-                            : isSung
-                                ? Colors.white
-                                : Colors.white38,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -941,7 +764,7 @@ class _LyricsSheetState extends State<LyricsSheet>
       textAlign: centerAlign ? TextAlign.center : TextAlign.start,
       style: TextStyle(
         color: isNext
-            ? Colors.white.withValues(alpha: 0.62)
+            ? Colors.white.withValues(alpha: 0.64)
             : isPast
                 ? Colors.white.withValues(alpha: 0.32)
                 : Colors.white.withValues(alpha: 0.24),
@@ -984,8 +807,8 @@ class _LyricsSheetState extends State<LyricsSheet>
           for (int dot = 0; dot < 3; dot++) ...[
             AnimatedContainer(
               duration: const Duration(milliseconds: 120),
-              width: 9,
-              height: 9,
+              width: 8,
+              height: 8,
               margin: const EdgeInsets.only(right: 6),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
@@ -1037,7 +860,7 @@ class _LyricsSheetState extends State<LyricsSheet>
           decoration: BoxDecoration(
             color: selected
                 ? SpotifyColors.orange.withValues(alpha: 0.2)
-                : const Color(0xFF141414),
+                : const Color(0xFF141418),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: selected
@@ -1086,7 +909,7 @@ class _LyricsSheetState extends State<LyricsSheet>
       margin: const EdgeInsets.fromLTRB(20, 4, 20, 4),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF161616),
+        color: const Color(0xFF16161C),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: SpotifyColors.borderHighlight),
       ),
@@ -1242,7 +1065,7 @@ class _LyricsSheetState extends State<LyricsSheet>
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
       decoration: const BoxDecoration(
-        color: Color(0xFF0D0D0D),
+        color: Color(0xFF0A0A0E),
         border: Border(
           top: BorderSide(color: SpotifyColors.borderSubtle, width: 0.8),
         ),
@@ -1371,6 +1194,7 @@ class _LiveLyricsPreviewCardState extends State<LiveLyricsPreviewCard>
   late final Ticker _ticker;
   final Stopwatch _watch = Stopwatch();
   Duration _anchorPos = Duration.zero;
+  Duration _lastProviderPos = Duration.zero;
   Duration _smoothPos = Duration.zero;
   bool _wasPlaying = false;
 
@@ -1379,11 +1203,12 @@ class _LiveLyricsPreviewCardState extends State<LiveLyricsPreviewCard>
     super.initState();
     _ticker = createTicker((_) {
       if (!mounted || !_wasPlaying || _lines.isEmpty) return;
-      final deltaMs = _watch.elapsedMilliseconds.clamp(0, 1200);
-      final nextPos = _anchorPos + Duration(milliseconds: deltaMs);
-      if ((nextPos.inMilliseconds - _smoothPos.inMilliseconds).abs() >= 20) {
+      final deltaMs = _watch.elapsedMilliseconds.clamp(0, 2500);
+      final candidate = _anchorPos + Duration(milliseconds: deltaMs);
+      final nextMs = math.max(_smoothPos.inMilliseconds, candidate.inMilliseconds);
+      if ((nextMs - _smoothPos.inMilliseconds).abs() >= 20) {
         setState(() {
-          _smoothPos = nextPos;
+          _smoothPos = Duration(milliseconds: nextMs);
         });
       }
     });
@@ -1401,6 +1226,8 @@ class _LiveLyricsPreviewCardState extends State<LiveLyricsPreviewCard>
     final key = '${track.artist}__${track.title}';
     if (_loadedTrackKey == key) return;
     _loadedTrackKey = key;
+    _anchorPos = Duration.zero;
+    _smoothPos = Duration.zero;
     _lyricsService.getLyricsForTrack(track, api: prov.api).then((res) {
       if (mounted && _loadedTrackKey == key) {
         setState(() {
@@ -1416,16 +1243,27 @@ class _LiveLyricsPreviewCardState extends State<LiveLyricsPreviewCard>
     final activeTrack = prov.currentTrack ?? widget.track;
     _ensureLoaded(activeTrack, prov);
 
-    if ((prov.currentPosition.inMilliseconds - _anchorPos.inMilliseconds)
-                .abs() >
-            25 ||
-        prov.isPlaying != _wasPlaying) {
-      _anchorPos = prov.currentPosition;
-      _smoothPos = prov.currentPosition;
+    final playChanged = prov.isPlaying != _wasPlaying;
+    final providerDelta =
+        (prov.currentPosition.inMilliseconds - _lastProviderPos.inMilliseconds).abs();
+    if (playChanged || providerDelta > 25) {
+      _lastProviderPos = prov.currentPosition;
       _wasPlaying = prov.isPlaying;
-      _watch.reset();
+      final drift = prov.currentPosition.inMilliseconds - _smoothPos.inMilliseconds;
+      if (playChanged || drift.abs() > 950 || prov.currentPosition.inMilliseconds == 0) {
+        _anchorPos = prov.currentPosition;
+        _smoothPos = prov.currentPosition;
+        _watch.reset();
+      } else if (drift > 0) {
+        _anchorPos = prov.currentPosition;
+        _smoothPos = prov.currentPosition;
+        _watch.reset();
+      } else {
+        _anchorPos = _smoothPos;
+        _watch.reset();
+      }
       if (prov.isPlaying) {
-        _watch.start();
+        if (!_watch.isRunning) _watch.start();
       } else {
         _watch.stop();
       }
@@ -1447,10 +1285,10 @@ class _LiveLyricsPreviewCardState extends State<LiveLyricsPreviewCard>
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             colors: [
-              const Color(0xFF1A120E),
-              const Color(0xFF121212),
+              Color(0xFF1A120E),
+              Color(0xFF121216),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -1462,14 +1300,6 @@ class _LiveLyricsPreviewCardState extends State<LiveLyricsPreviewCard>
                 : SpotifyColors.borderSubtle,
             width: 0.9,
           ),
-          boxShadow: hasActiveLyrics
-              ? [
-                  BoxShadow(
-                    color: SpotifyColors.orange.withValues(alpha: 0.1),
-                    blurRadius: 14,
-                  ),
-                ]
-              : null,
         ),
         child: Row(
           children: [
@@ -1520,7 +1350,7 @@ class _LiveLyricsPreviewCardState extends State<LiveLyricsPreviewCard>
                           ),
                         ),
                         Text(
-                          'Tippen für Buchstabe-für-Buchstabe Vollbild',
+                          'Tippen für Vollbild-Songtext',
                           style: TextStyle(
                             color: SpotifyColors.textSecondary,
                             fontSize: 11,
@@ -1573,13 +1403,6 @@ class _LiveLyricsPreviewCardState extends State<LiveLyricsPreviewCard>
                 ],
               ),
             ),
-          const TextSpan(
-            text: '▋',
-            style: TextStyle(
-              color: SpotifyColors.orange,
-              fontSize: 12,
-            ),
-          ),
           if (remaining.isNotEmpty)
             TextSpan(
               text: remaining,

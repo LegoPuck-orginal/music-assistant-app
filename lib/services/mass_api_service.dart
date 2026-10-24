@@ -123,12 +123,9 @@ class MassApiService {
     final candidateHosts = [
       'http://homeassistant.local:8095',
       'http://mass.local:8095',
+      'http://musicassistant.local:8095',
       'http://homeassistant:8095',
       'http://127.0.0.1:8095',
-      'http://192.168.188.25:8095',
-      'http://192.168.1.100:8095',
-      'http://192.168.178.1:8095',
-      'http://192.168.0.100:8095',
     ];
 
     final results = <String>[];

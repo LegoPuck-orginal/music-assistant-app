@@ -174,34 +174,70 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
     }
   }
 
+  private func scoreGermanVoice(_ v: AVSpeechSynthesisVoice) -> Int {
+    var score = v.quality.rawValue * 100
+    if v.language == "de-DE" {
+      score += 40
+    }
+    let lowerId = v.identifier.lowercased()
+    let lowerName = v.name.lowercased()
+    if lowerId.contains("siri") || lowerName.contains("siri") {
+      score += 50
+    }
+    if lowerId.contains("premium") || lowerId.contains("enhanced") {
+      score += 30
+    }
+    if lowerName.contains("martin") || lowerName.contains("helena") || lowerName.contains("anna") || lowerName.contains("viktor") {
+      score += 15
+    }
+    return score
+  }
+
+  private func resolveBestGermanVoice(preferredId: String?) -> AVSpeechSynthesisVoice? {
+    if let id = preferredId, !id.isEmpty, id != "de-DE-Siri-1",
+       let exact = AVSpeechSynthesisVoice(identifier: id) {
+      return exact
+    }
+    let germanVoices = AVSpeechSynthesisVoice.speechVoices()
+      .filter { $0.language.hasPrefix("de") }
+      .sorted { scoreGermanVoice($0) > scoreGermanVoice($1) }
+    if let best = germanVoices.first {
+      return best
+    }
+    return AVSpeechSynthesisVoice(language: "de-DE")
+  }
+
   private func handleMethodCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "getVoices":
-      let voices = AVSpeechSynthesisVoice.speechVoices()
+      let sortedVoices = AVSpeechSynthesisVoice.speechVoices()
         .filter { $0.language.hasPrefix("de") }
-        .map { v -> [String: Any] in
-          var qualityStr = "default"
-          if v.quality.rawValue == 3 {
-            qualityStr = "premium"
-          } else if v.quality.rawValue == 2 {
-            qualityStr = "enhanced"
-          }
+        .sorted { scoreGermanVoice($0) > scoreGermanVoice($1) }
 
-          var genderStr = "unspecified"
-          if v.gender.rawValue == 1 {
-            genderStr = "male"
-          } else if v.gender.rawValue == 2 {
-            genderStr = "female"
-          }
-
-          return [
-            "identifier": v.identifier,
-            "name": v.name,
-            "language": v.language,
-            "quality": qualityStr,
-            "gender": genderStr
-          ]
+      let voices = sortedVoices.map { v -> [String: Any] in
+        var qualityStr = "default"
+        let lowerId = v.identifier.lowercased()
+        if v.quality.rawValue >= 3 || lowerId.contains("premium") {
+          qualityStr = "premium"
+        } else if v.quality.rawValue == 2 || lowerId.contains("enhanced") || lowerId.contains("siri") {
+          qualityStr = "enhanced"
         }
+
+        var genderStr = "unspecified"
+        if v.gender.rawValue == 1 {
+          genderStr = "male"
+        } else if v.gender.rawValue == 2 {
+          genderStr = "female"
+        }
+
+        return [
+          "identifier": v.identifier,
+          "name": v.name,
+          "language": v.language,
+          "quality": qualityStr,
+          "gender": genderStr
+        ]
+      }
       result(voices)
 
     case "speak":
@@ -221,11 +257,7 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
       }
 
       let utterance = AVSpeechUtterance(string: text)
-      if let id = voiceId, !id.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: id) {
-        utterance.voice = voice
-      } else {
-        utterance.voice = AVSpeechSynthesisVoice(language: "de-DE")
-      }
+      utterance.voice = resolveBestGermanVoice(preferredId: voiceId)
 
       var speechRate = AVSpeechUtteranceDefaultSpeechRate * Float(rateMultiplier)
       if speechRate < AVSpeechUtteranceMinimumSpeechRate {
@@ -236,9 +268,14 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
       utterance.rate = speechRate
 
       var speechPitch = Float(pitchMultiplier)
+      if abs(speechPitch - 1.0) <= 0.06 {
+        speechPitch = 1.0
+      }
       if speechPitch < 0.5 { speechPitch = 0.5 }
       if speechPitch > 2.0 { speechPitch = 2.0 }
       utterance.pitchMultiplier = speechPitch
+      utterance.preUtteranceDelay = 0.04
+      utterance.postUtteranceDelay = 0.08
 
       var speechVol = Float(volume)
       if speechVol < 0.0 { speechVol = 0.0 }
@@ -246,7 +283,7 @@ class NativeTtsManager: NSObject, AVSpeechSynthesizerDelegate {
       utterance.volume = speechVol
 
       do {
-        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers, .mixWithOthers])
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .mixWithOthers])
         try AVAudioSession.sharedInstance().setActive(true)
       } catch {
         print("[NativeTtsManager] AudioSession error: \(error)")

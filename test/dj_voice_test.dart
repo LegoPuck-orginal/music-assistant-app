@@ -6,6 +6,7 @@ import 'package:music_assistant_app/models/track.dart';
 import 'package:music_assistant_app/models/virtual_dj_vibe.dart';
 import 'package:music_assistant_app/providers/music_provider.dart';
 import 'package:music_assistant_app/services/native_tts_service.dart';
+import 'package:music_assistant_app/services/ollama_service.dart';
 import 'package:music_assistant_app/services/storage_service.dart';
 import 'package:music_assistant_app/services/virtual_dj_service.dart';
 import 'package:music_assistant_app/widgets/dj_voice_settings_sheet.dart';
@@ -76,9 +77,9 @@ void main() {
         duckingVolumePercent: 30,
         audioOutput: DjAudioOutput.activeSpeaker,
         enableOllamaLlm: false,
-        ollamaHost: 'http://192.168.188.244:11434',
+        ollamaHost: 'http://192.168.1.200:11434',
         ollamaModel: 'mistral:latest',
-        localTtsUrl: 'http://192.168.188.25:8123',
+        localTtsUrl: 'http://192.168.1.50:8123',
         localTtsToken: 'secret_token_123',
         openAiEndpoint: 'http://127.0.0.1:8000/v1/audio/speech',
         openAiVoice: 'onyx',
@@ -96,9 +97,9 @@ void main() {
       expect(restored.duckingVolumePercent, equals(30));
       expect(restored.audioOutput, equals(DjAudioOutput.activeSpeaker));
       expect(restored.enableOllamaLlm, isFalse);
-      expect(restored.ollamaHost, equals('http://192.168.188.244:11434'));
+      expect(restored.ollamaHost, equals('http://192.168.1.200:11434'));
       expect(restored.ollamaModel, equals('mistral:latest'));
-      expect(restored.localTtsUrl, equals('http://192.168.188.25:8123'));
+      expect(restored.localTtsUrl, equals('http://192.168.1.50:8123'));
       expect(restored.localTtsToken, equals('secret_token_123'));
     });
 
@@ -139,13 +140,39 @@ void main() {
       final speech = await service.composeDjSpeech(
         settings: settings,
         vibe: vibe,
-        userName: 'Tim',
+        userName: 'Alex',
         nextTrack: track,
       );
 
-      expect(speech, contains('Tim'));
+      expect(speech, contains('Alex'));
       expect(speech, contains('Bohemian Rhapsody'));
       expect(speech, contains('Queen'));
+    });
+
+    test('OllamaService cleans track titles, slashes in artists, and LLM artifacts for speech', () {
+      expect(
+        OllamaService.cleanTrackTitleForSpeech('01 - Nightcall - Titelsong'),
+        equals('Nightcall'),
+      );
+      expect(
+        OllamaService.cleanTrackTitleForSpeech('Rosanna (Remastered 2023) [Explicit]'),
+        equals('Rosanna'),
+      );
+      expect(
+        OllamaService.cleanArtistForSpeech('Artist One/Artist Two/Artist Three'),
+        equals('Artist One und Artist Two'),
+      );
+      expect(
+        OllamaService.sanitizeLlmSpeech(
+          'Hier ist deine Moderation: "Hey Alex! [Musik startet] **Hör mal rein** in diesen Song!" (lacht)',
+        ),
+        equals('Hey Alex! Hör mal rein in diesen Song!'),
+      );
+      final hosts = OllamaService().resolveCandidateHosts(
+        'http://127.0.0.1:11434',
+        fallbackServerUrl: 'http://192.168.1.50:8095',
+      );
+      expect(hosts, contains('http://192.168.1.50:11434'));
     });
 
     test('NativeTtsService provides German studio and neural fallback voices', () async {

@@ -29,9 +29,8 @@ class StorageService {
   static const String _keyCustomPlaylists = 'mass_custom_playlists';
   static const String _keyRecentlyPlayed = 'mass_recently_played';
 
-  // Standardmäßiger lokaler Entwickler-Token (optional für Tests)
-  static const String defaultAdminToken =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqQVBSWElJMUVBa2hBVVNTODEwYVhLU2ZhaWhwQmY1anlzcnJUQ1RQUnpRIiwianRpIjoiYy1KNjdBMklRRTUyeGY4U3dYOXYyREI4VUlMSEg5S1VESi1qOVV5S0tNOCIsImlhdCI6MTc5MDQyNjA3MywiZXhwIjoxODIxOTYyMDczLCJ1c2VybmFtZSI6InRpbS1tIiwicm9sZSI6ImFkbWluIiwidG9rZW5fbmFtZSI6Imxlbm92by1sZWdpb25lIiwiaXNfbG9uZ19saXZlZCI6dHJ1ZX0.UNJl7eX_ycLgIjK0tP6WBZeuE8EoWejNn3BA0yiX_k4';
+  // Kein hartcodierter persönlicher Token im App-Code (Datenschutz)
+  static const String defaultAdminToken = '';
 
   Future<bool> hasCompletedWelcomeGuide() async {
     final prefs = await SharedPreferences.getInstance();
