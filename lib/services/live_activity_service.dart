@@ -33,8 +33,12 @@ class LiveActivityService {
         return;
       }
 
+      final artUrl = track?.imageUrl ??
+          provider.activePlayer?.currentImageUrl ??
+          '';
+
       final signature =
-          '${track?.id}_${isPlaying}_${speakerName}_${vibeTitle}_${isDjSpeaking}_$speechText';
+          '${track?.id}_${artUrl}_${isPlaying}_${speakerName}_${vibeTitle}_${isDjSpeaking}_$speechText';
       if (signature == _lastSignature) {
         return;
       }
@@ -42,8 +46,8 @@ class LiveActivityService {
 
       final data = {
         'trackTitle': track?.title ?? 'Music Assistant',
-        'artist': track?.artist ?? 'Spotify',
-        'albumArtUrl': track?.imageUrl ?? '',
+        'artist': track?.artist ?? 'Music Assistant',
+        'albumArtUrl': artUrl,
         'isPlaying': isPlaying,
         'speakerName': speakerName,
         'djVibe': vibeTitle,

@@ -357,8 +357,11 @@ class MassApiService {
       completer.completeError(Exception('WebSocket is not connected'));
     }
 
-    // Timeout after 5 seconds
-    return completer.future.timeout(const Duration(seconds: 5), onTimeout: () {
+    // play_media answers only after the server has resolved the stream and started the speaker
+    final timeoutDuration = command == 'player_queues/play_media'
+        ? const Duration(seconds: 20)
+        : const Duration(seconds: 8);
+    return completer.future.timeout(timeoutDuration, onTimeout: () {
       _pendingRequests.remove(id);
       throw TimeoutException('Command $command timed out');
     });
@@ -375,14 +378,18 @@ class MassApiService {
         for (final p in res) {
           final map = p as Map<String, dynamic>;
           final type = map['type']?.toString().toLowerCase() ?? '';
-          // Filter out lights (Philips Hue synced lights in Sendspin)
-          if (type == 'light') continue;
-
           final playerId = map['player_id']?.toString() ?? '';
+          final provider = map['provider']?.toString() ?? 'generic';
+          // Filter out lights (Philips Hue synced lights in Sendspin)
+          if (type == 'light' ||
+              playerId.startsWith('hue-') ||
+              provider.toLowerCase().contains('hue')) {
+            continue;
+          }
+
           final name = map['display_name']?.toString() ??
               map['name']?.toString() ??
               'Player';
-          final provider = map['provider']?.toString() ?? 'generic';
           final state = map['playback_state']?.toString() ??
               map['state']?.toString() ??
               'idle';
@@ -390,14 +397,16 @@ class MassApiService {
           final isMuted = map['volume_muted'] as bool? ?? false;
           final available = map['available'] as bool? ?? true;
           final syncedTo = map['synced_to']?.toString();
-          final groupChilds = (map['group_childs'] as List?)
-                  ?.map((e) => e.toString())
-                  .toList() ??
-              const <String>[];
-          final canSyncWith = (map['can_sync_with'] as List?)
-                  ?.map((e) => e.toString())
-                  .toList() ??
-              const <String>[];
+          final rawGroupMembers =
+              (map['group_members'] as List?) ?? (map['group_childs'] as List?);
+          final groupChilds =
+              rawGroupMembers?.map((e) => e.toString()).toList() ??
+                  const <String>[];
+          final rawCanGroupWith =
+              (map['can_group_with'] as List?) ?? (map['can_sync_with'] as List?);
+          final canSyncWith =
+              rawCanGroupWith?.map((e) => e.toString()).toList() ??
+                  const <String>[];
 
           final currentMedia = map['current_media'] as Map<String, dynamic>?;
           final currentTitle = currentMedia?['title']?.toString();
@@ -688,6 +697,49 @@ class MassApiService {
     };
   }
 
+  /// Löst ein Music Assistant Image-Objekt oder einen Pfad zuverlässig in eine vollständige HTTP(S)-URL auf.
+  /// Unterstützt sowohl direkte HTTPS-URLs als auch den Music Assistant `/imageproxy`-Endpunkt (Schema 31+).
+  String? resolveImageUrl(dynamic imgObj) {
+    if (imgObj == null) return null;
+    final cleanBase = _serverUrl.endsWith('/')
+        ? _serverUrl.substring(0, _serverUrl.length - 1)
+        : _serverUrl;
+
+    if (imgObj is String) {
+      final trimmed = imgObj.trim();
+      if (trimmed.isEmpty) return null;
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return trimmed;
+      }
+      if (trimmed.startsWith('/')) {
+        return '$cleanBase$trimmed';
+      }
+      return '$cleanBase/imageproxy?path=${Uri.encodeQueryComponent(trimmed)}&size=512&fmt=jpg';
+    }
+
+    if (imgObj is Map) {
+      final path = imgObj['path']?.toString().trim() ?? '';
+      final proxyId = imgObj['proxy_id']?.toString().trim() ?? '';
+      final provider = imgObj['provider']?.toString().trim() ?? 'builtin';
+      final remotelyAccessible = imgObj['remotely_accessible'] == true;
+
+      if (path.startsWith('https://') &&
+          (remotelyAccessible || proxyId.isEmpty)) {
+        return path;
+      }
+      if (proxyId.isNotEmpty) {
+        return '$cleanBase/imageproxy/${Uri.encodeComponent(proxyId)}?size=512&fmt=jpg';
+      }
+      if (path.startsWith('http://') || path.startsWith('https://')) {
+        return path;
+      }
+      if (path.isNotEmpty) {
+        return '$cleanBase/imageproxy?path=${Uri.encodeQueryComponent(path)}&provider=${Uri.encodeQueryComponent(provider)}&size=512&fmt=jpg';
+      }
+    }
+    return null;
+  }
+
   Track parseTrack(Map<String, dynamic> map,
           {String defaultProvider = 'library'}) =>
       _parseTrack(map, defaultProvider: defaultProvider);
@@ -714,34 +766,43 @@ class MassApiService {
     if (map['album'] is Map) {
       final albumMap = map['album'] as Map<String, dynamic>;
       albumName = albumMap['name']?.toString() ?? '';
-      if (albumMap['image'] is Map) {
-        imageUrl = albumMap['image']['path']?.toString();
+      imageUrl = resolveImageUrl(albumMap['image']);
+      if (imageUrl == null &&
+          albumMap['metadata'] is Map &&
+          albumMap['metadata']['images'] is List &&
+          (albumMap['metadata']['images'] as List).isNotEmpty) {
+        imageUrl =
+            resolveImageUrl((albumMap['metadata']['images'] as List).first);
       }
     } else if (map['podcast'] is Map) {
       final pod = map['podcast'] as Map<String, dynamic>;
       albumName = pod['name']?.toString() ?? '';
-      if (pod['metadata'] is Map) {
+      imageUrl = resolveImageUrl(pod['image']);
+      if (imageUrl == null && pod['metadata'] is Map) {
         final meta = pod['metadata'] as Map<String, dynamic>;
         if (meta['images'] is List && (meta['images'] as List).isNotEmpty) {
-          imageUrl = (meta['images'] as List).first['path']?.toString();
+          imageUrl = resolveImageUrl((meta['images'] as List).first);
         }
       }
     }
 
     String? previewUrl;
-    if (imageUrl == null && map['metadata'] is Map) {
+    if (map['metadata'] is Map) {
       final meta = map['metadata'] as Map<String, dynamic>;
-      if (meta['images'] is List && (meta['images'] as List).isNotEmpty) {
-        imageUrl = (meta['images'] as List).first['path']?.toString();
+      if (imageUrl == null &&
+          meta['images'] is List &&
+          (meta['images'] as List).isNotEmpty) {
+        imageUrl = resolveImageUrl((meta['images'] as List).first);
       }
       previewUrl = meta['preview']?.toString();
     }
+    imageUrl ??= resolveImageUrl(map['image']);
 
     final duration = (map['duration'] as num?)?.toInt() ?? 180;
     final isLiked = map['favorite'] as bool? ?? false;
-    final realUri = map['uri']?.toString() ??
-        (id.isNotEmpty ? 'library://track/$id' : previewUrl);
     final provider = map['provider']?.toString() ?? defaultProvider;
+    final realUri = map['uri']?.toString() ??
+        (id.isNotEmpty ? '$provider://track/$id' : null);
 
     String? lrcLyrics;
     String? plainLyrics;
@@ -778,12 +839,12 @@ class MassApiService {
     final owner = map['publisher']?.toString() ?? 'Podcast';
     final tracksCount = (map['total_episodes'] as num?)?.toInt() ?? 0;
 
-    String? imageUrl;
+    String? imageUrl = resolveImageUrl(map['image']);
     final metadata = map['metadata'] as Map<String, dynamic>?;
-    if (metadata != null && metadata['images'] is List) {
+    if (imageUrl == null && metadata != null && metadata['images'] is List) {
       final images = metadata['images'] as List;
       if (images.isNotEmpty) {
-        imageUrl = images.first['path']?.toString();
+        imageUrl = resolveImageUrl(images.first);
       }
     }
 
@@ -817,12 +878,12 @@ class MassApiService {
         (map['total_tracks'] as num?)?.toInt() ??
         0;
 
-    String? imageUrl;
+    String? imageUrl = resolveImageUrl(map['image']);
     final metadata = map['metadata'] as Map<String, dynamic>?;
-    if (metadata != null && metadata['images'] is List) {
+    if (imageUrl == null && metadata != null && metadata['images'] is List) {
       final images = metadata['images'] as List;
       if (images.isNotEmpty) {
-        imageUrl = images.first['path']?.toString();
+        imageUrl = resolveImageUrl(images.first);
       }
     }
 

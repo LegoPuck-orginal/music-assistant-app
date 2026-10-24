@@ -62,6 +62,7 @@ class MusicProvider extends ChangeNotifier {
   bool _dontStopTheMusic = true;
   DateTime? _sleepTimerEndTime;
   Timer? _sleepTimerCountdown;
+  DateTime? _lastPlayCommandTime;
   Timer? _positionTimer;
   Timer? _positionTicker;
   Timer? _playerPollTimer;
@@ -215,7 +216,7 @@ class MusicProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
   bool get hasCompletedWelcomeGuide => _hasCompletedWelcomeGuide;
-  String get appVersion => '1.11.1';
+  String get appVersion => '1.11.2';
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
@@ -490,7 +491,100 @@ class MusicProvider extends ChangeNotifier {
     // Connect to server and refresh data asynchronously in background
     if (_isAuthenticated && _authToken.isNotEmpty) {
       _connectAndRefresh();
+    } else if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
+      // Automatische Erkennung im Heimnetz (z. B. 192.168.188.25:8095), falls noch kein Token gespeichert war
+      _tryAutoConnectLocalServer();
     }
+  }
+
+  Future<void> _tryAutoConnectLocalServer() async {
+    try {
+      final discovered = await discoverLocalServers();
+      if (discovered.isNotEmpty) {
+        _serverUrl = discovered.first;
+        _authToken = StorageService.defaultAdminToken;
+        _isAuthenticated = true;
+        await _storage.saveServerUrl(_serverUrl);
+        await _storage.saveAuthToken(_authToken);
+        _connectAndRefresh();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[MusicProvider] _tryAutoConnectLocalServer error: $e');
+    }
+  }
+
+  @visibleForTesting
+  PlayerDevice? selectPreferredRealSpeaker(
+    List<PlayerDevice> candidates, {
+    String? savedPlayerId,
+  }) =>
+      _selectPreferredRealSpeaker(candidates, savedPlayerId: savedPlayerId);
+
+  @visibleForTesting
+  String resolveTrackMediaUri(Track track) => _resolveTrackMediaUri(track);
+
+  /// Wählt den besten echten Music Assistant Netzwerk-Lautsprecher aus (niemals local_iphone bevorzugen)
+  PlayerDevice? _selectPreferredRealSpeaker(
+    List<PlayerDevice> candidates, {
+    String? savedPlayerId,
+  }) {
+    final realSpeakers = candidates
+        .where((p) => !p.isLocal && !p.id.startsWith('hue-'))
+        .toList();
+    if (realSpeakers.isEmpty) return null;
+
+    // 1. Aktuell spielender Lautsprecher
+    for (final p in realSpeakers) {
+      if (p.isPlaying && p.isAvailable) return p;
+    }
+
+    // 2. Gespeicherter echter Lautsprecher (niemals 'local_iphone')
+    if (savedPlayerId != null &&
+        savedPlayerId.isNotEmpty &&
+        savedPlayerId != 'local_iphone') {
+      for (final p in realSpeakers) {
+        if (p.id == savedPlayerId && p.isAvailable) return p;
+      }
+    }
+
+    // 3. Bevorzugter Raum-Lautsprecher ('Tim')
+    for (final p in realSpeakers) {
+      if (p.isAvailable && p.name.toLowerCase().contains('tim')) {
+        return p;
+      }
+    }
+
+    // 4. Erster verfügbarer echter Netzwerk-Lautsprecher
+    for (final p in realSpeakers) {
+      if (p.isAvailable) return p;
+    }
+
+    // 5. Fallback auf ersten echten Lautsprecher
+    return realSpeakers.first;
+  }
+
+  /// Löst die saubere, vollständige Music Assistant URI für einen Track auf (keine 30s-Previews!)
+  String _resolveTrackMediaUri(Track track) {
+    final rawUri = track.rawSource?['uri']?.toString();
+    if (rawUri != null &&
+        rawUri.isNotEmpty &&
+        !rawUri.contains('p.scdn.co/mp3-preview') &&
+        !rawUri.contains('rockantenne.hamburg')) {
+      return rawUri;
+    }
+    final uri = track.uri;
+    if (uri != null &&
+        uri.isNotEmpty &&
+        !uri.contains('p.scdn.co/mp3-preview') &&
+        !uri.contains('rockantenne.hamburg') &&
+        !_isImageUrl(uri)) {
+      return uri;
+    }
+    final prov = (track.provider != null && track.provider!.isNotEmpty)
+        ? track.provider!
+        : 'library';
+    return '$prov://track/${track.id}';
   }
 
   /// Prüft GitHub auf verfügbare Updates
@@ -508,7 +602,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.11.1');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.11.2');
   }
 
   void _connectAndRefresh() {
@@ -530,7 +624,23 @@ class MusicProvider extends ChangeNotifier {
 
       _api.configure(_serverUrl, _authToken);
 
-      refreshServerData();
+      if (_api.isConnected) {
+        refreshServerData();
+      } else if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
+        // Falls gespeicherte Server-URL (z. B. homeassistant.local) nicht auflöst, automatisch im LAN suchen
+        Future.delayed(const Duration(milliseconds: 2200), () async {
+          if (!_api.isConnected && _isAuthenticated) {
+            final discovered = await discoverLocalServers();
+            if (discovered.isNotEmpty && discovered.first != _serverUrl) {
+              debugPrint(
+                  '[MusicProvider] Switching to discovered server ${discovered.first}');
+              _serverUrl = discovered.first;
+              await _storage.saveServerUrl(_serverUrl);
+              _api.configure(_serverUrl, _authToken);
+            }
+          }
+        });
+      }
 
       // Kontinuierliche, flüssige Taktung der Live-Position auf Basis der echten Server-Anker
       _positionTicker?.cancel();
@@ -624,13 +734,15 @@ class MusicProvider extends ChangeNotifier {
               effectiveTitle = parsed.title;
               effectiveArtist = parsed.artist;
               effectiveAlbum = parsed.album;
-              effectiveImageUrl = parsed.imageUrl;
+              effectiveImageUrl = parsed.imageUrl ??
+                  _api.resolveImageUrl(cMap['image']) ??
+                  effectiveImageUrl;
             } else {
               final parsedFallback = _parseQueueItemFallback(cMap);
               effectiveTitle = parsedFallback.title;
               effectiveArtist = parsedFallback.artist;
               effectiveAlbum = parsedFallback.album;
-              effectiveImageUrl = parsedFallback.imageUrl;
+              effectiveImageUrl = parsedFallback.imageUrl ?? effectiveImageUrl;
             }
           }
         }
@@ -671,10 +783,31 @@ class MusicProvider extends ChangeNotifier {
         }
       }
 
+      final isPlayStarting = _lastPlayCommandTime != null &&
+          DateTime.now().difference(_lastPlayCommandTime!) <
+              const Duration(seconds: 5);
+
+      // Falls aktuell noch local_iphone ausgewählt ist, aber echte Netzwerk-Lautsprecher verfügbar sind: Automatisch auf echten Speaker wechseln!
+      if (_activePlayer == null || _activePlayer!.isLocal) {
+        final preferred = _selectPreferredRealSpeaker(_players);
+        if (preferred != null) {
+          _activePlayer = preferred.copyWith(isSelected: true);
+          for (final p in _players) {
+            p.isSelected = (p.id == _activePlayer!.id);
+          }
+          await _storage.saveActivePlayerId(_activePlayer!.id);
+          changed = true;
+        }
+      }
+
       // Falls aktuell kein Lautsprecher aktiv spielt, aber im Haus Musik läuft: Automatisch ankoppeln!
       if (activePlayingDevice != null &&
-          (_activePlayer == null || !_activePlayer!.isPlaying)) {
+          (_activePlayer == null || !_activePlayer!.isPlaying) &&
+          !isPlayStarting) {
         _activePlayer = activePlayingDevice.copyWith(isSelected: true);
+        for (final p in _players) {
+          p.isSelected = (p.id == _activePlayer!.id);
+        }
         _isPlaying = true;
         if (activePlayingDevice.hasActiveTrack) {
           _currentTrack = Track(
@@ -695,7 +828,7 @@ class MusicProvider extends ChangeNotifier {
               Duration(seconds: activePlayingDevice.elapsedTimeSeconds!);
         }
         changed = true;
-      } else if (_activePlayer != null) {
+      } else if (_activePlayer != null && !isPlayStarting) {
         // Falls der aktive Lautsprecher läuft, dessen Werte nachführen
         final matching = _players.firstWhere((p) => p.id == _activePlayer!.id,
             orElse: () => _activePlayer!);
@@ -809,12 +942,7 @@ class MusicProvider extends ChangeNotifier {
         AudioContext(
           iOS: AudioContextIOS(
             category: AVAudioSessionCategory.playback,
-            options: {
-              AVAudioSessionOptions.defaultToSpeaker,
-              AVAudioSessionOptions.allowBluetooth,
-              AVAudioSessionOptions.allowBluetoothA2DP,
-              AVAudioSessionOptions.allowAirPlay,
-            },
+            options: const {},
           ),
           android: AudioContextAndroid(
             isSpeakerphoneOn: false,
@@ -918,11 +1046,9 @@ class MusicProvider extends ChangeNotifier {
     }
 
     if (imageUrl == null && item['image'] != null) {
-      if (item['image'] is String) {
-        imageUrl = item['image'].toString();
-      } else if (item['image'] is Map && item['image']['path'] != null) {
-        imageUrl = item['image']['path'].toString();
-      }
+      imageUrl = _api.resolveImageUrl(item['image']);
+    } else if (imageUrl != null) {
+      imageUrl = _api.resolveImageUrl(imageUrl) ?? imageUrl;
     }
 
     return Track(
@@ -979,7 +1105,26 @@ class MusicProvider extends ChangeNotifier {
           trackDuration = (currentMap['duration'] as num?)?.toDouble();
           final mediaItem = currentMap['media_item'] as Map<dynamic, dynamic>?;
           if (mediaItem != null) {
-            track = _api.parseTrack(Map<String, dynamic>.from(mediaItem));
+            final parsed =
+                _api.parseTrack(Map<String, dynamic>.from(mediaItem));
+            final fallbackImg = _api.resolveImageUrl(currentMap['image']);
+            track = (parsed.imageUrl == null && fallbackImg != null)
+                ? Track(
+                    id: parsed.id,
+                    title: parsed.title,
+                    artist: parsed.artist,
+                    album: parsed.album,
+                    durationSeconds: parsed.durationSeconds,
+                    imageUrl: fallbackImg,
+                    uri: parsed.uri,
+                    previewUrl: parsed.previewUrl,
+                    provider: parsed.provider,
+                    isLiked: parsed.isLiked,
+                    lrcLyrics: parsed.lrcLyrics,
+                    plainLyrics: parsed.plainLyrics,
+                    rawSource: parsed.rawSource,
+                  )
+                : parsed;
           } else {
             track = _parseQueueItemFallback(currentMap);
           }
@@ -1145,17 +1290,27 @@ class MusicProvider extends ChangeNotifier {
           );
 
           if (currentTitle != null && currentTitle.isNotEmpty) {
+            final resolvedImg = _api.resolveImageUrl(currentImageUrl) ??
+                _activePlayer!.currentImageUrl ??
+                _currentTrack?.imageUrl;
+            final sameTitle = _currentTrack?.title == currentTitle;
             _currentTrack = Track(
-              id: playerId,
+              id: sameTitle ? (_currentTrack?.id ?? playerId) : playerId,
               title: currentTitle,
-              artist: currentArtist ?? '',
-              album: currentAlbum ?? '',
-              durationSeconds: currentDuration ?? 180,
-              imageUrl: currentImageUrl,
-              uri: currentUri,
-              isLiked: _likedTrackIds.contains(playerId),
+              artist: currentArtist ?? (_currentTrack?.artist ?? ''),
+              album: currentAlbum ?? (_currentTrack?.album ?? ''),
+              durationSeconds:
+                  currentDuration ?? (_currentTrack?.durationSeconds ?? 180),
+              imageUrl: resolvedImg,
+              uri: currentUri ?? _currentTrack?.uri,
+              isLiked: _likedTrackIds
+                  .contains(sameTitle ? (_currentTrack?.id ?? playerId) : playerId),
+              lrcLyrics: sameTitle ? _currentTrack?.lrcLyrics : null,
+              plainLyrics: sameTitle ? _currentTrack?.plainLyrics : null,
             );
-            _totalDuration = Duration(seconds: currentDuration ?? 180);
+            _totalDuration = Duration(
+                seconds:
+                    currentDuration ?? (_currentTrack?.durationSeconds ?? 180));
           }
 
           if (elapsedTime != null) {
@@ -1231,13 +1386,15 @@ class MusicProvider extends ChangeNotifier {
               effectiveTitle = parsed.title;
               effectiveArtist = parsed.artist;
               effectiveAlbum = parsed.album;
-              effectiveImageUrl = parsed.imageUrl;
+              effectiveImageUrl = parsed.imageUrl ??
+                  _api.resolveImageUrl(cMap['image']) ??
+                  effectiveImageUrl;
             } else {
               final parsedFallback = _parseQueueItemFallback(cMap);
               effectiveTitle = parsedFallback.title;
               effectiveArtist = parsedFallback.artist;
               effectiveAlbum = parsedFallback.album;
-              effectiveImageUrl = parsedFallback.imageUrl;
+              effectiveImageUrl = parsedFallback.imageUrl ?? effectiveImageUrl;
             }
           }
         }
@@ -1264,7 +1421,10 @@ class MusicProvider extends ChangeNotifier {
       );
 
       // Put real Multiroom network speakers first
-      _players = [...enrichedPlayers, localIPhone];
+      _players = [
+        ...enrichedPlayers,
+        if (_allowLocalPlayback) localIPhone,
+      ];
 
       // Priorität 1: Ein Lautsprecher spielt gerade aktiv im Netzwerk
       if (activelyPlaying != null) {
@@ -1287,31 +1447,17 @@ class MusicProvider extends ChangeNotifier {
               Duration(seconds: activelyPlaying.elapsedTimeSeconds!);
         }
         await _storage.saveActivePlayerId(_activePlayer!.id);
-      } else {
-        // Priorität 2: Gespeicherter Lautsprecher oder Standard
+      } else if (enrichedPlayers.isNotEmpty) {
+        // Priorität 2: Gespeicherter echter Lautsprecher oder bevorzugter Raum-Lautsprecher ('Tim')
+        // WICHTIG: Niemals 'local_iphone' bevorzugen, wenn echte Netzwerk-Lautsprecher verfügbar sind!
         final savedPlayerId = await _storage.loadActivePlayerId();
-        if (savedPlayerId != null) {
-          final match = _players.firstWhere(
-            (p) => p.id == savedPlayerId,
-            orElse: () => _players.first,
-          );
-          _activePlayer = match;
-        } else {
-          PlayerDevice? preferred;
-          for (final p in enrichedPlayers) {
-            if (p.isAvailable && p.name.toLowerCase().contains('tim')) {
-              preferred = p;
-              break;
-            }
-          }
-          preferred ??= enrichedPlayers.firstWhere(
-            (p) => p.isAvailable,
-            orElse: () => localIPhone,
-          );
-          _activePlayer = preferred;
-          if (_activePlayer != null) {
-            await _storage.saveActivePlayerId(_activePlayer!.id);
-          }
+        final preferred = _selectPreferredRealSpeaker(
+          enrichedPlayers,
+          savedPlayerId: savedPlayerId,
+        );
+        _activePlayer = preferred ?? enrichedPlayers.first;
+        if (_activePlayer != null && !_activePlayer!.isLocal) {
+          await _storage.saveActivePlayerId(_activePlayer!.id);
         }
 
         if (_activePlayer != null && _activePlayer!.hasActiveTrack) {
@@ -1333,6 +1479,10 @@ class MusicProvider extends ChangeNotifier {
                 Duration(seconds: _activePlayer!.elapsedTimeSeconds!);
           }
         }
+      } else {
+        // Nur falls gar keine Server-Lautsprecher geladen wurden (z. B. noch nicht verbunden):
+        // _activePlayer nicht als 'local_iphone' in SharedPreferences speichern!
+        _activePlayer ??= localIPhone;
       }
 
       for (final p in _players) {
@@ -1624,6 +1774,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> playTrack(Track track,
       {List<Track>? newQueue, bool radioMode = false}) async {
+    _lastPlayCommandTime = DateTime.now();
     if (_likedTrackIds.contains(track.id)) track.isLiked = true;
     _currentTrack = track;
     _isPlaying = true;
@@ -1645,10 +1796,39 @@ class MusicProvider extends ChangeNotifier {
       }
     }
 
-    if (_activePlayer == null && _players.isNotEmpty) {
-      _activePlayer = _players.firstWhere(
-        (p) => !p.isLocal && p.isAvailable,
-        orElse: () => _players.first,
+    // WICHTIG: Niemals versehentlich auf 'local_iphone' bleiben (was bei Spotify-Tracks nur 30s-Previews liefert!),
+    // wenn echte Music Assistant Lautsprecher im Netzwerk verfügbar sind.
+    if (_activePlayer == null || _activePlayer!.isLocal) {
+      if (_api.isConnected &&
+          !_players.any((p) => !p.isLocal && p.isAvailable)) {
+        try {
+          final fetched = await _api.fetchPlayers();
+          if (fetched.isNotEmpty) {
+            final local = _players.where((p) => p.isLocal).toList();
+            _players = [...fetched, ...local];
+          }
+        } catch (e) {
+          debugPrint('[MusicProvider] fetchPlayers in playTrack error: $e');
+        }
+      }
+      final preferred = _selectPreferredRealSpeaker(_players);
+      if (preferred != null) {
+        _activePlayer = preferred.copyWith(isSelected: true);
+        for (final p in _players) {
+          p.isSelected = (p.id == _activePlayer!.id);
+        }
+        await _storage.saveActivePlayerId(_activePlayer!.id);
+      } else if (_activePlayer == null && _players.isNotEmpty) {
+        _activePlayer = _players.first;
+      }
+    }
+
+    if (_activePlayer != null && !_activePlayer!.isLocal) {
+      _positionTracker.setAnchor(
+        queueId: _activePlayer!.id,
+        elapsedSec: 0.0,
+        isPlaying: true,
+        durationSec: track.durationSeconds.toDouble(),
       );
     }
 
@@ -1677,8 +1857,54 @@ class MusicProvider extends ChangeNotifier {
       }
     }
 
-    // 2. Wiedergabe: Lokales iPhone vs Remote-Lautsprecher
-    if (isLocalPlayback) {
+    // 2. Wiedergabe: Echter Music Assistant Lautsprecher (Volle Songlänge!) vs. Lokaler Fallback
+    if (!isLocalPlayback && _activePlayer != null) {
+      // Externer Netzwerk-Lautsprecher (Sonos, AirPlay, Chromecast, Universal, etc.)
+      await _localAudioPlayer.stop();
+      unawaited(AppleNowPlayingService.instance.sync(this, force: true));
+      _startPositionTimer();
+      final mediaUri = _resolveTrackMediaUri(track);
+      try {
+        // Zuerst den gewählten Song einzeln mit 'replace' starten -> startet sofort in voller Länge!
+        await _api.playMedia(
+          _activePlayer!.id,
+          mediaUri,
+          option: 'replace',
+          radioMode: radioMode,
+        );
+
+        // Falls eine Liste (Album, Playlist, Hörbuch) übergeben wurde, die nachfolgenden Titel nahtlos anhängen
+        if (!radioMode && newQueue != null && newQueue.length > 1) {
+          final startIdx = newQueue.indexWhere((t) => t.id == track.id);
+          final afterTracks = startIdx != -1 && startIdx + 1 < newQueue.length
+              ? newQueue.sublist(startIdx + 1)
+              : <Track>[];
+          if (afterTracks.isNotEmpty) {
+            final nextUris =
+                afterTracks.take(25).map(_resolveTrackMediaUri).toList();
+            unawaited(
+              _api
+                  .playMedia(
+                    _activePlayer!.id,
+                    nextUris,
+                    option: 'add',
+                  )
+                  .catchError((e) {
+                debugPrint('[MusicProvider] Background queue add error: $e');
+              }),
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('[MusicProvider] Remote playMedia error: $e');
+        if (e is! TimeoutException) {
+          try {
+            await _api.playerPlay(_activePlayer!.id);
+          } catch (_) {}
+        }
+      }
+    } else {
+      // Lokaler Fallback (nur falls kein Server verbunden ist oder gar keine Netzwerk-Lautsprecher existieren)
       _positionTimer?.cancel();
       try {
         String? playUrl;
@@ -1686,11 +1912,12 @@ class MusicProvider extends ChangeNotifier {
         // Falls Track bereits eine direkte Audio-Stream-URL hat (z. B. Radio/Hörbuch)
         if (track.uri != null &&
             track.uri!.startsWith('http') &&
+            !track.uri!.contains('p.scdn.co/mp3-preview') &&
             !_isImageUrl(track.uri!)) {
           playUrl = track.uri;
         }
 
-        // Falls mit Server verbunden, Stream/Preview-Endpunkt abrufen
+        // Falls mit Server verbunden, Stream-Endpunkt bevorzugen
         if (playUrl == null && _api.isConnected) {
           playUrl = await _api.fetchTrackPreviewUrl(track);
           playUrl ??=
@@ -1714,34 +1941,6 @@ class MusicProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('[MusicProvider] Local play error: $e');
         _startPositionTimer();
-      }
-    } else if (_activePlayer != null) {
-      // Externer Netzwerk-Lautsprecher (Sonos, AirPlay, etc.)
-      await _localAudioPlayer.stop();
-      _startPositionTimer();
-      final mediaUri = track.uri ?? 'library://track/${track.id}';
-      try {
-        if (!radioMode && newQueue != null && newQueue.length > 1) {
-          final uris = newQueue
-              .map((t) => t.uri ?? 'library://track/${t.id}')
-              .toList();
-          await _api.playMedia(
-            _activePlayer!.id,
-            uris,
-            option: 'replace',
-            startItem: mediaUri,
-          );
-        } else {
-          await _api.playMedia(
-            _activePlayer!.id,
-            mediaUri,
-            option: 'replace',
-            radioMode: radioMode,
-          );
-        }
-      } catch (e) {
-        debugPrint('[MusicProvider] Remote playMedia error: $e');
-        await _api.playerPlay(_activePlayer!.id);
       }
     }
   }
@@ -1774,8 +1973,7 @@ class MusicProvider extends ChangeNotifier {
 
     if (!isLocalPlayback && _activePlayer != null && _api.isConnected) {
       try {
-        final uris =
-            tracks.map((t) => t.uri ?? 'library://track/${t.id}').toList();
+        final uris = tracks.map(_resolveTrackMediaUri).toList();
         await _api.playMedia(
           _activePlayer!.id,
           uris,
@@ -2041,7 +2239,7 @@ class MusicProvider extends ChangeNotifier {
       notifyListeners();
 
       if (wasPlaying && _currentTrack != null) {
-        final mediaUri = _currentTrack!.uri ?? 'library://track/${_currentTrack!.id}';
+        final mediaUri = _resolveTrackMediaUri(_currentTrack!);
         try {
           await _api.playMedia(player.id, mediaUri);
           _isPlaying = true;
@@ -2073,7 +2271,7 @@ class MusicProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('[MusicProvider] transferQueue error: $e');
         if (_currentTrack != null) {
-          final mediaUri = _currentTrack!.uri ?? 'library://track/${_currentTrack!.id}';
+          final mediaUri = _resolveTrackMediaUri(_currentTrack!);
           await _api.playMedia(player.id, mediaUri);
         }
       }
@@ -2083,7 +2281,9 @@ class MusicProvider extends ChangeNotifier {
       p.isSelected = (p.id == player.id);
     }
     _activePlayer = player;
-    await _storage.saveActivePlayerId(player.id);
+    if (!player.isLocal) {
+      await _storage.saveActivePlayerId(player.id);
+    }
 
     if (player.hasActiveTrack) {
       _currentTrack = Track(
@@ -2310,9 +2510,6 @@ class MusicProvider extends ChangeNotifier {
   Future<void> jumpToQueueIndex(int index) async {
     if (index >= 0 && index < _queue.length) {
       _queueIndex = index;
-      if (_activePlayer != null && !_activePlayer!.isLocal) {
-        await _api.playQueueIndex(_activePlayer!.id, index);
-      }
       await playTrack(_queue[index]);
     }
   }

@@ -84,6 +84,10 @@ class RecommendationItem {
   }
 
   Track toTrack() {
+    final prov = raw['provider']?.toString() ?? 'library';
+    final effectiveUri = uri.isNotEmpty
+        ? uri
+        : (id.isNotEmpty ? '$prov://track/$id' : null);
     return Track(
       id: id,
       title: name,
@@ -93,8 +97,9 @@ class RecommendationItem {
           : '',
       durationSeconds: durationSeconds,
       imageUrl: imageUrl,
-      uri: uri.isNotEmpty ? uri : null,
-      provider: raw['provider']?.toString(),
+      uri: effectiveUri,
+      provider: prov,
+      rawSource: raw,
     );
   }
 

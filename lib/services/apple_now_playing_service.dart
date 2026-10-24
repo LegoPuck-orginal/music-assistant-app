@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import '../providers/music_provider.dart';
 
 /// Steuert die native Apple MediaPlayer Integration (`MPNowPlayingInfoCenter` & `MPRemoteCommandCenter`).
@@ -21,6 +23,8 @@ class AppleNowPlayingService {
   MusicProvider? _provider;
   bool _initialized = false;
   String _lastSignature = '';
+  String _inFlightArtUrl = '';
+  final Map<String, Uint8List> _artworkByteCache = {};
 
   /// Initialisiert den Listener für Apple Remote Commands (Apple Watch Crown, AirPods, Sperrbildschirm)
   void initialize(MusicProvider provider) {
@@ -76,8 +80,26 @@ class AppleNowPlayingService {
     });
   }
 
+  String _resolveArtUrl(MusicProvider provider) {
+    String raw = provider.currentTrack?.imageUrl ??
+        provider.activePlayer?.currentImageUrl ??
+        '';
+    raw = raw.trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return raw;
+    }
+    final base = provider.serverUrl.endsWith('/')
+        ? provider.serverUrl.substring(0, provider.serverUrl.length - 1)
+        : provider.serverUrl;
+    if (raw.startsWith('/')) {
+      return '$base$raw';
+    }
+    return '$base/imageproxy?path=${Uri.encodeQueryComponent(raw)}&size=512&fmt=jpg';
+  }
+
   /// Synchronisiert den aktuellen Track & Status mit Apple MediaPlayer
-  Future<void> sync(MusicProvider provider) async {
+  Future<void> sync(MusicProvider provider, {bool force = false}) async {
     _provider = provider;
     try {
       final track = provider.currentTrack;
@@ -96,11 +118,13 @@ class AppleNowPlayingService {
       final title = track?.title ?? 'Music Assistant';
       final artist = track?.artist ?? 'Unbekannter Interpret';
       final album = track?.album ?? 'Music Assistant';
-      final artUrl = track?.imageUrl ?? '';
+      final artUrl = _resolveArtUrl(provider);
+      final cachedBytes =
+          artUrl.isNotEmpty ? _artworkByteCache[artUrl] : null;
 
       final signature =
-          '$title-$artist-$album-$isPlaying-${durSeconds.toInt()}';
-      if (signature == _lastSignature) {
+          '$title|$artist|$album|$isPlaying|${durSeconds.toInt()}|$artUrl|${cachedBytes != null}';
+      if (!force && signature == _lastSignature) {
         return;
       }
       _lastSignature = signature;
@@ -113,26 +137,65 @@ class AppleNowPlayingService {
         'positionSeconds': posSeconds,
         'isPlaying': isPlaying,
         'artworkUrl': artUrl,
+        'artworkBytes': ?cachedBytes,
       });
+
+      if (artUrl.isNotEmpty &&
+          cachedBytes == null &&
+          _inFlightArtUrl != artUrl &&
+          !kIsWeb &&
+          !Platform.environment.containsKey('FLUTTER_TEST')) {
+        _prefetchArtworkBytes(artUrl, provider);
+      }
     } catch (e) {
       debugPrint('[AppleNowPlayingService] sync error: $e');
     }
   }
 
+  Future<void> _prefetchArtworkBytes(
+      String artUrl, MusicProvider provider) async {
+    _inFlightArtUrl = artUrl;
+    try {
+      final uri = Uri.tryParse(artUrl);
+      if (uri == null) return;
+      final response =
+          await http.get(uri).timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+        if (_artworkByteCache.length >= 24) {
+          _artworkByteCache.remove(_artworkByteCache.keys.first);
+        }
+        _artworkByteCache[artUrl] = response.bodyBytes;
+        if (_resolveArtUrl(provider) == artUrl) {
+          await sync(provider, force: true);
+        }
+      }
+    } catch (e) {
+      debugPrint('[AppleNowPlayingService] artwork prefetch error: $e');
+    } finally {
+      if (_inFlightArtUrl == artUrl) {
+        _inFlightArtUrl = '';
+      }
+    }
+  }
+
   /// Synchronisiert eine manuelle Scrubbing/Seek-Position
   Future<void> syncSeek(double posSeconds) async {
-    final track = _provider?.currentTrack;
-    if (track == null) return;
+    final p = _provider;
+    final track = p?.currentTrack;
+    if (p == null || track == null) return;
     try {
+      final artUrl = _resolveArtUrl(p);
+      final cachedBytes =
+          artUrl.isNotEmpty ? _artworkByteCache[artUrl] : null;
       await _channel.invokeMethod('updateNowPlaying', {
         'title': track.title,
         'artist': track.artist,
         'album': track.album,
-        'durationSeconds':
-            (_provider?.totalDuration.inMilliseconds ?? 0) / 1000.0,
+        'durationSeconds': p.totalDuration.inMilliseconds / 1000.0,
         'positionSeconds': posSeconds,
-        'isPlaying': _provider?.isPlaying ?? false,
-        'artworkUrl': track.imageUrl ?? '',
+        'isPlaying': p.isPlaying,
+        'artworkUrl': artUrl,
+        'artworkBytes': ?cachedBytes,
       });
     } catch (_) {}
   }

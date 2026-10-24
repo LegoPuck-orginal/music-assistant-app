@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import UIKit
 import ActivityKit
 
 #if canImport(ActivityKit)
@@ -9,6 +10,7 @@ public struct MusicAssistantActivityAttributes: ActivityAttributes {
         public var trackTitle: String
         public var artist: String
         public var albumArtUrl: String
+        public var albumArtBase64: String?
         public var isPlaying: Bool
         public var speakerName: String
         public var djVibe: String
@@ -19,6 +21,7 @@ public struct MusicAssistantActivityAttributes: ActivityAttributes {
             trackTitle: String,
             artist: String,
             albumArtUrl: String,
+            albumArtBase64: String? = nil,
             isPlaying: Bool,
             speakerName: String,
             djVibe: String,
@@ -28,6 +31,7 @@ public struct MusicAssistantActivityAttributes: ActivityAttributes {
             self.trackTitle = trackTitle
             self.artist = artist
             self.albumArtUrl = albumArtUrl
+            self.albumArtBase64 = albumArtBase64
             self.isPlaying = isPlaying
             self.speakerName = speakerName
             self.djVibe = djVibe
@@ -42,23 +46,76 @@ public struct MusicAssistantActivityAttributes: ActivityAttributes {
 }
 
 @available(iOS 16.1, *)
+private struct DynamicIslandArtworkThumb: View {
+    let base64: String?
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    private static let neonEmber = Color(red: 1.0, green: 0.36, blue: 0.0)
+
+    var body: some View {
+        if let b64 = base64,
+           let data = Data(base64Encoded: b64),
+           let uiImg = UIImage(data: data) {
+            Image(uiImage: uiImg)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Self.neonEmber,
+                                Color(red: 0.65, green: 0.14, blue: 0.0)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: size, height: size)
+                Image(systemName: "waveform")
+                    .foregroundColor(.white)
+                    .font(.system(size: size * 0.48, weight: .bold))
+            }
+        }
+    }
+}
+
+@available(iOS 16.1, *)
 struct MusicAssistantDynamicIslandWidget: Widget {
+    private static let neonEmber = Color(red: 1.0, green: 0.36, blue: 0.0)
+
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MusicAssistantActivityAttributes.self) { context in
-            // Lock Screen Live Activity Banner
             LockScreenLiveActivityView(state: context.state)
         } dynamicIsland: { context in
             DynamicIsland {
                 // Expanded Dynamic Island
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(Color(red: 0.11, green: 0.73, blue: 0.33))
-                            .frame(width: 6, height: 6)
-                        Text(context.state.speakerName)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(Color(red: 0.11, green: 0.73, blue: 0.33))
-                            .lineLimit(1)
+                    HStack(spacing: 8) {
+                        DynamicIslandArtworkThumb(
+                            base64: context.state.albumArtBase64,
+                            size: 44,
+                            cornerRadius: 10
+                        )
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(Self.neonEmber)
+                                    .frame(width: 6, height: 6)
+                                Text(context.state.speakerName)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(Self.neonEmber)
+                                    .lineLimit(1)
+                            }
+                            Text(context.state.djVibe)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.gray)
+                                .lineLimit(1)
+                        }
                     }
                     .padding(.leading, 4)
                 }
@@ -66,16 +123,19 @@ struct MusicAssistantDynamicIslandWidget: Widget {
                 DynamicIslandExpandedRegion(.trailing) {
                     HStack(spacing: 3) {
                         ForEach(0..<4) { idx in
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(Color(red: 0.11, green: 0.73, blue: 0.33))
-                                .frame(width: 3, height: CGFloat(context.state.isPlaying ? (6 + (idx * 3)) : 4))
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(Self.neonEmber)
+                                .frame(
+                                    width: 3.5,
+                                    height: CGFloat(context.state.isPlaying ? (8 + (idx * 4)) : 4)
+                                )
                         }
                     }
-                    .padding(.trailing, 4)
+                    .padding(.trailing, 6)
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(context.state.trackTitle)
                             .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
@@ -89,22 +149,12 @@ struct MusicAssistantDynamicIslandWidget: Widget {
                         if context.state.isDjSpeaking, let speech = context.state.djSpeechText {
                             HStack(spacing: 4) {
                                 Image(systemName: "sparkles")
-                                    .foregroundColor(Color(red: 0.11, green: 0.73, blue: 0.33))
+                                    .foregroundColor(Self.neonEmber)
                                     .font(.system(size: 11))
                                 Text(speech)
                                     .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(Color(red: 0.11, green: 0.73, blue: 0.33))
+                                    .foregroundColor(Self.neonEmber)
                                     .lineLimit(1)
-                            }
-                            .padding(.top, 2)
-                        } else {
-                            HStack(spacing: 4) {
-                                Text("Vibe:")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(Color.gray)
-                                Text(context.state.djVibe)
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.white)
                             }
                             .padding(.top, 2)
                         }
@@ -113,54 +163,54 @@ struct MusicAssistantDynamicIslandWidget: Widget {
                     .padding(.bottom, 4)
                 }
             } compactLeading: {
-                // Compact Leading (Pill Left)
-                Image(systemName: "music.note")
-                    .foregroundColor(Color(red: 0.11, green: 0.73, blue: 0.33))
-                    .font(.system(size: 12, weight: .bold))
+                DynamicIslandArtworkThumb(
+                    base64: context.state.albumArtBase64,
+                    size: 22,
+                    cornerRadius: 6
+                )
             } compactTrailing: {
-                // Compact Trailing (Pill Right)
                 HStack(spacing: 2) {
-                    ForEach(0..<3) { idx in
+                    ForEach(0..<4) { idx in
                         RoundedRectangle(cornerRadius: 1)
-                            .fill(Color(red: 0.11, green: 0.73, blue: 0.33))
-                            .frame(width: 2.5, height: CGFloat(context.state.isPlaying ? (5 + (idx * 3)) : 3))
+                            .fill(Self.neonEmber)
+                            .frame(
+                                width: 2.5,
+                                height: CGFloat(context.state.isPlaying ? (5 + ((idx % 3) * 4)) : 3)
+                            )
                     }
                 }
             } minimal: {
-                // Minimal (Shared Pill)
-                Image(systemName: "music.note")
-                    .foregroundColor(Color(red: 0.11, green: 0.73, blue: 0.33))
-                    .font(.system(size: 11))
+                DynamicIslandArtworkThumb(
+                    base64: context.state.albumArtBase64,
+                    size: 20,
+                    cornerRadius: 5
+                )
             }
         }
     }
 }
 
-// Lock Screen Live Activity Widget View
 @available(iOS 16.1, *)
 struct LockScreenLiveActivityView: View {
     let state: MusicAssistantActivityAttributes.ContentState
+    private static let neonEmber = Color(red: 1.0, green: 0.36, blue: 0.0)
 
     var body: some View {
         HStack(spacing: 12) {
-            // Album Art / Disc
-            ZStack {
-                Circle()
-                    .fill(Color(white: 0.15))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "music.note")
-                    .foregroundColor(Color(red: 0.11, green: 0.73, blue: 0.33))
-                    .font(.system(size: 20))
-            }
+            DynamicIslandArtworkThumb(
+                base64: state.albumArtBase64,
+                size: 48,
+                cornerRadius: 10
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(Color(red: 0.11, green: 0.73, blue: 0.33))
+                        .fill(Self.neonEmber)
                         .frame(width: 6, height: 6)
                     Text(state.speakerName)
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(Color(red: 0.11, green: 0.73, blue: 0.33))
+                        .foregroundColor(Self.neonEmber)
                 }
 
                 Text(state.trackTitle)
@@ -176,18 +226,16 @@ struct LockScreenLiveActivityView: View {
 
             Spacer()
 
-            // Playback Equalizer Waves
             HStack(spacing: 3) {
                 ForEach(0..<4) { idx in
                     RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Color(red: 0.11, green: 0.73, blue: 0.33))
-                        .frame(width: 3.5, height: CGFloat(state.isPlaying ? (10 + (idx * 4)) : 4))
+                        .fill(Self.neonEmber)
+                        .frame(width: 3, height: CGFloat(state.isPlaying ? (8 + (idx * 4)) : 4))
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color.black)
+        .padding(14)
+        .background(Color(red: 0.03, green: 0.03, blue: 0.05))
     }
 }
 #endif

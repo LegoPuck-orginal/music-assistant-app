@@ -1,8 +1,10 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:music_assistant_app/models/player_device.dart';
 import 'package:music_assistant_app/models/track.dart';
 import 'package:music_assistant_app/providers/music_provider.dart';
 import 'package:music_assistant_app/services/player_position_tracker.dart';
+import 'package:music_assistant_app/services/storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -232,6 +234,84 @@ void main() {
       expect(provider.losslessStreaming, isFalse);
       expect(provider.crossfadeEnabled, isFalse);
       expect(provider.dontStopTheMusic, isFalse);
+    });
+
+    test(
+        'selectPreferredRealSpeaker ignores saved local_iphone and prioritizes real speaker (Tim)',
+        () {
+      final local = PlayerDevice.localIPhone();
+      final hueLight = PlayerDevice(
+        id: 'hue-65d7c8a1ea3c43ec',
+        name: 'Hue: Tim-Razer',
+        type: 'Companion',
+        isAvailable: true,
+      );
+      final kitchen = PlayerDevice(
+        id: 'RINCON_38420B9E504201400',
+        name: 'Küche',
+        type: 'Sonos',
+        isAvailable: true,
+      );
+      final timSonos = PlayerDevice(
+        id: 'RINCON_38420BB9399301400',
+        name: 'Tim',
+        type: 'Sonos',
+        isAvailable: true,
+      );
+
+      final chosen = provider.selectPreferredRealSpeaker(
+        [local, hueLight, kitchen, timSonos],
+        savedPlayerId: 'local_iphone',
+      );
+      expect(chosen, isNotNull);
+      expect(chosen!.id, 'RINCON_38420BB9399301400');
+      expect(chosen.name, 'Tim');
+    });
+
+    test(
+        'resolveTrackMediaUri strips 30s preview URLs and builds full-length MA track URIs',
+        () {
+      final spotifyTrackWithPreview = Track(
+        id: '6x0aZr7BCu50xkl8TfmqSi',
+        title: '1000 mal berührt',
+        artist: 'Die Zipfelbuben',
+        album: 'Jetzt wird es heiss',
+        durationSeconds: 184,
+        provider: 'spotify--4VhyAjjD',
+        uri:
+            'https://p.scdn.co/mp3-preview/aa674e1677ce7a11b28bd58a06681e7b147f6e5a',
+      );
+
+      expect(
+        provider.resolveTrackMediaUri(spotifyTrackWithPreview),
+        'spotify--4VhyAjjD://track/6x0aZr7BCu50xkl8TfmqSi',
+      );
+
+      final libraryTrack = Track(
+        id: '189',
+        title: '1000 mal berührt',
+        artist: 'Die Zipfelbuben',
+        album: 'Jetzt wird es heiss',
+        durationSeconds: 184,
+        provider: 'library',
+        uri: 'library://track/189',
+      );
+      expect(provider.resolveTrackMediaUri(libraryTrack), 'library://track/189');
+    });
+
+    test('setActivePlayer never persists local_iphone to SharedPreferences',
+        () async {
+      final storage = StorageService();
+      await provider.setActivePlayer(PlayerDevice.localIPhone());
+      expect(await storage.loadActivePlayerId(), isNull);
+
+      final realSpeaker = PlayerDevice(
+        id: 'RINCON_38420BB9399301400',
+        name: 'Tim',
+        type: 'Sonos',
+      );
+      await provider.setActivePlayer(realSpeaker);
+      expect(await storage.loadActivePlayerId(), 'RINCON_38420BB9399301400');
     });
   });
 }
