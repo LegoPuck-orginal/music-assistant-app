@@ -129,7 +129,7 @@ class AppleNowPlayingService {
       }
       _lastSignature = signature;
 
-      await _channel.invokeMethod('updateNowPlaying', {
+      final payload = <String, dynamic>{
         'title': title,
         'artist': artist,
         'album': album,
@@ -137,8 +137,11 @@ class AppleNowPlayingService {
         'positionSeconds': posSeconds,
         'isPlaying': isPlaying,
         'artworkUrl': artUrl,
-        'artworkBytes': ?cachedBytes,
-      });
+      };
+      if (cachedBytes != null) {
+        payload['artworkBytes'] = cachedBytes;
+      }
+      await _channel.invokeMethod('updateNowPlaying', payload);
 
       if (artUrl.isNotEmpty &&
           cachedBytes == null &&
@@ -187,7 +190,7 @@ class AppleNowPlayingService {
       final artUrl = _resolveArtUrl(p);
       final cachedBytes =
           artUrl.isNotEmpty ? _artworkByteCache[artUrl] : null;
-      await _channel.invokeMethod('updateNowPlaying', {
+      final payload = <String, dynamic>{
         'title': track.title,
         'artist': track.artist,
         'album': track.album,
@@ -195,8 +198,11 @@ class AppleNowPlayingService {
         'positionSeconds': posSeconds,
         'isPlaying': p.isPlaying,
         'artworkUrl': artUrl,
-        'artworkBytes': ?cachedBytes,
-      });
+      };
+      if (cachedBytes != null) {
+        payload['artworkBytes'] = cachedBytes;
+      }
+      await _channel.invokeMethod('updateNowPlaying', payload);
     } catch (_) {}
   }
 

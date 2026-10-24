@@ -40,10 +40,18 @@ jobs:
       - name: Dump Failure Logs
         if: failure()
         run: |
-          echo "==================== XCODEBUILD / FLUTTER ERRORS ===================="
-          grep -in -C 5 -E "error:|fatal error:|BUILD FAILED|The following build commands failed" build.log || true
           echo "==================== TAIL OF LOG ===================="
           tail -n 120 build.log
+          echo "==================== XCODEBUILD / SWIFT / FLUTTER ERRORS ===================="
+          grep -in -C 8 -E "error:|fatal error:|BUILD FAILED|The following build commands failed|AppDelegate\.swift" build.log || true
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout -B build-log
+          grep -in -C 10 -E "error:|fatal error:|BUILD FAILED|The following build commands failed|AppDelegate\.swift" build.log > build_error_tail.txt || true
+          tail -n 300 build.log >> build_error_tail.txt || true
+          git add -f build_error_tail.txt
+          git commit -m "chore: save build failure log" || true
+          git push -f origin build-log || true
 
       - name: Extract App Version from Pubspec
         run: |

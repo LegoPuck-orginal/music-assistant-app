@@ -409,12 +409,13 @@ class AppleNowPlayingManager: NSObject {
   private var cachedArtwork: MPMediaItemArtwork?
   private var artworkRequestToken: UInt64 = 0
   private let imageCache = NSCache<NSString, UIImage>()
-  private lazy var fallbackArtwork: MPMediaItemArtwork = makeFallbackArtwork()
+  private var fallbackArtwork: MPMediaItemArtwork?
   private var silentPlayer: AVAudioPlayer?
 
   private override init() {
     super.init()
     imageCache.countLimit = 48
+    fallbackArtwork = makeFallbackArtwork()
     setupSilentKeepAlivePlayer()
   }
 
@@ -422,37 +423,26 @@ class AppleNowPlayingManager: NSObject {
   /// (mit Album-Cover links und animierter Equalizer-Welle rechts) auch dann dauerhaft aktiv hält,
   /// wenn die Musik auf einem externen Music Assistant / Sonos Netzwerk-Lautsprecher läuft.
   private func setupSilentKeepAlivePlayer() {
-    let sampleRate: UInt32 = 22050
-    let numSamples: UInt32 = sampleRate
-    let dataSize: UInt32 = numSamples * 2
-    let fileSize: UInt32 = 36 + dataSize
-
-    var wav = Data()
-    wav.append("RIFF".data(using: .ascii)!)
-    var leFileSize = fileSize.littleEndian
-    wav.append(Data(bytes: &leFileSize, count: 4))
-    wav.append("WAVEfmt ".data(using: .ascii)!)
-    var fmtChunkSize: UInt32 = 16.littleEndian
-    wav.append(Data(bytes: &fmtChunkSize, count: 4))
-    var audioFormat: UInt16 = 1.littleEndian
-    wav.append(Data(bytes: &audioFormat, count: 2))
-    var numChannels: UInt16 = 1.littleEndian
-    wav.append(Data(bytes: &numChannels, count: 2))
-    var leSampleRate = sampleRate.littleEndian
-    wav.append(Data(bytes: &leSampleRate, count: 4))
-    var byteRate: UInt32 = (sampleRate * 2).littleEndian
-    wav.append(Data(bytes: &byteRate, count: 4))
-    var blockAlign: UInt16 = 2.littleEndian
-    wav.append(Data(bytes: &blockAlign, count: 2))
-    var bitsPerSample: UInt16 = 16.littleEndian
-    wav.append(Data(bytes: &bitsPerSample, count: 2))
-    wav.append("data".data(using: .ascii)!)
-    var leDataSize = dataSize.littleEndian
-    wav.append(Data(bytes: &leDataSize, count: 4))
-    wav.append(Data(count: Int(dataSize)))
+    var wavBytes: [UInt8] = [
+      0x52, 0x49, 0x46, 0x46,
+      0x24, 0xAC, 0x00, 0x00,
+      0x57, 0x41, 0x56, 0x45,
+      0x66, 0x6D, 0x74, 0x20,
+      0x10, 0x00, 0x00, 0x00,
+      0x01, 0x00,
+      0x01, 0x00,
+      0x22, 0x56, 0x00, 0x00,
+      0x44, 0xAC, 0x00, 0x00,
+      0x02, 0x00,
+      0x10, 0x00,
+      0x64, 0x61, 0x74, 0x61,
+      0x00, 0xAC, 0x00, 0x00
+    ]
+    wavBytes.append(contentsOf: [UInt8](repeating: 0, count: 44032))
+    let wav = Data(wavBytes)
 
     do {
-      let player = try AVAudioPlayer(data: wav, fileTypeHint: AVFileType.wav.rawValue)
+      let player = try AVAudioPlayer(data: wav)
       player.numberOfLoops = -1
       player.volume = 0.01
       player.prepareToPlay()
@@ -466,100 +456,52 @@ class AppleNowPlayingManager: NSObject {
   /// damit die iOS Dynamic Island niemals ohne Grafik-Asset erscheint.
   private func makeFallbackArtwork() -> MPMediaItemArtwork {
     let size = CGSize(width: 512, height: 512)
-    let format = UIGraphicsImageRendererFormat.default()
-    format.opaque = true
-    format.scale = 1.0
-    let rendered = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
-      let cg = ctx.cgContext
+    let renderer = UIGraphicsImageRenderer(size: size)
+    let rendered = renderer.image { _ in
       let rect = CGRect(origin: .zero, size: size)
-
-      // Obsidian Hintergrund
       UIColor(red: 0.03, green: 0.03, blue: 0.05, alpha: 1.0).setFill()
-      cg.fill(rect)
+      UIBezierPath(rect: rect).fill()
 
-      // Subtiler Neon-Ember Radial-Glow
-      let colorSpace = CGColorSpaceCreateDeviceRGB()
-      let colors = [
-        UIColor(red: 1.0, green: 0.36, blue: 0.0, alpha: 0.42).cgColor,
-        UIColor(red: 0.03, green: 0.03, blue: 0.05, alpha: 1.0).cgColor
-      ] as CFArray
-      if let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: [0.0, 1.0]) {
-        let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        cg.drawRadialGradient(
-          gradient,
-          startCenter: center,
-          startRadius: 10,
-          endCenter: center,
-          endRadius: 240,
-          options: .drawsAfterEndLocation
-        )
+      let center = CGPoint(x: 256, y: 256)
+      UIColor(red: 1.0, green: 0.36, blue: 0.0, alpha: 0.16).setFill()
+      UIBezierPath(ovalIn: CGRect(x: 36, y: 36, width: 440, height: 440)).fill()
+
+      UIColor(red: 0.08, green: 0.08, blue: 0.11, alpha: 1.0).setFill()
+      UIBezierPath(ovalIn: CGRect(x: 60, y: 60, width: 392, height: 392)).fill()
+
+      let radii: [CGFloat] = [180, 155, 130, 105]
+      UIColor(white: 1.0, alpha: 0.09).setStroke()
+      for r in radii {
+        let ring = UIBezierPath(ovalIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2))
+        ring.lineWidth = 2.0
+        ring.stroke()
       }
 
-      // Vinyl-Scheibe & Rillen
-      let center = CGPoint(x: size.width / 2, y: size.height / 2)
-      for r in stride(from: CGFloat(210), through: CGFloat(85), by: -18) {
-        let path = UIBezierPath(
-          arcCenter: center,
-          radius: r,
-          startAngle: 0,
-          endAngle: .pi * 2,
-          clockwise: true
-        )
-        path.lineWidth = 2.0
-        UIColor(white: 1.0, alpha: 0.08).setStroke()
-        path.stroke()
-      }
-
-      // Neon-Ember Center-Label (#FF5C00)
       let labelRect = CGRect(x: center.x - 64, y: center.y - 64, width: 128, height: 128)
       UIColor(red: 1.0, green: 0.36, blue: 0.0, alpha: 1.0).setFill()
       UIBezierPath(ovalIn: labelRect).fill()
 
-      // Equalizer-Balken im Zentrum
-      let barWidths: CGFloat = 12
       let barHeights: [CGFloat] = [28, 52, 38, 46]
-      let totalWidth: CGFloat = CGFloat(barHeights.count) * barWidths + CGFloat(barHeights.count - 1) * 8
-      var x = center.x - totalWidth / 2
+      var x: CGFloat = center.x - 36
       UIColor.white.setFill()
       for h in barHeights {
-        let barRect = CGRect(x: x, y: center.y - h / 2, width: barWidths, height: h)
+        let barRect = CGRect(x: x, y: center.y - (h / 2.0), width: 12, height: h)
         UIBezierPath(roundedRect: barRect, cornerRadius: 6).fill()
-        x += barWidths + 8
+        x += 20
       }
     }
     return makeMediaArtwork(from: rendered)
   }
 
-  /// Normalisiert ein beliebiges UIImage in eine opake sRGB-Bitmap und erzeugt ein MPMediaItemArtwork,
-  /// das jede von SpringBoard (Dynamic Island / Lock Screen / Apple Watch) angeforderte Zielgröße exakt bedient.
-  private func normalizeImage(_ image: UIImage, targetSize: CGSize = CGSize(width: 512, height: 512)) -> UIImage {
-    let format = UIGraphicsImageRendererFormat.default()
-    format.opaque = true
-    format.scale = 1.0
-    return UIGraphicsImageRenderer(size: targetSize, format: format).image { ctx in
-      UIColor.black.setFill()
-      ctx.fill(CGRect(origin: .zero, size: targetSize))
-      image.draw(in: CGRect(origin: .zero, size: targetSize))
-    }
-  }
-
   private func makeMediaArtwork(from rawImage: UIImage) -> MPMediaItemArtwork {
     let baseSize = CGSize(width: 512, height: 512)
-    let normalized = normalizeImage(rawImage, targetSize: baseSize)
-    return MPMediaItemArtwork(boundsSize: baseSize) { requestedSize in
-      let w = max(24, min(1024, requestedSize.width.isFinite && requestedSize.width > 0 ? requestedSize.width : 512))
-      let h = max(24, min(1024, requestedSize.height.isFinite && requestedSize.height > 0 ? requestedSize.height : 512))
-      let outSize = CGSize(width: w, height: h)
-      if abs(w - baseSize.width) < 1 && abs(h - baseSize.height) < 1 {
-        return normalized
-      }
-      let fmt = UIGraphicsImageRendererFormat.default()
-      fmt.opaque = true
-      fmt.scale = 1.0
-      return UIGraphicsImageRenderer(size: outSize, format: fmt).image { _ in
-        normalized.draw(in: CGRect(origin: .zero, size: outSize))
-      }
+    let renderer = UIGraphicsImageRenderer(size: baseSize)
+    let normalized = renderer.image { _ in
+      UIColor.black.setFill()
+      UIBezierPath(rect: CGRect(origin: .zero, size: baseSize)).fill()
+      rawImage.draw(in: CGRect(origin: .zero, size: baseSize))
     }
+    return MPMediaItemArtwork(boundsSize: baseSize) { _ in normalized }
   }
 
   func setup(with messenger: FlutterBinaryMessenger) {
@@ -707,9 +649,6 @@ class AppleNowPlayingManager: NSObject {
     nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = position
     nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = rate
     nowPlayingInfo[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
-    if #available(iOS 10.0, *) {
-      nowPlayingInfo[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
-    }
 
     // 1. Falls Dart bereits die Bild-Bytes mitgeliefert hat, sofort dekodieren & cachen
     if let bytes = artworkBytes, !bytes.isEmpty, let decoded = UIImage(data: bytes) {
@@ -721,9 +660,6 @@ class AppleNowPlayingManager: NSObject {
       }
       nowPlayingInfo[MPMediaItemPropertyArtwork] = art
       MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-      if #available(iOS 13.0, *) {
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
-      }
       return
     }
 
@@ -734,36 +670,31 @@ class AppleNowPlayingManager: NSObject {
       currentArtworkUrl = urlStr
       nowPlayingInfo[MPMediaItemPropertyArtwork] = art
       MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-      if #available(iOS 13.0, *) {
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
-      }
       return
     }
 
     // 3. Niemals ohne Asset rendern: vorhandenes Cover oder unser Obsidian-Ember Studio-Cover sofort setzen!
     if let art = cachedArtwork, currentArtworkUrl == artworkUrl {
       nowPlayingInfo[MPMediaItemPropertyArtwork] = art
-    } else {
-      nowPlayingInfo[MPMediaItemPropertyArtwork] = cachedArtwork ?? fallbackArtwork
+    } else if let art = cachedArtwork ?? fallbackArtwork {
+      nowPlayingInfo[MPMediaItemPropertyArtwork] = art
     }
 
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-    if #available(iOS 13.0, *) {
-      MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
-    }
 
     // 4. Falls eine neue Cover-URL vorliegt, asynchron nachladen und Dynamic Island aktualisieren
     guard let urlStr = artworkUrl, !urlStr.isEmpty else { return }
-    let resolvedUrl = URL(string: urlStr) ?? urlStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).flatMap { URL(string: $0) }
-    guard let url = resolvedUrl else { return }
+    var targetUrl = URL(string: urlStr)
+    if targetUrl == nil, let encoded = urlStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+      targetUrl = URL(string: encoded)
+    }
+    guard let url = targetUrl else { return }
 
     if urlStr != currentArtworkUrl || cachedArtwork == nil {
       artworkRequestToken &+= 1
       let token = artworkRequestToken
-      var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 8.0)
-      request.setValue("image/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
 
-      URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+      URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
         guard let self = self,
               let data = data,
               !data.isEmpty,
@@ -787,9 +718,6 @@ class AppleNowPlayingManager: NSObject {
     currentArtworkUrl = nil
     cachedArtwork = nil
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-    if #available(iOS 13.0, *) {
-      MPNowPlayingInfoCenter.default().playbackState = .stopped
-    }
   }
 }
 
@@ -849,7 +777,6 @@ public struct MusicAssistantActivityAttributes: ActivityAttributes {
     public var trackTitle: String
     public var artist: String
     public var albumArtUrl: String
-    public var albumArtBase64: String?
     public var isPlaying: Bool
     public var speakerName: String
     public var djVibe: String
@@ -860,7 +787,6 @@ public struct MusicAssistantActivityAttributes: ActivityAttributes {
       trackTitle: String,
       artist: String,
       albumArtUrl: String,
-      albumArtBase64: String? = nil,
       isPlaying: Bool,
       speakerName: String,
       djVibe: String,
@@ -870,7 +796,6 @@ public struct MusicAssistantActivityAttributes: ActivityAttributes {
       self.trackTitle = trackTitle
       self.artist = artist
       self.albumArtUrl = albumArtUrl
-      self.albumArtBase64 = albumArtBase64
       self.isPlaying = isPlaying
       self.speakerName = speakerName
       self.djVibe = djVibe
@@ -890,16 +815,14 @@ class LiveActivityManager: NSObject {
   private var currentActivity: Activity<MusicAssistantActivityAttributes>?
   private var channel: FlutterMethodChannel?
   private var isConfigured = false
-  private var cachedThumbUrl: String = ""
-  private var cachedThumbBase64: String?
 
   private override init() {
     super.init()
   }
 
   /// Prüft, ob tatsächlich ein WidgetExtension (.appex) im Bundle eingebettet ist.
-  /// Ohne eingebettetes WidgetExtension darf Activity.request nicht aufgerufen werden,
-  /// da iOS sonst eine leere Dynamic-Island-Kapsel ohne Assets anstelle der MPNowPlaying-Insel zeigt.
+  /// Ohne eingebettetes WidgetExtension übernimmt AppleNowPlayingManager (MPNowPlayingInfoCenter)
+  /// die iOS Dynamic Island inklusive Album-Cover & animierter Equalizer-Welle.
   private func hasEmbeddedWidgetExtension() -> Bool {
     guard let pluginsUrl = Bundle.main.builtInPlugInsURL,
           let contents = try? FileManager.default.contentsOfDirectory(at: pluginsUrl, includingPropertiesForKeys: nil) else {
@@ -911,15 +834,6 @@ class LiveActivityManager: NSObject {
   func setup(with messenger: FlutterBinaryMessenger) {
     if isConfigured { return }
     isConfigured = true
-
-    // Beende eventuelle verwaiste Aktivitäten beim Start, damit die MPNowPlaying Dynamic Island frei ist
-    if !hasEmbeddedWidgetExtension() {
-      Task {
-        for activity in Activity<MusicAssistantActivityAttributes>.activities {
-          await activity.end(dismissalPolicy: .immediate)
-        }
-      }
-    }
 
     channel = FlutterMethodChannel(name: "de.timm.musicAssistantApp/live_activity", binaryMessenger: messenger)
     channel?.setMethodCallHandler { [weak self] (call, result) in
@@ -947,8 +861,6 @@ class LiveActivityManager: NSObject {
   }
 
   func startOrUpdateActivity(from dict: [String: Any]) {
-    // Wenn kein WidgetExtension (.appex) eingebettet ist, übernimmt AppleNowPlayingManager
-    // (MPNowPlayingInfoCenter) die echte iOS Dynamic Island inklusive Album-Cover & Audio-Wellen!
     guard hasEmbeddedWidgetExtension(), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
     let trackTitle = dict["trackTitle"] as? String ?? "Keine Wiedergabe"
@@ -960,13 +872,10 @@ class LiveActivityManager: NSObject {
     let isDjSpeaking = dict["isDjSpeaking"] as? Bool ?? false
     let djSpeechText = dict["djSpeechText"] as? String
 
-    let thumbBase64 = (albumArtUrl == cachedThumbUrl) ? cachedThumbBase64 : nil
-
     let contentState = MusicAssistantActivityAttributes.ContentState(
       trackTitle: trackTitle,
       artist: artist,
       albumArtUrl: albumArtUrl,
-      albumArtBase64: thumbBase64,
       isPlaying: isPlaying,
       speakerName: speakerName,
       djVibe: djVibe,
@@ -989,37 +898,6 @@ class LiveActivityManager: NSObject {
       } catch {
         print("[LiveActivityManager] Activity.request error: \(error)")
       }
-    }
-
-    if !albumArtUrl.isEmpty, albumArtUrl != cachedThumbUrl, let url = URL(string: albumArtUrl) {
-      cachedThumbUrl = albumArtUrl
-      URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-        guard let self = self, let data = data, let img = UIImage(data: data) else { return }
-        let thumbSize = CGSize(width: 56, height: 56)
-        let renderer = UIGraphicsImageRenderer(size: thumbSize)
-        let smallImg = renderer.image { _ in
-          img.draw(in: CGRect(origin: .zero, size: thumbSize))
-        }
-        guard let jpeg = smallImg.jpegData(compressionQuality: 0.55) else { return }
-        let b64 = jpeg.base64EncodedString()
-        self.cachedThumbBase64 = b64
-        let updatedState = MusicAssistantActivityAttributes.ContentState(
-          trackTitle: trackTitle,
-          artist: artist,
-          albumArtUrl: albumArtUrl,
-          albumArtBase64: b64,
-          isPlaying: isPlaying,
-          speakerName: speakerName,
-          djVibe: djVibe,
-          isDjSpeaking: isDjSpeaking,
-          djSpeechText: djSpeechText
-        )
-        if let activity = self.currentActivity {
-          Task {
-            await activity.update(using: updatedState)
-          }
-        }
-      }.resume()
     }
   }
 
