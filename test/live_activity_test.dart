@@ -60,6 +60,9 @@ void main() {
     });
 
     test('LiveActivityService syncs active playback state with Apple Dynamic Island', () async {
+      if (provider.currentTrack == null && provider.queue.isNotEmpty) {
+        await provider.playTrack(provider.queue.first);
+      }
       final track = provider.currentTrack!;
 
       await LiveActivityService.instance.sync(provider);

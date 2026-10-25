@@ -157,15 +157,16 @@ class MusicProvider extends ChangeNotifier {
     await _djService.previewVoice(_djVoiceSettings, userName);
   }
 
+  String? _savedActivePlayerId;
+
   MusicProvider() {
     // Populate with fallback data immediately so UI never shows a blank screen
     _playlists = _api.getFallbackPlaylists();
     _queue = _api.getFallbackTracks();
     _libraryTracks = List.from(_queue);
-    if (_queue.isNotEmpty) {
-      _currentTrack = _queue.first;
-      _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
-    }
+    // Standardmäßig keinen Track vorwählen, damit unten im MiniPlayer kein ungewollter Song erscheint!
+    _currentTrack = null;
+    _totalDuration = Duration.zero;
     final localIPhone = PlayerDevice.localIPhone(isSelected: true);
     _players = [localIPhone];
     _activePlayer = localIPhone;
@@ -187,7 +188,7 @@ class MusicProvider extends ChangeNotifier {
 
   /// Übernimmt die aktive Steuerung eines Lautsprechers, der gerade Musik abspielt
   Future<void> takeOverControl(PlayerDevice player) async {
-    await setActivePlayer(player);
+    await setActivePlayer(player, isTakeover: true);
     if (player.hasActiveTrack) {
       _currentTrack = Track(
         id: player.id,
@@ -227,7 +228,7 @@ class MusicProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
   bool get hasCompletedWelcomeGuide => _hasCompletedWelcomeGuide;
-  String get appVersion => '1.11.4';
+  String get appVersion => '1.11.5';
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
@@ -443,6 +444,7 @@ class MusicProvider extends ChangeNotifier {
       _losslessStreaming = await _storage.loadLosslessStreaming();
       _crossfadeEnabled = await _storage.loadCrossfadeEnabled();
       _dontStopTheMusic = await _storage.loadDontStopTheMusic();
+      _savedActivePlayerId = await _storage.loadActivePlayerId();
       _customPlaylists = await _storage.loadCustomPlaylists();
       _recentlyPlayedTracks = await _storage.loadRecentlyPlayedTracks();
 
@@ -552,11 +554,12 @@ class MusicProvider extends ChangeNotifier {
     }
 
     // 2. Gespeicherter echter Lautsprecher (niemals 'local_iphone')
-    if (savedPlayerId != null &&
-        savedPlayerId.isNotEmpty &&
-        savedPlayerId != 'local_iphone') {
+    final effectiveSaved = savedPlayerId ?? _savedActivePlayerId;
+    if (effectiveSaved != null &&
+        effectiveSaved.isNotEmpty &&
+        effectiveSaved != 'local_iphone') {
       for (final p in realSpeakers) {
-        if (p.id == savedPlayerId && p.isAvailable) return p;
+        if (p.id == effectiveSaved && p.isAvailable) return p;
       }
     }
 
@@ -617,7 +620,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.11.4');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.11.5');
   }
 
   void _connectAndRefresh() {
@@ -802,13 +805,14 @@ class MusicProvider extends ChangeNotifier {
           DateTime.now().difference(_lastPlayCommandTime!) <
               const Duration(seconds: 5);
 
-      // Falls aktuell noch local_iphone ausgewählt ist, aber echte Netzwerk-Lautsprecher verfügbar sind: Automatisch auf echten Speaker wechseln!
-      if (_activePlayer == null || _activePlayer!.isLocal) {
-        final preferred = _selectPreferredRealSpeaker(_players);
+      // Falls aktuell noch kein Player gewählt ist oder noch initial local_iphone aktiv ist:
+      // Bevorzuge den gespeicherten Lautsprecher des Nutzers
+      if (_activePlayer == null || (_activePlayer!.isLocal && _savedActivePlayerId != null)) {
+        final preferred = _selectPreferredRealSpeaker(_players, savedPlayerId: _savedActivePlayerId);
         if (preferred != null) {
           _activePlayer = preferred.copyWith(isSelected: true);
-          for (final p in _players) {
-            p.isSelected = (p.id == _activePlayer!.id);
+          for (int i = 0; i < _players.length; i++) {
+            _players[i] = _players[i].copyWith(isSelected: _players[i].id == _activePlayer!.id);
           }
           await _storage.saveActivePlayerId(_activePlayer!.id);
           changed = true;
@@ -2257,7 +2261,11 @@ class MusicProvider extends ChangeNotifier {
           final vol = (_activePlayer?.volume ?? 60) / 100.0;
           await _localAudioPlayer.setVolume(vol);
           await _localAudioPlayer.stop();
-          await _localAudioPlayer.play(UrlSource(playUrl));
+          if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
+            await _localAudioPlayer.play(UrlSource(playUrl));
+          } else {
+            _startPositionTimer();
+          }
         } else {
           _startPositionTimer();
         }
@@ -2551,7 +2559,7 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> setActivePlayer(PlayerDevice player) async {
+  Future<void> setActivePlayer(PlayerDevice player, {bool isTakeover = false}) async {
     final oldPlayer = _activePlayer;
     final wasPlaying = _isPlaying;
 
@@ -2586,8 +2594,11 @@ class MusicProvider extends ChangeNotifier {
         oldPlayer != null &&
         !oldPlayer.isLocal &&
         !player.isLocal &&
-        oldPlayer.id != player.id) {
-      // Zwischen zwei externen Lautsprechern wechseln
+        oldPlayer.id != player.id &&
+        !isTakeover &&
+        !player.isPlaying) {
+      // Zwischen zwei externen Lautsprechern wechseln:
+      // Nur transferQueue aufrufen, wenn das Ziel nicht schon selbst abspielt und kein Takeover ist!
       try {
         await _api.transferQueue(oldPlayer.id, player.id, autoPlay: true);
         await _api.playerPlay(player.id);
@@ -2600,12 +2611,17 @@ class MusicProvider extends ChangeNotifier {
       }
     }
 
-    for (final p in _players) {
-      p.isSelected = (p.id == player.id);
+    for (int i = 0; i < _players.length; i++) {
+      final isNowSelected = (_players[i].id == player.id);
+      _players[i] = _players[i].copyWith(isSelected: isNowSelected);
     }
-    _activePlayer = player;
+    _activePlayer = player.copyWith(isSelected: true);
+
     if (!player.isLocal) {
+      _savedActivePlayerId = player.id;
       await _storage.saveActivePlayerId(player.id);
+    } else {
+      _savedActivePlayerId = null;
     }
 
     if (player.hasActiveTrack) {

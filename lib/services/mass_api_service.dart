@@ -1327,26 +1327,6 @@ class MassApiService {
     return [
       Track(
         id: 'fallback_t1',
-        title: '1000 mal berührt',
-        artist: 'Die Zipfelbuben',
-        album: 'Jetzt wird es heiss',
-        durationSeconds: 184,
-        imageUrl:
-            'https://i.scdn.co/image/ab67616d0000b273a258468313208cf24cacab81',
-        uri: defaultStream,
-      ),
-      Track(
-        id: 'fallback_t2',
-        title: 'ROCK ANTENNE Hamburg',
-        artist: 'Live Stream',
-        album: 'Rock Antenne',
-        durationSeconds: 300,
-        imageUrl:
-            'https://static.mytuner-radio.net/media/tvos_radios/383/rock-antenne-hamburg.81109563.jpg',
-        uri: defaultStream,
-      ),
-      Track(
-        id: 'fallback_t3',
         title: 'Midnight City',
         artist: 'M83',
         album: 'Hurry Up, We\'re Dreaming',
@@ -1356,13 +1336,23 @@ class MassApiService {
         uri: defaultStream,
       ),
       Track(
-        id: 'fallback_t4',
+        id: 'fallback_t2',
         title: 'Blinding Lights',
         artist: 'The Weeknd',
         album: 'After Hours',
         durationSeconds: 200,
         imageUrl:
             'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&q=80',
+        uri: defaultStream,
+      ),
+      Track(
+        id: 'fallback_t3',
+        title: 'Get Lucky',
+        artist: 'Daft Punk',
+        album: 'Random Access Memories',
+        durationSeconds: 248,
+        imageUrl:
+            'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80',
         uri: defaultStream,
       ),
     ];

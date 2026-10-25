@@ -197,6 +197,9 @@ void main() {
     });
 
     test('AppleNowPlayingService.sync formats metadata and dispatches updateNowPlaying', () async {
+      if (provider.currentTrack == null && provider.queue.isNotEmpty) {
+        await provider.playTrack(provider.queue.first);
+      }
       await AppleNowPlayingService.instance.sync(provider);
 
       expect(nowPlayingCalls, isNotEmpty);
