@@ -138,12 +138,17 @@ class GitHubFeedbackService {
         ? cleanTitle
         : '${category.titlePrefix} $cleanTitle';
 
+    // Begrenzung auf 3500 Zeichen, damit Mobile Safari/Chrome die Web-URL nicht verwerfen
+    final safeBody = body.length > 3500
+        ? '${body.substring(0, 3450)}\n\n[...Bericht für Web-URL gekürzt]'
+        : body;
+
     return Uri.https(
       'github.com',
       '/$repoOwner/$repoName/issues/new',
       {
         'title': fullTitle,
-        'body': body,
+        'body': safeBody,
         'labels': category.githubLabel,
       },
     );

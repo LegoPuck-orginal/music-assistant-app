@@ -319,8 +319,8 @@ class SmartDjCurator {
       score += 90.0;
     }
 
-    // 3. Wort-Treffer
-    final words = query.split(RegExp(r'\s+')).where((w) => w.length > 2);
+    // 3. Wort-Treffer (auch 2-Buchstaben-Künstler wie U2, AC/DC etc. unterstützen)
+    final words = query.split(RegExp(r'\s+')).where((w) => w.length >= 2);
     for (final w in words) {
       if (combined.contains(w)) {
         score += 35.0;
@@ -464,8 +464,10 @@ class SmartDjCurator {
         final artist = t.artist.toLowerCase().trim();
         final album = t.album.toLowerCase().trim();
 
-        // Künstlersperre: Hat der Künstler in den letzten 2 Songs schon gespielt?
-        final artistRecentlyUsed = recentArtists.isNotEmpty &&
+        // Künstlersperre: Hat ein bekannter Künstler in den letzten 2 Songs schon gespielt?
+        final artistRecentlyUsed = artist.isNotEmpty &&
+            artist != 'unbekannter künstler' &&
+            recentArtists.isNotEmpty &&
             recentArtists.sublist(max(0, recentArtists.length - 2)).contains(artist);
 
         final sameAlbumConsecutive = (lastAlbum != null && lastAlbum.isNotEmpty && album.isNotEmpty && album == lastAlbum);

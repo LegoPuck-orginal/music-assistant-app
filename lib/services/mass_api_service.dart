@@ -260,18 +260,32 @@ class MassApiService {
         onDone: () {
           debugPrint('[MassApi] WebSocket connection closed.');
           _isConnected = false;
+          _failPendingRequests('WebSocket connection closed');
           _scheduleReconnect();
         },
         onError: (err) {
           debugPrint('[MassApi] WebSocket error: $err');
           _isConnected = false;
+          _failPendingRequests('WebSocket error: $err');
           _scheduleReconnect();
         },
       );
     } catch (e) {
       debugPrint('[MassApi] WebSocket exception: $e');
       _isConnected = false;
+      _failPendingRequests('WebSocket exception: $e');
       _scheduleReconnect();
+    }
+  }
+
+  void _failPendingRequests(String reason) {
+    if (_pendingRequests.isEmpty) return;
+    final pending = Map<String, Completer<dynamic>>.from(_pendingRequests);
+    _pendingRequests.clear();
+    for (final comp in pending.values) {
+      if (!comp.isCompleted) {
+        comp.completeError(Exception(reason));
+      }
     }
   }
 
@@ -351,6 +365,7 @@ class MassApiService {
     if (_channel != null) {
       _channel!.sink.add(jsonEncode(payload));
     } else {
+      _pendingRequests.remove(id);
       completer.completeError(Exception('WebSocket is not connected'));
     }
 

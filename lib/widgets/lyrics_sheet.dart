@@ -218,6 +218,7 @@ class _LyricsSheetState extends State<LyricsSheet>
     _syncPositionAnchor(prov.currentPosition, prov.isPlaying);
 
     if (_lastTrackId != null && _lastTrackId != activeTrack.id) {
+      _lastTrackId = activeTrack.id;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _syncPositionAnchor(Duration.zero, prov.isPlaying, force: true);
