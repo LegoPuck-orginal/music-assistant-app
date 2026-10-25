@@ -494,6 +494,97 @@ class MassApiService {
     return [];
   }
 
+  /// Ruft als Favorit markierte Titel aus der Bibliothek ab
+  Future<List<Track>> fetchFavoriteTracks({int limit = 100}) async {
+    try {
+      final res = await sendCommand('music/tracks/library_items', {
+        'limit': limit,
+        'favorite': true,
+      });
+      if (res is List) {
+        return res
+            .map((t) => _parseTrack(t as Map<String, dynamic>,
+                defaultProvider: 'library'))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchFavoriteTracks error: $e');
+    }
+    return [];
+  }
+
+  /// Ruft kürzlich gespielte Titel direkt vom Music Assistant Server ab
+  Future<List<Track>> fetchRecentlyPlayedItems({int limit = 50}) async {
+    try {
+      final res = await sendCommand('music/recently_played_items', {
+        'limit': limit,
+      });
+      if (res is List) {
+        return res
+            .whereType<Map>()
+            .map((item) {
+              final map = Map<String, dynamic>.from(item);
+              final mediaItem = map['media_item'] as Map<dynamic, dynamic>? ?? map;
+              return _parseTrack(Map<String, dynamic>.from(mediaItem),
+                  defaultProvider: 'library');
+            })
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchRecentlyPlayedItems error: $e');
+    }
+    return [];
+  }
+
+  /// Ruft die beliebtesten Titel eines Künstlers ab
+  Future<List<Track>> fetchArtistTracks(String artistId,
+      {String provider = 'library', int limit = 25}) async {
+    try {
+      final res = await sendCommand('music/artists/artist_tracks', {
+        'item_id': artistId,
+        'provider_instance_id_or_domain': provider,
+      });
+      if (res is List) {
+        return res
+            .take(limit)
+            .map((t) => _parseTrack(t as Map<String, dynamic>,
+                defaultProvider: provider))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchArtistTracks error: $e');
+    }
+    return [];
+  }
+
+  /// Ruft ähnliche Titel zu einem Track ab (z. B. für Dynamic Queue Replenishment)
+  Future<List<Track>> fetchSimilarTracks(Track track, {int limit = 20}) async {
+    try {
+      final trackArg = track.rawSource ?? {
+        'item_id': track.id,
+        'name': track.title,
+        'artists': [
+          {'name': track.artist}
+        ],
+        'provider': track.provider ?? 'library',
+        'media_type': 'track',
+      };
+      final res = await sendCommand('music/similar_tracks', {
+        'track': trackArg,
+        'limit': limit,
+      });
+      if (res is List) {
+        return res
+            .map((t) => _parseTrack(t as Map<String, dynamic>,
+                defaultProvider: track.provider ?? 'library'))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[MassApi] fetchSimilarTracks error: $e');
+    }
+    return [];
+  }
+
   /// Ruft echte Podcasts aus der Music Assistant Bibliothek ab
   Future<List<Playlist>> fetchLibraryPodcasts({int limit = 50}) async {
     try {

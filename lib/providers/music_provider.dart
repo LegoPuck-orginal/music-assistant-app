@@ -19,7 +19,9 @@ import '../services/download_service.dart';
 import '../services/apple_now_playing_service.dart';
 import '../services/live_activity_service.dart';
 import '../services/mass_api_service.dart';
+import '../services/ollama_service.dart';
 import '../services/player_position_tracker.dart';
+import '../services/smart_dj_curator.dart';
 import '../services/storage_service.dart';
 import '../services/update_service.dart';
 import '../services/virtual_dj_service.dart';
@@ -225,7 +227,7 @@ class MusicProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
   bool get hasCompletedWelcomeGuide => _hasCompletedWelcomeGuide;
-  String get appVersion => '1.11.2';
+  String get appVersion => '1.11.4';
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
@@ -615,7 +617,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.11.2');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.11.4');
   }
 
   void _connectAndRefresh() {
@@ -1534,13 +1536,15 @@ class MusicProvider extends ChangeNotifier {
         }
       }
 
-      // 2. Fetch real library tracks, playlists, podcasts, albums, artists in parallel
+      // 2. Fetch real library tracks, playlists, podcasts, albums, artists and favorites in parallel
       final results = await Future.wait([
         _api.fetchLibraryPlaylists(limit: 50),
         _api.fetchLibraryPodcasts(limit: 50),
         _api.fetchLibraryAlbums(limit: 50),
         _api.fetchLibraryArtists(limit: 50),
         _api.fetchLibraryTracks(limit: 100),
+        _api.fetchFavoriteTracks(limit: 100),
+        _api.fetchRecentlyPlayedItems(limit: 50),
       ]);
 
       final libraryPlaylists = results[0] as List<Playlist>;
@@ -1548,6 +1552,8 @@ class MusicProvider extends ChangeNotifier {
       final libraryAlbums = results[2] as List<Playlist>;
       final libraryArtists = results[3] as List<Playlist>;
       final libraryTracks = results[4] as List<Track>;
+      final favoriteTracks = results[5] as List<Track>;
+      final recentItems = results[6] as List<Track>;
 
       _podcasts = libraryPodcasts;
       _albums = libraryAlbums;
@@ -1566,15 +1572,39 @@ class MusicProvider extends ChangeNotifier {
         ...libraryArtists,
       ];
 
-      if (libraryTracks.isNotEmpty) {
-        for (final t in libraryTracks) {
+      // Favoriten registrieren
+      for (final t in favoriteTracks) {
+        _likedTrackIds.add(t.id);
+        t.isLiked = true;
+      }
+
+      // Kürzlich gespielte Titel vom Server einpflegen
+      if (recentItems.isNotEmpty) {
+        final existingRecent = _recentlyPlayedTracks.map((t) => t.id).toSet();
+        for (final r in recentItems) {
+          if (!existingRecent.contains(r.id)) {
+            _recentlyPlayedTracks.add(r);
+          }
+        }
+      }
+
+      final combinedTracks = <String, Track>{};
+      for (final t in libraryTracks) {
+        combinedTracks[t.id] = t;
+      }
+      for (final t in favoriteTracks) {
+        combinedTracks[t.id] = t;
+      }
+
+      if (combinedTracks.isNotEmpty) {
+        for (final t in combinedTracks.values) {
           if (t.isLiked) _likedTrackIds.add(t.id);
           if (_likedTrackIds.contains(t.id)) t.isLiked = true;
         }
-        _libraryTracks = List.from(libraryTracks);
-        _queue = libraryTracks;
+        _libraryTracks = combinedTracks.values.toList();
+        _queue = _libraryTracks;
         if (_currentTrack == null) {
-          _currentTrack = libraryTracks.first;
+          _currentTrack = _libraryTracks.first;
           _totalDuration = Duration(seconds: _currentTrack!.durationSeconds);
         }
       }
@@ -1629,57 +1659,57 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Baut einen deduplizierten Gesamt-Pool aller verfügbaren Songs für den KI-DJ
+  /// Baut einen deduplizierten, musik-hygienisch sauberen Gesamt-Pool aller verfügbaren Songs für den KI-DJ.
+  /// Filtert automatisch Hörspiele, Audiobooks, Radiostreams und Jingles heraus.
   List<Track> _buildDjTrackPool() {
-    final Map<String, Track> byId = {};
+    final Map<String, Track> byKey = {};
+    void addTrack(Track t) {
+      if (t.id.isEmpty) return;
+      if (!SmartDjCurator.isEligibleMusicTrack(t)) return;
+      final key = '${t.title.toLowerCase().trim()}_${t.artist.toLowerCase().trim()}';
+      byKey.putIfAbsent(key, () => t);
+      byKey[t.id] = t;
+    }
+
+    // 1. Echte Empfehlungs-Zeilen vom Server
     for (final row in _recommendations) {
       for (final item in row.items) {
         if (item.mediaType == 'track' || item.mediaType.isEmpty) {
-          final t = item.toTrack();
-          if (t.id.isNotEmpty) byId[t.id] = t;
+          addTrack(item.toTrack());
         }
       }
     }
+
+    // 2. Bibliothek & Kürzlich gespielte Titel
     for (final t in _libraryTracks) {
-      if (t.id.isNotEmpty) byId[t.id] = t;
+      addTrack(t);
     }
     for (final t in _recentlyPlayedTracks) {
-      if (t.id.isNotEmpty) byId[t.id] = t;
+      addTrack(t);
     }
     for (final t in _queue) {
-      if (t.id.isNotEmpty) byId[t.id] = t;
-    }
-    return byId.values.toList();
-  }
-
-  /// Filtert bereits gespielte DJ-Tracks heraus und mischt die Auswahl frisch durch
-  List<Track> _curateFreshDjMix(List<Track> candidates, List<Track> fullPool) {
-    final currentId = _currentTrack?.id;
-    List<Track> base = candidates.isNotEmpty ? List.from(candidates) : List.from(fullPool);
-
-    // Falls weniger als 8 Kandidaten vorhanden sind, mit passenden Songs aus dem Pool auffüllen
-    if (base.length < 8 && fullPool.isNotEmpty) {
-      final existingIds = base.map((t) => t.id).toSet();
-      final extras = fullPool.where((t) => !existingIds.contains(t.id)).toList()..shuffle();
-      base.addAll(extras.take(15 - base.length));
+      addTrack(t);
     }
 
-    // Bereits in dieser Session gespielte Songs und aktuellen Song ausfiltern
-    var fresh = base
-        .where((t) => t.id != currentId && !_djPlayedTrackIds.contains(t.id))
-        .toList();
-
-    if (fresh.length < 3) {
-      _djPlayedTrackIds.clear();
-      fresh = base.where((t) => t.id != currentId).toList();
-    }
-    if (fresh.isEmpty) {
-      fresh = List.from(base);
+    // 3. Songs aus Musik-Playlists (Podcasts/Hörbücher ignorieren)
+    for (final pl in _playlists) {
+      if (pl.type != 'podcast') {
+        for (final t in pl.tracks) {
+          addTrack(t);
+        }
+      }
     }
 
-    // Frisch mischen, damit jeder Klick auf "Vibe wechseln" einen neuen Song startet!
-    fresh.shuffle();
-    return fresh.take(20).toList();
+    // 4. Offline Downloads
+    for (final t in downloadedTracks) {
+      addTrack(t);
+    }
+
+    final pool = byKey.values.toSet().toList();
+    for (final t in pool) {
+      if (_likedTrackIds.contains(t.id)) t.isLiked = true;
+    }
+    return pool;
   }
 
   /// Startet den virtuellen Spotify KI-DJ
@@ -1689,7 +1719,7 @@ class MusicProvider extends ChangeNotifier {
     await switchDjVibe(category: targetCategory, isInitial: true);
   }
 
-  /// Wechselt die Musikstimmung (Vibe) des virtuellen DJs
+  /// Wechselt die Musikstimmung (Vibe) des virtuellen DJs mit genrespezifischer Multi-Faktor-Kuratierung.
   Future<void> switchDjVibe({DjVibeCategory? category, bool isInitial = false}) async {
     _isDjActive = true;
     _lastDjCustomPrompt = null;
@@ -1706,95 +1736,56 @@ class MusicProvider extends ChangeNotifier {
     _currentDjVibe = chosenVibe;
 
     final fullPool = _buildDjTrackPool();
-    List<Track> rawCandidates = [];
 
-    switch (chosenVibe.category) {
-      case DjVibeCategory.allTimeFavorites:
-        final mostPlayedRow = _recommendations.where((r) => r.id.contains('most_played')).firstOrNull;
-        if (mostPlayedRow != null && mostPlayedRow.items.isNotEmpty) {
-          rawCandidates.addAll(
-            mostPlayedRow.items
-                .where((i) => i.mediaType == 'track' || i.mediaType.isEmpty)
-                .map((i) => i.toTrack()),
-          );
-        }
-        rawCandidates.addAll(
-          fullPool.where((t) => t.isLiked || _likedTrackIds.contains(t.id)),
-        );
-        rawCandidates.addAll(_recentlyPlayedTracks);
-        break;
+    // 1. Dynamisches Geschmacksprofil des Hörers aggregieren
+    final tasteProfile = UserTasteProfile.build(
+      likedTracks: likedTracks,
+      recentlyPlayed: _recentlyPlayedTracks,
+      playlists: _playlists,
+      sessionPlayedIds: _djPlayedTrackIds,
+    );
 
-      case DjVibeCategory.rockClassics:
-        final rockRow = _recommendations.where((r) => r.id.contains('similar_tracks')).firstOrNull;
-        if (rockRow != null && rockRow.items.isNotEmpty) {
-          rawCandidates.addAll(
-            rockRow.items
-                .where((i) => i.mediaType == 'track' || i.mediaType.isEmpty)
-                .map((i) => i.toTrack()),
-          );
-        }
-        rawCandidates.addAll(
-          fullPool.where((t) {
-            final meta = '${t.title} ${t.artist} ${t.album}'.toLowerCase();
-            return meta.contains('rock') ||
-                meta.contains('metal') ||
-                meta.contains('punk') ||
-                meta.contains('indie') ||
-                meta.contains('alternative') ||
-                meta.contains('classic') ||
-                meta.contains('live') ||
-                meta.contains('guitar') ||
-                t.durationSeconds >= 175;
-          }),
-        );
-        break;
-
-      case DjVibeCategory.forgottenGems:
-        final forgottenRow = _recommendations.where((r) => r.id.contains('forgotten')).firstOrNull;
-        if (forgottenRow != null && forgottenRow.items.isNotEmpty) {
-          rawCandidates.addAll(
-            forgottenRow.items
-                .where((i) => i.mediaType == 'track' || i.mediaType.isEmpty)
-                .map((i) => i.toTrack()),
-          );
-        }
-        final recentIds = _recentlyPlayedTracks.map((t) => t.id).toSet();
-        rawCandidates.addAll(fullPool.where((t) => !recentIds.contains(t.id)));
-        break;
-
-      case DjVibeCategory.artistDiscoveries:
-        final discRow = _recommendations.where((r) => r.id.contains('similar_artists')).firstOrNull;
-        if (discRow != null && discRow.items.isNotEmpty) {
-          rawCandidates.addAll(
-            discRow.items
-                .where((i) => i.mediaType == 'track' || i.mediaType.isEmpty)
-                .map((i) => i.toTrack()),
-          );
-        }
-        // Abwechslungsreiche Künstler-Mischung (maximal 1 Track pro Künstler bevorzugen)
-        final seenArtists = <String>{};
-        for (final t in fullPool) {
-          final key = t.artist.toLowerCase().trim();
-          if (seenArtists.add(key)) {
-            rawCandidates.add(t);
-          }
-        }
-        break;
-
-      case DjVibeCategory.partyVibes:
-        rawCandidates.addAll(
-          fullPool.where((t) => t.durationSeconds >= 120 && t.durationSeconds <= 245),
-        );
-        break;
-
-      case DjVibeCategory.lateNightChill:
-        rawCandidates.addAll(
-          fullPool.where((t) => t.durationSeconds >= 185),
-        );
-        break;
+    // 2. Prüfen, wie viele echte qualitative Treffer für den Vibe vorhanden sind
+    int strongMatches = 0;
+    for (final t in fullPool) {
+      final s = SmartDjCurator.scoreTrackForVibe(
+        track: t,
+        vibe: chosenVibe.category,
+        profile: tasteProfile,
+        currentTrackId: _currentTrack?.id,
+      );
+      if (s >= 35.0) strongMatches++;
     }
 
-    final vibeTracks = _curateFreshDjMix(rawCandidates, fullPool);
+    // 3. Falls die Mediathek zu wenige Vibe-Titel hat, live über Music Assistant anreichern
+    if (strongMatches < 8 && _api.isConnected) {
+      try {
+        final query = _getSearchQueryForVibe(chosenVibe.category, tasteProfile);
+        if (query.isNotEmpty) {
+          final res = await _api.searchMusic(query, limit: 25)
+              .timeout(const Duration(milliseconds: 2500));
+          final found = (res['tracks'] as List<Track>?) ?? [];
+          for (final t in found) {
+            if (SmartDjCurator.isEligibleMusicTrack(t)) {
+              fullPool.add(t);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[MusicProvider] switchDjVibe server enrichment error: $e');
+      }
+    }
+
+    // 4. Multi-Faktor-Scoring & DJ-Fluss-Sequenzierung (verhindert doppelte Künstler/Alben)
+    final vibeTracks = SmartDjCurator.curateSet(
+      pool: fullPool,
+      vibe: chosenVibe.category,
+      profile: tasteProfile,
+      currentTrackId: _currentTrack?.id,
+      currentArtist: _currentTrack?.artist,
+      targetCount: 20,
+    );
+
     final previousTrack = _currentTrack;
     final nextTrack = vibeTracks.isNotEmpty ? vibeTracks.first : null;
     if (nextTrack != null) {
@@ -1802,7 +1793,7 @@ class MusicProvider extends ChangeNotifier {
     }
     _djTracksSinceLastModeration = 0;
 
-    // Wiedergabe des neuen Tracks direkt anstoßen, damit kein Stille-Loch entsteht
+    // Sofort die Musik starten, damit keine Latenz entsteht
     if (vibeTracks.isNotEmpty) {
       unawaited(playTrack(vibeTracks.first, newQueue: vibeTracks));
     }
@@ -1820,7 +1811,29 @@ class MusicProvider extends ChangeNotifier {
     await speakDjCommentary(speech);
   }
 
+  String _getSearchQueryForVibe(DjVibeCategory vibe, UserTasteProfile profile) {
+    final topArtist = profile.artistAffinities.entries.isNotEmpty
+        ? (profile.artistAffinities.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key
+        : '';
+
+    switch (vibe) {
+      case DjVibeCategory.allTimeFavorites:
+        return topArtist.isNotEmpty ? topArtist : 'Top Hits';
+      case DjVibeCategory.rockClassics:
+        return 'Rock Alternative Classics';
+      case DjVibeCategory.partyVibes:
+        return 'Dance Party Hits Club';
+      case DjVibeCategory.lateNightChill:
+        return 'Chill Lo-Fi Ambient Relax';
+      case DjVibeCategory.forgottenGems:
+        return 'Nostalgia Hits 90s 2000s';
+      case DjVibeCategory.artistDiscoveries:
+        return topArtist.isNotEmpty ? '$topArtist radio' : 'Discover Weekly';
+    }
+  }
+
   /// Erfüllt einen freien Musik- oder Stimmungswunsch des Nutzers im KI-DJ
+  /// mit semantischer Keyword-Analyse, optionalem KI-LLM-Parsing und Live-Suche.
   Future<void> askDjCustomPrompt(String userPrompt) async {
     final trimmed = userPrompt.trim();
     if (trimmed.isEmpty) return;
@@ -1829,7 +1842,7 @@ class MusicProvider extends ChangeNotifier {
     _lastDjCustomPrompt = trimmed;
     final lower = trimmed.toLowerCase();
 
-    // Passenden Vibe aus Schlüsselwörtern ableiten
+    // Passenden visuellen Vibe ableiten
     if (lower.contains('chill') ||
         lower.contains('ruhig') ||
         lower.contains('entspann') ||
@@ -1873,31 +1886,59 @@ class MusicProvider extends ChangeNotifier {
       );
     }
 
-    final fullPool = _buildDjTrackPool();
-    final matched = <Track>[];
+    final candidatePool = _buildDjTrackPool();
 
-    // 1. Lokalen Pool nach Künstler, Titel oder Album durchsuchen
-    for (final t in fullPool) {
-      final hay = '${t.title} ${t.artist} ${t.album}'.toLowerCase();
-      if (hay.contains(lower)) {
-        matched.add(t);
-      }
-    }
-
-    // 2. Falls verbunden, auch live über Music Assistant nach dem Wunsch suchen
-    if (matched.length < 5 && _api.isConnected) {
+    // 1. Sprachmodell-gestützte Intent-Erkennung für gezielte Such-Seeds
+    List<String> aiSeeds = [];
+    if (_djVoiceSettings.enableOllamaLlm) {
       try {
-        final searchRes = await _api
-            .searchMusic(trimmed)
-            .timeout(const Duration(milliseconds: 2500));
-        final foundTracks = (searchRes['tracks'] as List<Track>?) ?? [];
-        matched.addAll(foundTracks);
+        aiSeeds = await OllamaService().parseMusicWishWithAi(
+          host: _djVoiceSettings.ollamaHost,
+          model: _djVoiceSettings.ollamaModel,
+          userWish: trimmed,
+          fallbackServerUrl: _serverUrl,
+        ).timeout(const Duration(milliseconds: 2000), onTimeout: () => []);
       } catch (e) {
-        debugPrint('[MusicProvider] askDjCustomPrompt search error: $e');
+        debugPrint('[MusicProvider] parseMusicWishWithAi error: $e');
       }
     }
 
-    final curated = _curateFreshDjMix(matched, fullPool);
+    // 2. Music Assistant Server mit dem Nutzerwunsch und KI-Seeds durchsuchen
+    if (_api.isConnected) {
+      try {
+        final queriesToSearch = {trimmed, ...aiSeeds};
+        for (final q in queriesToSearch.take(3)) {
+          final res = await _api.searchMusic(q, limit: 20)
+              .timeout(const Duration(milliseconds: 2200));
+          final found = (res['tracks'] as List<Track>?) ?? [];
+          for (final t in found) {
+            if (SmartDjCurator.isEligibleMusicTrack(t)) {
+              candidatePool.add(t);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[MusicProvider] askDjCustomPrompt live search error: $e');
+      }
+    }
+
+    final tasteProfile = UserTasteProfile.build(
+      likedTracks: likedTracks,
+      recentlyPlayed: _recentlyPlayedTracks,
+      playlists: _playlists,
+      sessionPlayedIds: _djPlayedTrackIds,
+    );
+
+    // 3. SmartDjCurator: Bewertet alle Titel (lokal + Server-Suchtreffer) und ordnet sie optimal an
+    final curated = SmartDjCurator.curateCustomWishSet(
+      pool: candidatePool,
+      prompt: trimmed,
+      profile: tasteProfile,
+      currentTrackId: _currentTrack?.id,
+      currentArtist: _currentTrack?.artist,
+      targetCount: 20,
+    );
+
     final nextTrack = curated.isNotEmpty ? curated.first : _currentTrack;
     if (nextTrack != null) {
       _djPlayedTrackIds.add(nextTrack.id);

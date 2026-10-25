@@ -316,4 +316,64 @@ Wichtige Regeln:
     }
     return null;
   }
+
+  /// Analysiert einen Freitext-Musikwunsch mit dem Sprachmodell und extrahiert
+  /// bis zu 3 gezielte Suchbegriffe (Künstler, Genres, Ähnlichkeiten) für Music Assistant.
+  Future<List<String>> parseMusicWishWithAi({
+    required String host,
+    required String model,
+    required String userWish,
+    String? fallbackServerUrl,
+  }) async {
+    final trimmed = userWish.trim();
+    if (trimmed.isEmpty) return [];
+
+    final prompt = '''
+Analysiere folgenden Musikwunsch eines Hörers: "$trimmed"
+Extrahiere 2 bis maximal 3 konkrete Suchbegriffe (Künstler, Genre, Bands oder Referenz-Songs) für eine Musik-Suchmaschine.
+Antworte AUSSCHLIESSLICH im JSON-Array-Format, z.B. ["Daft Punk", "French House", "Kavinsky"].
+Keine Erklärung, kein Markdown.
+''';
+
+    final payload = jsonEncode({
+      'model': model,
+      'prompt': prompt,
+      'stream': false,
+      'options': {
+        'temperature': 0.3,
+        'num_predict': 40,
+      },
+    });
+
+    final candidates = resolveCandidateHosts(host, fallbackServerUrl: fallbackServerUrl);
+    for (final candidate in candidates) {
+      if (_isHostInCooldown(candidate)) continue;
+      try {
+        final uri = Uri.parse('$candidate/api/generate');
+        final res = await http
+            .post(
+              uri,
+              headers: {'Content-Type': 'application/json'},
+              body: payload,
+            )
+            .timeout(const Duration(milliseconds: 2200));
+
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final raw = data['response']?.toString().trim() ?? '';
+          final match = RegExp(r'\[[\s\S]*\]').firstMatch(raw);
+          if (match != null) {
+            final parsed = jsonDecode(match.group(0)!) as List<dynamic>;
+            return parsed
+                .map((e) => e.toString().trim())
+                .where((s) => s.isNotEmpty && s.length <= 40)
+                .toList();
+          }
+        }
+      } catch (e) {
+        debugPrint('[OllamaService] parseMusicWishWithAi error on $candidate: $e');
+      }
+    }
+    return [];
+  }
 }
