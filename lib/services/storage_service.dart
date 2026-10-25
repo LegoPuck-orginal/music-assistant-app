@@ -115,9 +115,13 @@ class StorageService {
     return prefs.getString(_keyActivePlayer);
   }
 
-  Future<void> saveActivePlayerId(String id) async {
+  Future<void> saveActivePlayerId(String? id) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyActivePlayer, id);
+    if (id == null || id.isEmpty || id == 'local_iphone') {
+      await prefs.remove(_keyActivePlayer);
+    } else {
+      await prefs.setString(_keyActivePlayer, id);
+    }
   }
 
   Future<Set<String>> loadLikedTrackIds() async {

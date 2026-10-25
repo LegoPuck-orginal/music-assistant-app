@@ -6,7 +6,7 @@
       "name": "Music Assistant (iOS Edition)",
       "bundleIdentifier": "de.timm.musicAssistantApp",
       "developerName": "LegoPuck-orginal",
-      "version": "1.11.5",
+      "version": "1.11.6",
       "versionDate": "2026-10-25",
       "versionDescription": "iOS Client für Music Assistant 2.0 mit KI-DJ, Live-Lyrics, Sonos, AirPlay und Chromecast.",
       "downloadURL": "https://github.com/LegoPuck-orginal/music-assistant-app/releases/download/latest/music-assistant.ipa",

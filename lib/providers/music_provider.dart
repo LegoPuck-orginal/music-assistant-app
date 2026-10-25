@@ -228,7 +228,7 @@ class MusicProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
   bool get hasCompletedWelcomeGuide => _hasCompletedWelcomeGuide;
-  String get appVersion => '1.11.5';
+  String get appVersion => '1.11.6';
   UserProfile? get currentUser => _currentUser;
   bool get isLoggingIn => _isLoggingIn;
   String? get loginError => _loginError;
@@ -620,7 +620,7 @@ class MusicProvider extends ChangeNotifier {
       _isCheckingForUpdates = false;
       notifyListeners();
     }
-    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.11.5');
+    return _updateInfo ?? AppUpdateInfo.noUpdate(currentVersion: '1.11.6');
   }
 
   void _connectAndRefresh() {
@@ -806,8 +806,11 @@ class MusicProvider extends ChangeNotifier {
               const Duration(seconds: 5);
 
       // Falls aktuell noch kein Player gewählt ist oder noch initial local_iphone aktiv ist:
-      // Bevorzuge den gespeicherten Lautsprecher des Nutzers
-      if (_activePlayer == null || (_activePlayer!.isLocal && _savedActivePlayerId != null)) {
+      // Bevorzuge den gespeicherten Lautsprecher des Nutzers (nur falls nicht explizit local_iphone gewählt wurde)
+      if (_activePlayer == null ||
+          (_activePlayer!.isLocal &&
+              _savedActivePlayerId != null &&
+              _savedActivePlayerId != 'local_iphone')) {
         final preferred = _selectPreferredRealSpeaker(_players, savedPlayerId: _savedActivePlayerId);
         if (preferred != null) {
           _activePlayer = preferred.copyWith(isSelected: true);
@@ -2123,9 +2126,9 @@ class MusicProvider extends ChangeNotifier {
       }
     }
 
-    // WICHTIG: Niemals versehentlich auf 'local_iphone' bleiben (was bei Spotify-Tracks nur 30s-Previews liefert!),
-    // wenn echte Music Assistant Lautsprecher im Netzwerk verfügbar sind.
-    if (_activePlayer == null || _activePlayer!.isLocal) {
+    // Falls noch überhaupt kein Lautsprecher initialisiert ist, den bevorzugten ermitteln
+    // (Auswahl des Nutzers auf dem iPhone wird strikt respektiert und NIEMALS ungefragt überschrieben!)
+    if (_activePlayer == null) {
       if (_api.isConnected &&
           !_players.any((p) => !p.isLocal && p.isAvailable)) {
         try {
@@ -2138,14 +2141,14 @@ class MusicProvider extends ChangeNotifier {
           debugPrint('[MusicProvider] fetchPlayers in playTrack error: $e');
         }
       }
-      final preferred = _selectPreferredRealSpeaker(_players);
+      final preferred = _selectPreferredRealSpeaker(_players, savedPlayerId: _savedActivePlayerId);
       if (preferred != null) {
         _activePlayer = preferred.copyWith(isSelected: true);
         for (final p in _players) {
           p.isSelected = (p.id == _activePlayer!.id);
         }
         await _storage.saveActivePlayerId(_activePlayer!.id);
-      } else if (_activePlayer == null && _players.isNotEmpty) {
+      } else if (_players.isNotEmpty) {
         _activePlayer = _players.first;
       }
     }
@@ -2247,17 +2250,19 @@ class MusicProvider extends ChangeNotifier {
         // Falls mit Server verbunden, Stream-Endpunkt bevorzugen
         if (playUrl == null && _api.isConnected) {
           playUrl = await _api.fetchTrackPreviewUrl(track);
-          playUrl ??=
-              '${_api.serverUrl}/api/stream?track_id=${Uri.encodeComponent(track.id)}';
         }
 
-        // Zuverlässiger Fallback-Stream, falls kein Server aktiv ist
-        if (playUrl == null || _isImageUrl(playUrl)) {
-          playUrl =
-              'https://stream.rockantenne.hamburg/rockantenne-hamburg/stream/mp3';
+        // Falls Track eine direkte Stream-URI hat (z. B. Webradio/Hörspiel)
+        if (playUrl == null &&
+            track.uri != null &&
+            track.uri!.startsWith('http') &&
+            !_isImageUrl(track.uri!)) {
+          playUrl = track.uri;
         }
 
-        if (playUrl.startsWith('http') && !_isImageUrl(playUrl)) {
+        if (playUrl != null &&
+            playUrl.startsWith('http') &&
+            !_isImageUrl(playUrl)) {
           final vol = (_activePlayer?.volume ?? 60) / 100.0;
           await _localAudioPlayer.setVolume(vol);
           await _localAudioPlayer.stop();
@@ -2621,7 +2626,8 @@ class MusicProvider extends ChangeNotifier {
       _savedActivePlayerId = player.id;
       await _storage.saveActivePlayerId(player.id);
     } else {
-      _savedActivePlayerId = null;
+      _savedActivePlayerId = 'local_iphone';
+      await _storage.saveActivePlayerId(null);
     }
 
     if (player.hasActiveTrack) {
