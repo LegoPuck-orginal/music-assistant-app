@@ -459,6 +459,18 @@ class SmartDjCurator {
     while (result.length < targetCount && remaining.isNotEmpty) {
       int bestIdx = -1;
 
+      // Zähle, wie oft jeder Künstler noch im verbleibenden Pool vorhanden ist
+      final artistRemainingCounts = <String, int>{};
+      for (final t in remaining) {
+        final a = t.artist.toLowerCase().trim();
+        artistRemainingCounts[a] = (artistRemainingCounts[a] ?? 0) + 1;
+      }
+
+      // Suche nach dem besten Kandidaten:
+      // Bevorzuge Kandidaten mit freier Abstandsregel. Bei mehreren qualifizierten
+      // Kandidaten priorisiere denjenigen mit der höchsten Rest-Häufigkeit,
+      // damit sich häufige Künstler nicht am Ende aufstauen.
+      int maxRemainingCount = -1;
       for (int i = 0; i < remaining.length; i++) {
         final t = remaining[i];
         final artist = t.artist.toLowerCase().trim();
@@ -473,22 +485,62 @@ class SmartDjCurator {
         final sameAlbumConsecutive = (lastAlbum != null && lastAlbum.isNotEmpty && album.isNotEmpty && album == lastAlbum);
 
         if (!artistRecentlyUsed && !sameAlbumConsecutive) {
-          bestIdx = i;
-          break;
+          final count = artistRemainingCounts[artist] ?? 1;
+          if (count > maxRemainingCount) {
+            maxRemainingCount = count;
+            bestIdx = i;
+          }
         }
       }
 
-      // Falls keine perfekte Distanz mehr möglich ist, den nächstbesten nehmen
-      if (bestIdx == -1) bestIdx = 0;
+      if (bestIdx != -1) {
+        final chosen = remaining.removeAt(bestIdx);
+        result.add(chosen);
 
-      final chosen = remaining.removeAt(bestIdx);
-      result.add(chosen);
+        final chosenArtist = chosen.artist.toLowerCase().trim();
+        if (chosenArtist.isNotEmpty) {
+          recentArtists.add(chosenArtist);
+        }
+        lastAlbum = chosen.album.toLowerCase().trim();
+      } else {
+        // Sackgasse: Kein Track kann am Ende angehängt werden, ohne die Abstandsregel zu verletzen.
+        // Nimm den ersten Track und suche einen früheren Einfügepunkt im Ergebnis,
+        // an dem keine zwei gleichen Künstler oder Alben hintereinander liegen.
+        final chosen = remaining.removeAt(0);
+        final chosenArtist = chosen.artist.toLowerCase().trim();
+        final chosenAlbum = chosen.album.toLowerCase().trim();
 
-      final chosenArtist = chosen.artist.toLowerCase().trim();
-      if (chosenArtist.isNotEmpty) {
-        recentArtists.add(chosenArtist);
+        int insertPos = -1;
+        for (int j = 0; j <= result.length; j++) {
+          final prevArtist = j > 0 ? result[j - 1].artist.toLowerCase().trim() : null;
+          final nextArtist = j < result.length ? result[j].artist.toLowerCase().trim() : null;
+          final prevAlbum = j > 0 ? result[j - 1].album.toLowerCase().trim() : null;
+          final nextAlbum = j < result.length ? result[j].album.toLowerCase().trim() : null;
+
+          final artistOk = (prevArtist == null || prevArtist != chosenArtist) &&
+              (nextArtist == null || nextArtist != chosenArtist);
+          final albumOk = (prevAlbum == null || prevAlbum != chosenAlbum) &&
+              (nextAlbum == null || nextAlbum != chosenAlbum);
+
+          if (artistOk && albumOk) {
+            insertPos = j;
+            break;
+          }
+        }
+
+        if (insertPos != -1) {
+          result.insert(insertPos, chosen);
+        } else {
+          result.add(chosen);
+        }
+
+        recentArtists.clear();
+        for (final r in result.sublist(max(0, result.length - 2))) {
+          final a = r.artist.toLowerCase().trim();
+          if (a.isNotEmpty) recentArtists.add(a);
+        }
+        lastAlbum = result.isNotEmpty ? result.last.album.toLowerCase().trim() : null;
       }
-      lastAlbum = chosen.album.toLowerCase().trim();
     }
 
     return result;
