@@ -23,6 +23,7 @@ import '../services/ollama_service.dart';
 import '../services/player_position_tracker.dart';
 import '../services/smart_dj_curator.dart';
 import '../services/storage_service.dart';
+import '../services/sendspin_player_service.dart';
 import '../services/update_service.dart';
 import '../services/virtual_dj_service.dart';
 import '../services/watch_service.dart';
@@ -31,6 +32,7 @@ class MusicProvider extends ChangeNotifier {
   final MassApiService _api = MassApiService();
   final StorageService _storage = StorageService();
   final AudioPlayer _localAudioPlayer = AudioPlayer();
+  final SendspinPlayerService _sendspinService = SendspinPlayerService();
   final UpdateService _updateService = UpdateService();
   final DownloadService _downloadService = DownloadService();
   final PlayerPositionTracker _positionTracker = PlayerPositionTracker();
@@ -641,6 +643,7 @@ class MusicProvider extends ChangeNotifier {
       _eventsSubscription = _api.events.listen(_handleServerEvent);
 
       _api.configure(_serverUrl, _authToken);
+      unawaited(_initSendspinPlayer());
 
       if (_api.isConnected) {
         refreshServerData();
@@ -655,6 +658,7 @@ class MusicProvider extends ChangeNotifier {
               _serverUrl = discovered.first;
               await _storage.saveServerUrl(_serverUrl);
               _api.configure(_serverUrl, _authToken);
+              unawaited(_initSendspinPlayer());
             }
           }
         });
@@ -1450,6 +1454,16 @@ class MusicProvider extends ChangeNotifier {
         }
       }
 
+      for (final p in enrichedPlayers) {
+        if (p.type == 'Sendspin' ||
+            (p.name.toLowerCase().contains('iphone') && p.id != 'local_iphone') ||
+            p.id == _sendspinService.clientId) {
+          _sendspinService.serverPlayerId = p.id;
+          debugPrint('[MusicProvider] Sendspin iPhone Player registriert mit ID: ${p.id}');
+          break;
+        }
+      }
+
       final localIPhone = PlayerDevice.localIPhone(
         isSelected: false,
         volume: 60,
@@ -2187,17 +2201,21 @@ class MusicProvider extends ChangeNotifier {
       }
     }
 
-    // 2. Wiedergabe: Echter Music Assistant Lautsprecher (Volle Songlänge!) vs. Lokaler Fallback
-    if (!isLocalPlayback && _activePlayer != null) {
-      // Externer Netzwerk-Lautsprecher (Sonos, AirPlay, Chromecast, Universal, etc.)
+    // 2. Wiedergabe: Sendspin iPhone Player oder echter Music Assistant Lautsprecher (Volle Songlänge!)
+    final targetPlayerId = _effectiveActivePlayerId;
+    if (_api.isConnected && targetPlayerId != null) {
+      // Echte Music Assistant Wiedergabe via Sendspin oder Netzwerk-Lautsprecher (Volle Songlänge!)
       await _localAudioPlayer.stop();
+      if (isLocalPlayback || _activePlayer?.type == 'Sendspin') {
+        await _sendspinService.unlock();
+      }
       unawaited(AppleNowPlayingService.instance.sync(this, force: true));
       _startPositionTimer();
       final mediaUri = _resolveTrackMediaUri(track);
       try {
         // Zuerst den gewählten Song einzeln mit 'replace' starten -> startet sofort in voller Länge!
         await _api.playMedia(
-          _activePlayer!.id,
+          targetPlayerId,
           mediaUri,
           option: 'replace',
           radioMode: radioMode,
@@ -2215,7 +2233,7 @@ class MusicProvider extends ChangeNotifier {
             unawaited(
               _api
                   .playMedia(
-                    _activePlayer!.id,
+                    targetPlayerId,
                     nextUris,
                     option: 'add',
                   )
@@ -2229,12 +2247,12 @@ class MusicProvider extends ChangeNotifier {
         debugPrint('[MusicProvider] Remote playMedia error: $e');
         if (e is! TimeoutException) {
           try {
-            await _api.playerPlay(_activePlayer!.id);
+            await _api.playerPlay(targetPlayerId);
           } catch (_) {}
         }
       }
     } else {
-      // Lokaler Fallback (nur falls kein Server verbunden ist oder gar keine Netzwerk-Lautsprecher existieren)
+      // Lokaler Fallback (nur falls kein Server verbunden ist oder gar keine Sendspin/Netzwerk-Lautsprecher existieren)
       _positionTimer?.cancel();
       try {
         String? playUrl;
@@ -2388,6 +2406,33 @@ class MusicProvider extends ChangeNotifier {
         lower.contains('mytuner-radio.net');
   }
 
+  String? get _effectiveActivePlayerId {
+    if (!isLocalPlayback && _activePlayer != null) {
+      return _activePlayer!.id;
+    }
+    final sendspinId = _sendspinService.serverPlayerId ??
+        _players.firstWhere(
+          (p) =>
+              (p.type == 'Sendspin' ||
+                  p.name.toLowerCase().contains('iphone')) &&
+              p.id != 'local_iphone',
+          orElse: () => PlayerDevice.localIPhone(),
+        ).id;
+    return sendspinId != 'local_iphone' ? sendspinId : null;
+  }
+
+  Future<void> _initSendspinPlayer() async {
+    if (_serverUrl.isEmpty) return;
+    try {
+      await _sendspinService.initialize(
+        serverUrl: _serverUrl,
+        clientName: 'Dieses iPhone',
+      );
+    } catch (e) {
+      debugPrint('[MusicProvider] Sendspin Init Fehler: $e');
+    }
+  }
+
   Future<void> togglePlayPause() async {
     if (_currentTrack == null && _queue.isNotEmpty) {
       await playTrack(_queue.first);
@@ -2397,7 +2442,23 @@ class MusicProvider extends ChangeNotifier {
     _isPlaying = !_isPlaying;
     notifyListeners();
 
-    if (isLocalPlayback) {
+    final effPlayerId = _effectiveActivePlayerId;
+    if (effPlayerId != null && _api.isConnected) {
+      if (_isPlaying) {
+        _startPositionTimer();
+        if (isLocalPlayback || _activePlayer?.type == 'Sendspin') {
+          await _sendspinService.unlock();
+          await _sendspinService.sendCommand('play');
+        }
+        await _api.playerPlay(effPlayerId);
+      } else {
+        _positionTimer?.cancel();
+        if (isLocalPlayback || _activePlayer?.type == 'Sendspin') {
+          await _sendspinService.sendCommand('pause');
+        }
+        await _api.playerPause(effPlayerId);
+      }
+    } else if (isLocalPlayback) {
       if (_isPlaying) {
         if (_localAudioPlayer.source == null &&
             _currentTrack != null &&
@@ -2423,9 +2484,10 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> next() async {
-    if (!isLocalPlayback && _activePlayer != null && _api.isConnected) {
+    final effPlayerId = _effectiveActivePlayerId;
+    if (effPlayerId != null && _api.isConnected) {
       try {
-        await _api.playerNext(_activePlayer!.id);
+        await _api.playerNext(effPlayerId);
         return;
       } catch (e) {
         debugPrint('[MusicProvider] Remote playerNext fallback: $e');
@@ -2454,9 +2516,10 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
 
-    if (!isLocalPlayback && _activePlayer != null && _api.isConnected) {
+    final effPlayerId = _effectiveActivePlayerId;
+    if (effPlayerId != null && _api.isConnected) {
       try {
-        await _api.playerPrevious(_activePlayer!.id);
+        await _api.playerPrevious(effPlayerId);
         return;
       } catch (e) {
         debugPrint('[MusicProvider] Remote playerPrevious fallback: $e');
@@ -2475,9 +2538,10 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> seekTo(Duration position) async {
     _currentPosition = position;
-    if (_activePlayer != null && !_activePlayer!.isLocal) {
+    final effPlayerId = _effectiveActivePlayerId;
+    if (effPlayerId != null) {
       _positionTracker.setAnchor(
-        queueId: _activePlayer!.id,
+        queueId: effPlayerId,
         elapsedSec: position.inMilliseconds / 1000.0,
         isPlaying: _isPlaying,
         durationSec: _totalDuration.inSeconds.toDouble(),
@@ -2485,17 +2549,17 @@ class MusicProvider extends ChangeNotifier {
     }
     notifyListeners();
 
-    if (isLocalPlayback) {
+    if (effPlayerId != null && _api.isConnected) {
+      try {
+        await _api.playerSeek(effPlayerId, position.inSeconds);
+      } catch (e) {
+        debugPrint('[MusicProvider] Remote seek error: $e');
+      }
+    } else if (isLocalPlayback) {
       try {
         await _localAudioPlayer.seek(position);
       } catch (e) {
         debugPrint('[MusicProvider] Local seek error: $e');
-      }
-    } else if (_activePlayer != null) {
-      try {
-        await _api.playerSeek(_activePlayer!.id, position.inSeconds);
-      } catch (e) {
-        debugPrint('[MusicProvider] Remote seek error: $e');
       }
     }
 
@@ -2682,6 +2746,11 @@ class MusicProvider extends ChangeNotifier {
       final clamped = vol.clamp(0, 100);
       _activePlayer!.volume = clamped;
       if (_activePlayer!.isLocal) {
+        await _sendspinService.setVolume(clamped);
+        final sendspinId = _sendspinService.serverPlayerId;
+        if (sendspinId != null && _api.isConnected) {
+          _dispatchThrottledVolume(sendspinId, clamped);
+        }
         await _localAudioPlayer.setVolume(clamped / 100.0);
       } else {
         _dispatchThrottledVolume(_activePlayer!.id, clamped);
@@ -2698,6 +2767,11 @@ class MusicProvider extends ChangeNotifier {
     final clamped = vol.clamp(0, 100);
     player.volume = clamped;
     if (player.isLocal) {
+      await _sendspinService.setVolume(clamped);
+      final sendspinId = _sendspinService.serverPlayerId;
+      if (sendspinId != null && _api.isConnected) {
+        _dispatchThrottledVolume(sendspinId, clamped);
+      }
       await _localAudioPlayer.setVolume(clamped / 100.0);
     } else {
       _dispatchThrottledVolume(player.id, clamped);
@@ -2759,6 +2833,11 @@ class MusicProvider extends ChangeNotifier {
   Future<void> toggleMute(PlayerDevice player) async {
     player.isMuted = !player.isMuted;
     if (player.isLocal) {
+      await _sendspinService.setMuted(player.isMuted);
+      final sendspinId = _sendspinService.serverPlayerId;
+      if (sendspinId != null && _api.isConnected) {
+        await _api.playerMute(sendspinId, player.isMuted);
+      }
       await _localAudioPlayer
           .setVolume(player.isMuted ? 0.0 : player.volume / 100.0);
     } else {
@@ -3133,6 +3212,7 @@ class MusicProvider extends ChangeNotifier {
     await _storage.saveServerUrl(url);
     await _storage.saveAuthToken(token);
     _api.configure(url, token);
+    unawaited(_initSendspinPlayer());
     await refreshServerData();
     notifyListeners();
   }

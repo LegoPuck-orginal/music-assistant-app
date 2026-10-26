@@ -50,7 +50,7 @@ class PlayerDevice {
   factory PlayerDevice.localIPhone({bool isSelected = false, int volume = 60}) {
     return PlayerDevice(
       id: 'local_iphone',
-      name: 'Dieses iPhone (Lautsprecher / Kopfhörer)',
+      name: 'Dieses iPhone (Sendspin Hi-Fi Player)',
       type: 'iPhone',
       volume: volume,
       isSelected: isSelected,

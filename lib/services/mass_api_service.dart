@@ -1282,7 +1282,8 @@ class MassApiService {
     if (p.contains('chromecast') || p.contains('cast') || p.contains('shield')) {
       return 'Chromecast';
     }
-    if (p.contains('sendspin') || p.contains('companion')) return 'Companion';
+    if (p.contains('sendspin')) return 'Sendspin';
+    if (p.contains('companion')) return 'Companion';
     if (p.contains('universal')) return 'Universal';
     return provider.toUpperCase();
   }

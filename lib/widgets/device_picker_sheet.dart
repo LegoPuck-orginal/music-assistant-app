@@ -16,7 +16,9 @@ class DevicePickerSheet extends StatelessWidget {
     if (t.contains('chromecast') || t.contains('cast') || t.contains('google') || t.contains('shield')) {
       return Icons.cast;
     }
-    if (t.contains('phone') || t.contains('iphone')) return Icons.smartphone;
+    if (t.contains('phone') || t.contains('iphone') || t.contains('sendspin')) {
+      return Icons.smartphone;
+    }
     return Icons.speaker_group;
   }
 
@@ -323,8 +325,8 @@ class DevicePickerSheet extends StatelessWidget {
                                           ? '🔗 Synchronisiert mit ${active?.name}'
                                           : player.isGroupLeader
                                               ? '👑 Gruppenleiter (${player.groupChilds.length} Lautsprecher)'
-                                              : player.isLocal
-                                                  ? 'Lokaler iPhone-Lautsprecher (Vorschau / Unterwegs)'
+                                              : player.isLocal || player.type == 'Sendspin'
+                                                  ? 'Dieses iPhone • Sendspin Hi-Fi Player • Volle Songlänge'
                                                   : '${player.type} • Volle Songlänge • DSP Equalizer',
                               style: TextStyle(
                                 color: isAvail
@@ -332,8 +334,8 @@ class DevicePickerSheet extends StatelessWidget {
                                         ? SpotifyColors.orange
                                         : isSynced
                                             ? SpotifyColors.green
-                                            : player.isLocal
-                                                ? SpotifyColors.textSecondary
+                                            : (player.isLocal || player.type == 'Sendspin')
+                                                ? SpotifyColors.green.withValues(alpha: 0.95)
                                                 : SpotifyColors.green.withValues(alpha: 0.85))
                                     : SpotifyColors.textMuted,
                                 fontSize: 12,

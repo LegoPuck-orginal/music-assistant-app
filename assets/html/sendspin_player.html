@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sendspin Player Bridge</title>
+</head>
+<body style="background: transparent; margin: 0; padding: 0;">
+  <audio id="dummy-media" preload="auto" playsinline loop></audio>
+  <script src="../js/sendspin.bundle.js"></script>
+  <script>
+    let player = null;
+    let registeredClientId = null;
+
+    window.initSendspin = async function(baseUrl, clientName) {
+      console.log("[Sendspin JS] Initializing with baseUrl:", baseUrl, "clientName:", clientName);
+      if (player) {
+        try { player.disconnect("reconnect"); } catch (e) {}
+        player = null;
+      }
+
+      try {
+        const PlayerClass = (window.SendspinSDK && window.SendspinSDK.SendspinPlayer) || window.SendspinPlayer;
+        if (!PlayerClass) {
+          throw new Error("SendspinPlayer class not found in SendspinSDK");
+        }
+
+        player = new PlayerClass({
+          baseUrl: baseUrl,
+          clientName: clientName || "Dieses iPhone",
+          productName: "Music Assistant iOS",
+          correctionMode: "quality-local",
+          requiredLeadTimeMs: 250,
+          minBufferMs: 250,
+          onStateChange: (state) => {
+            if (window.flutter_inappwebview) {
+              window.flutter_inappwebview.callHandler('onSendspinState', JSON.stringify(state));
+            }
+          }
+        });
+
+        await player.unlock();
+        await player.connect();
+
+        registeredClientId = player.clientId;
+        console.log("[Sendspin JS] Connected with clientId:", registeredClientId);
+
+        if (window.flutter_inappwebview) {
+          window.flutter_inappwebview.callHandler('onSendspinReady', JSON.stringify({
+            clientId: registeredClientId,
+            clientName: clientName || "Dieses iPhone"
+          }));
+        }
+        return { success: true, clientId: registeredClientId };
+      } catch (err) {
+        console.error("[Sendspin JS] Error during init/connect:", err);
+        if (window.flutter_inappwebview) {
+          window.flutter_inappwebview.callHandler('onSendspinError', err.toString());
+        }
+        return { success: false, error: err.toString() };
+      }
+    };
+
+    window.sendspinUnlock = async function() {
+      if (player) {
+        try {
+          await player.unlock();
+          return true;
+        } catch (e) {
+          console.error("[Sendspin JS] unlock error:", e);
+        }
+      }
+      return false;
+    };
+
+    window.sendspinCommand = function(cmd, args) {
+      if (!player) return;
+      try {
+        if (cmd === 'volume') {
+          const vol = (args && args.volume !== undefined) ? args.volume : 50;
+          player.setVolume(vol);
+        } else if (cmd === 'mute') {
+          const muted = (args && args.muted !== undefined) ? args.muted : false;
+          player.setMuted(muted);
+        } else {
+          player.sendCommand(cmd, args || {});
+        }
+      } catch (e) {
+        console.error("[Sendspin JS] Command error:", cmd, e);
+      }
+    };
+
+    window.sendspinDisconnect = function(reason) {
+      if (player) {
+        try {
+          player.disconnect(reason || "user_request");
+        } catch (e) {}
+      }
+    };
+  </script>
+</body>
+</html>
