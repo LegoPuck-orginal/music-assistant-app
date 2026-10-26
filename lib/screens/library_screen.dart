@@ -125,13 +125,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     child: ProfileAvatar(user: prov.currentUser, radius: 17),
                   ),
                   const SizedBox(width: 12),
-                  const Text(
-                    'Deine Bibliothek',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.5,
+                  const Expanded(
+                    child: Text(
+                      'Deine Bibliothek',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
                     ),
                   ),
                 ],
@@ -374,12 +378,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                     const Icon(Icons.push_pin_rounded,
                                         size: 13, color: SpotifyColors.orange),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      'Angepinnte Favoriten • ${likedTracks.length} Songs',
-                                      style: const TextStyle(
-                                        color: SpotifyColors.textSecondary,
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600,
+                                    Expanded(
+                                      child: Text(
+                                        'Angepinnte Favoriten • ${likedTracks.length} Songs',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: SpotifyColors.textSecondary,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
                                   ],

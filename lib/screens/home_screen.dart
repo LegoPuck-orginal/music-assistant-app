@@ -108,17 +108,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      prov.activePlayer != null
-                          ? 'STUDIO • ${prov.activePlayer!.name.toUpperCase()}'
-                          : 'MUSIC ASSISTANT STUDIO',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: SpotifyColors.orangeLight,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.1,
+                    Expanded(
+                      child: Text(
+                        prov.activePlayer != null
+                            ? 'STUDIO • ${prov.activePlayer!.name.toUpperCase()}'
+                            : 'MUSIC ASSISTANT STUDIO',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: SpotifyColors.orangeLight,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.1,
+                        ),
                       ),
                     ),
                   ],
@@ -126,9 +128,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 1),
                 Text(
                   _getGreeting(prov),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 21,
+                    fontSize: 20,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.6,
                   ),

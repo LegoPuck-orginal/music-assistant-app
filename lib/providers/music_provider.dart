@@ -32,6 +32,7 @@ class MusicProvider extends ChangeNotifier {
   final MassApiService _api = MassApiService();
   final StorageService _storage = StorageService();
   final AudioPlayer _localAudioPlayer = AudioPlayer();
+  AudioPlayer get localAudioPlayer => _localAudioPlayer;
   final SendspinPlayerService _sendspinService = SendspinPlayerService();
   final UpdateService _updateService = UpdateService();
   final DownloadService _downloadService = DownloadService();

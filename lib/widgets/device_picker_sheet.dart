@@ -77,16 +77,19 @@ class _DevicePickerSheetState extends State<DevicePickerSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
-                  const Text(
-                    'Geräte & Multiroom',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.4,
+                  const Expanded(
+                    child: Text(
+                      'Geräte & Multiroom',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.4,
+                      ),
                     ),
                   ),
-                  const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.watch_rounded,
                         color: SpotifyColors.textSecondary, size: 22),
@@ -136,12 +139,16 @@ class _DevicePickerSheetState extends State<DevicePickerSheet> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    'Music Assistant • ${players.length} Lautsprecher verfügbar',
-                    style: const TextStyle(
-                      color: SpotifyColors.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                  Expanded(
+                    child: Text(
+                      'Music Assistant • ${players.length} Lautsprecher verfügbar',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: SpotifyColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],
@@ -320,18 +327,22 @@ class _DevicePickerSheetState extends State<DevicePickerSheet> {
               padding: EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
-                  Text(
-                    'WEITERE LAUTSPRECHER IM NETZWERK',
-                    style: TextStyle(
-                      color: SpotifyColors.textSecondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.8,
+                  Expanded(
+                    child: Text(
+                      'WEITERE LAUTSPRECHER IM NETZWERK',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: SpotifyColors.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
                     ),
                   ),
-                  Spacer(),
+                  SizedBox(width: 8),
                   Text(
-                    'Tippe auf „Mitspielen“ für Multiroom',
+                    'Multiroom Sync',
                     style: TextStyle(
                       color: SpotifyColors.textMuted,
                       fontSize: 10.5,
