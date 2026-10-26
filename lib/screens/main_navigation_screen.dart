@@ -5,6 +5,7 @@ import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/mini_player.dart';
 import 'home_screen.dart';
+import 'hoerspiele_screen.dart';
 import 'library_screen.dart';
 import 'search_screen.dart';
 
@@ -21,6 +22,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final List<Widget> _screens = const [
     HomeScreen(),
     SearchScreen(),
+    HoerspieleScreen(),
     LibraryScreen(),
   ];
 
@@ -108,6 +110,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               icon: Icon(Icons.manage_search_rounded),
               activeIcon: Icon(Icons.search_rounded),
               label: 'Suche',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.headphones_outlined),
+              activeIcon: Icon(Icons.headphones_rounded),
+              label: 'Hörspiele',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.album_outlined),

@@ -279,7 +279,17 @@ class MusicProvider extends ChangeNotifier {
     for (final t in downloadedTracks) {
       consider(t);
     }
-    return map.values.toList();
+    final list = map.values.toList();
+    final likedList = _likedTrackIds.toList();
+    list.sort((a, b) {
+      final idxA = likedList.indexOf(a.id);
+      final idxB = likedList.indexOf(b.id);
+      if (idxA != -1 && idxB != -1) {
+        return idxB.compareTo(idxA);
+      }
+      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    });
+    return list;
   }
 
   Duration? get sleepTimerRemaining {
@@ -2720,10 +2730,12 @@ class MusicProvider extends ChangeNotifier {
   }
 
   /// Synchronisiert einen Lautsprecher mit dem aktuell aktiven Lautsprecher (Multiroom)
+  /// Die Wiedergabe auf dem iPhone läuft dabei nahtlos parallel weiter!
   Future<void> syncSpeakerWithActive(PlayerDevice speaker) async {
-    if (_activePlayer == null || _activePlayer!.isLocal || speaker.isLocal) return;
+    final leaderId = _effectiveActivePlayerId;
+    if (leaderId == null || leaderId.isEmpty || speaker.id == leaderId) return;
     try {
-      await _api.syncPlayer(speaker.id, _activePlayer!.id);
+      await _api.syncPlayer(speaker.id, leaderId);
       await refreshServerData();
     } catch (e) {
       debugPrint('[MusicProvider] syncSpeakerWithActive error: $e');
@@ -2732,13 +2744,18 @@ class MusicProvider extends ChangeNotifier {
 
   /// Hebt die Gruppensynchronisierung für einen Lautsprecher auf
   Future<void> unsyncSpeaker(PlayerDevice speaker) async {
-    if (speaker.isLocal) return;
     try {
       await _api.unsyncPlayer(speaker.id);
       await refreshServerData();
     } catch (e) {
       debugPrint('[MusicProvider] unsyncSpeaker error: $e');
     }
+  }
+
+  /// Überträgt die primäre Wiedergabe gezielt auf einen anderen Lautsprecher
+  Future<void> transferPlaybackTo(PlayerDevice target) async {
+    if (_activePlayer?.id == target.id) return;
+    await setActivePlayer(target);
   }
 
   Future<void> setVolume(int vol) async {

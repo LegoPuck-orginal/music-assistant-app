@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/playlist.dart';
+import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/track_tile.dart';
@@ -21,6 +22,31 @@ class PlaylistDetailScreen extends StatefulWidget {
 class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   bool _isLiked = false;
   bool _isLoadingTracks = false;
+  String _sortMode = 'default'; // 'default', 'title', 'artist', 'album', 'duration'
+  String _searchQuery = '';
+  bool _isSearching = false;
+  final TextEditingController _searchCtrl = TextEditingController();
+
+  String get _sortLabel {
+    switch (_sortMode) {
+      case 'title':
+        return 'Titel (A–Z)';
+      case 'artist':
+        return 'Künstler (A–Z)';
+      case 'album':
+        return 'Album (A–Z)';
+      case 'duration':
+        return 'Längste zuerst';
+      default:
+        return 'Kürzlich hinzugefügt';
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -42,9 +68,39 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
-    final tracks = widget.playlist.tracks;
-    final allDownloaded = tracks.isNotEmpty && tracks.every((t) => prov.isTrackDownloaded(t.id));
-    final anyDownloading = tracks.any((t) => prov.isTrackDownloading(t.id));
+    final tracks = widget.playlist.id == 'liked_songs'
+        ? prov.likedTracks
+        : widget.playlist.tracks;
+
+    var displayTracks = List<Track>.from(tracks);
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      displayTracks = displayTracks
+          .where((t) =>
+              t.title.toLowerCase().contains(q) ||
+              t.artist.toLowerCase().contains(q) ||
+              t.album.toLowerCase().contains(q))
+          .toList();
+    }
+
+    if (_sortMode == 'title') {
+      displayTracks.sort(
+          (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    } else if (_sortMode == 'artist') {
+      displayTracks.sort(
+          (a, b) => a.artist.toLowerCase().compareTo(b.artist.toLowerCase()));
+    } else if (_sortMode == 'album') {
+      displayTracks.sort(
+          (a, b) => a.album.toLowerCase().compareTo(b.album.toLowerCase()));
+    } else if (_sortMode == 'duration') {
+      displayTracks
+          .sort((a, b) => b.durationSeconds.compareTo(a.durationSeconds));
+    }
+
+    final allDownloaded = displayTracks.isNotEmpty &&
+        displayTracks.every((t) => prov.isTrackDownloaded(t.id));
+    final anyDownloading =
+        displayTracks.any((t) => prov.isTrackDownloading(t.id));
 
     return Scaffold(
       backgroundColor: SpotifyColors.pureBlack,
@@ -259,8 +315,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   GestureDetector(
                     onTap: () {
                       HapticFeedback.mediumImpact();
-                      if (tracks.isNotEmpty) {
-                        final playList = List.of(tracks);
+                      if (displayTracks.isNotEmpty) {
+                        final playList = List.of(displayTracks);
                         if (prov.isShuffle && playList.length > 1) {
                           playList.shuffle();
                         }
@@ -294,6 +350,108 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
             ),
           ),
 
+          // Interaktive Suchleiste innerhalb der Playlist
+          if (_isSearching)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: SpotifyColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: SpotifyColors.green.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                    onChanged: (val) {
+                      setState(() {
+                        _searchQuery = val;
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search,
+                          color: SpotifyColors.green, size: 18),
+                      hintText: 'In dieser Playlist suchen...',
+                      hintStyle: TextStyle(
+                          color: SpotifyColors.textMuted, fontSize: 12.5),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // Sortier- & Filter-Leiste
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+              child: Row(
+                children: [
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      _showSortSheet(context);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.swap_vert_rounded,
+                              color: SpotifyColors.green, size: 18),
+                          const SizedBox(width: 6),
+                          Text(
+                            _sortLabel,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(
+                      _isSearching ? Icons.close : Icons.search,
+                      color: SpotifyColors.textSecondary,
+                      size: 20,
+                    ),
+                    tooltip: 'In Playlist suchen',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      setState(() {
+                        _isSearching = !_isSearching;
+                        if (!_isSearching) {
+                          _searchCtrl.clear();
+                          _searchQuery = '';
+                        }
+                      });
+                    },
+                  ),
+                  Text(
+                    '${displayTracks.length} Titel',
+                    style: const TextStyle(
+                      color: SpotifyColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           // Loading indicator or Empty State or Track List
           if (_isLoadingTracks)
             const SliverToBoxAdapter(
@@ -307,7 +465,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 ),
               ),
             )
-          else if (tracks.isEmpty)
+          else if (displayTracks.isEmpty)
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 40),
@@ -318,7 +476,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                           size: 48, color: SpotifyColors.textMuted),
                       SizedBox(height: 12),
                       Text(
-                        'Keine Titel in dieser Auswahl',
+                        'Keine Titel gefunden',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -334,17 +492,17 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  final track = tracks[index];
+                  final track = displayTracks[index];
                   return TrackTile(
                     track: track,
                     index: index + 1,
                     showImage: true,
                     onTap: () {
-                      prov.playTrack(track, newQueue: tracks);
+                      prov.playTrack(track, newQueue: displayTracks);
                     },
                   );
                 },
-                childCount: tracks.length,
+                childCount: displayTracks.length,
               ),
             ),
 
@@ -434,6 +592,65 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showSortSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SpotifyColors.surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 10),
+              child: Text(
+                'Sortieren nach',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            _buildSortOption('default', 'Kürzlich hinzugefügt (Standard)'),
+            _buildSortOption('title', 'Titel (A–Z)'),
+            _buildSortOption('artist', 'Künstler (A–Z)'),
+            _buildSortOption('album', 'Album (A–Z)'),
+            _buildSortOption('duration', 'Dauer (Längste zuerst)'),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSortOption(String mode, String label) {
+    final isSelected = _sortMode == mode;
+    return ListTile(
+      title: Text(
+        label,
+        style: TextStyle(
+          color: isSelected ? SpotifyColors.green : Colors.white,
+          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+          fontSize: 14,
+        ),
+      ),
+      trailing: isSelected
+          ? const Icon(Icons.check, color: SpotifyColors.green, size: 20)
+          : null,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() {
+          _sortMode = mode;
+        });
+        Navigator.pop(context);
+      },
     );
   }
 }

@@ -6,8 +6,9 @@ import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_edit_dialog.dart';
-import 'audiobook_detail_screen.dart';
+import '../widgets/track_tile.dart';
 import 'playlist_detail_screen.dart';
+import 'virtual_dj_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -17,8 +18,8 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  String _selectedFilter = 'Playlists';
-  String _sortMode = 'recent'; // 'recent', 'alpha', 'tracks'
+  String _selectedFilter = 'Alle';
+  String _sortMode = 'recent'; // 'recent', 'alpha', 'artist', 'tracks'
   bool _isGridView = false;
   bool _isSearching = false;
   final TextEditingController _librarySearchCtrl = TextEditingController();
@@ -28,6 +29,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     switch (_sortMode) {
       case 'alpha':
         return 'Alphabetisch (A–Z)';
+      case 'artist':
+        return 'Künstler (A–Z)';
       case 'tracks':
         return 'Meiste Titel';
       default:
@@ -45,29 +48,42 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget build(BuildContext context) {
     final prov = context.watch<MusicProvider>();
     final allPlaylists = prov.playlists;
+    final likedTracks = prov.likedTracks;
 
-    final audiobookPlaylists = prov.audiobooks
-        .map((ab) => Playlist(
-              id: ab.id,
-              name: '${ab.series}: ${ab.title}',
-              owner: ab.formattedEpisode,
-              trackCount: ab.chapters.length,
-              imageUrl: ab.imageUrl,
-              type: 'audiobook',
-              tracks: ab.chapters,
-            ))
-        .toList();
+    var filteredLikedTracks = List.of(likedTracks);
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      filteredLikedTracks = filteredLikedTracks
+          .where((t) =>
+              t.title.toLowerCase().contains(q) ||
+              t.artist.toLowerCase().contains(q) ||
+              t.album.toLowerCase().contains(q))
+          .toList();
+    }
+    if (_sortMode == 'alpha') {
+      filteredLikedTracks.sort((a, b) =>
+          a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    } else if (_sortMode == 'artist') {
+      filteredLikedTracks.sort((a, b) =>
+          a.artist.toLowerCase().compareTo(b.artist.toLowerCase()));
+    } else if (_sortMode == 'tracks') {
+      filteredLikedTracks
+          .sort((a, b) => b.durationSeconds.compareTo(a.durationSeconds));
+    }
 
     // Filter by category
-    var filteredPlaylists = _selectedFilter == 'Playlists'
-        ? allPlaylists.where((p) => p.type == 'playlist').toList()
-        : _selectedFilter == 'Alben'
-            ? allPlaylists.where((p) => p.type == 'album').toList()
-            : _selectedFilter == 'Künstler'
-                ? allPlaylists.where((p) => p.type == 'artist').toList()
-                : _selectedFilter == 'Hörbücher'
-                    ? audiobookPlaylists
-                    : allPlaylists.where((p) => p.type == 'podcast').toList();
+    var filteredPlaylists = <Playlist>[];
+    if (_selectedFilter == 'Alle') {
+      filteredPlaylists = List.of(allPlaylists);
+    } else if (_selectedFilter == 'Playlists') {
+      filteredPlaylists = allPlaylists.where((p) => p.type == 'playlist').toList();
+    } else if (_selectedFilter == 'Alben') {
+      filteredPlaylists = allPlaylists.where((p) => p.type == 'album').toList();
+    } else if (_selectedFilter == 'Künstler') {
+      filteredPlaylists = allPlaylists.where((p) => p.type == 'artist').toList();
+    } else if (_selectedFilter == 'Podcasts') {
+      filteredPlaylists = allPlaylists.where((p) => p.type == 'podcast').toList();
+    }
 
     // Filter by search query if active
     if (_searchQuery.trim().isNotEmpty) {
@@ -84,11 +100,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
       filteredPlaylists.sort(
         (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       );
+    } else if (_sortMode == 'artist') {
+      filteredPlaylists.sort(
+        (a, b) => a.owner.toLowerCase().compareTo(b.owner.toLowerCase()),
+      );
     } else if (_sortMode == 'tracks') {
       filteredPlaylists.sort((a, b) => b.trackCount.compareTo(a.trackCount));
     }
-
-    final likedTracks = prov.likedTracks;
 
     return Scaffold(
       backgroundColor: SpotifyColors.pureBlack,
@@ -119,6 +137,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ],
               ),
               actions: [
+                // Dezent platzierter KI-DJ
+                IconButton(
+                  icon: const Icon(Icons.auto_awesome_rounded,
+                      color: SpotifyColors.orangeLight, size: 21),
+                  tooltip: 'KI-DJ Studio',
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const VirtualDjScreen()),
+                    );
+                  },
+                ),
                 IconButton(
                   icon: Icon(
                     _isSearching ? Icons.close : Icons.search,
@@ -189,15 +220,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
+                    _filterChip('Alle'),
+                    const SizedBox(width: 8),
                     _filterChip('Playlists'),
                     const SizedBox(width: 8),
-                    _filterChip('Podcasts'),
+                    _filterChip('Lieblingssongs'),
                     const SizedBox(width: 8),
-                    _filterChip('Hörbücher'),
+                    _filterChip('Alben'),
                     const SizedBox(width: 8),
                     _filterChip('Künstler'),
                     const SizedBox(width: 8),
-                    _filterChip('Alben'),
+                    _filterChip('Podcasts'),
                   ],
                 ),
               ),
@@ -259,7 +292,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
 
             // Pinned Item: Lieblingssongs im Adobe-Ember Studio Vault Design
-            if (_searchQuery.isEmpty)
+            if (_searchQuery.isEmpty && _selectedFilter != 'Lieblingssongs')
               SliverToBoxAdapter(
                 child: Padding(
                   padding:
@@ -374,8 +407,63 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
 
-            // View: List or Grid
-            if (_isGridView)
+            // Content: Lieblingssongs direkt als Trackliste anzeigen wenn Filter aktiv
+            if (_selectedFilter == 'Lieblingssongs')
+              if (filteredLikedTracks.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+                    child: Center(
+                      child: Text(
+                        'Keine Lieblingssongs vorhanden.\nMarkiere Titel mit dem Herz-Symbol, um sie hier zu sammeln.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: SpotifyColors.textSecondary,
+                          fontSize: 14,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final track = filteredLikedTracks[index];
+                      return TrackTile(
+                        track: track,
+                        index: index + 1,
+                        showImage: true,
+                        onTap: () {
+                          prov.playTrack(track, newQueue: filteredLikedTracks);
+                        },
+                      );
+                    },
+                    childCount: filteredLikedTracks.length,
+                  ),
+                )
+            else if (filteredPlaylists.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+                  child: Center(
+                    child: Text(
+                      _searchQuery.isNotEmpty
+                          ? 'Keine Ergebnisse für „$_searchQuery“'
+                          : 'Keine Einträge in dieser Kategorie.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: SpotifyColors.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            // View: List or Grid for Playlists / Alben / Künstler
+            else if (_isGridView)
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 sliver: SliverGrid(
@@ -390,23 +478,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       final p = filteredPlaylists[index];
                       return GestureDetector(
                         onTap: () {
-                          if (p.type == 'audiobook') {
-                            final ab = prov.audiobooks.firstWhere(
-                              (a) => a.id == p.id,
-                              orElse: () => prov.audiobooks.first,
-                            );
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => AudiobookDetailScreen(audiobook: ab),
-                              ),
-                            );
-                          } else {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => PlaylistDetailScreen(playlist: p),
-                              ),
-                            );
-                          }
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PlaylistDetailScreen(playlist: p),
+                            ),
+                          );
                         },
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -465,23 +541,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     final p = filteredPlaylists[index];
                     return InkWell(
                       onTap: () {
-                        if (p.type == 'audiobook') {
-                          final ab = prov.audiobooks.firstWhere(
-                            (a) => a.id == p.id,
-                            orElse: () => prov.audiobooks.first,
-                          );
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => AudiobookDetailScreen(audiobook: ab),
-                            ),
-                          );
-                        } else {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => PlaylistDetailScreen(playlist: p),
-                            ),
-                          );
-                        }
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PlaylistDetailScreen(playlist: p),
+                          ),
+                        );
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -643,6 +707,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   : null,
               onTap: () {
                 setState(() => _sortMode = 'alpha');
+                Navigator.pop(ctx);
+              },
+            ),
+            ListTile(
+              title: Text(
+                'Künstler (A–Z)',
+                style: TextStyle(
+                  color: _sortMode == 'artist'
+                      ? SpotifyColors.green
+                      : Colors.white,
+                  fontWeight: _sortMode == 'artist'
+                      ? FontWeight.w700
+                      : FontWeight.normal,
+                ),
+              ),
+              trailing: _sortMode == 'artist'
+                  ? const Icon(Icons.check, color: SpotifyColors.green)
+                  : null,
+              onTap: () {
+                setState(() => _sortMode = 'artist');
                 Navigator.pop(ctx);
               },
             ),

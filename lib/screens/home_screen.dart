@@ -6,7 +6,6 @@ import '../models/track.dart';
 import '../providers/music_provider.dart';
 import '../theme/spotify_colors.dart';
 import '../widgets/album_card.dart';
-import '../widgets/audiobook_card.dart';
 import '../widgets/device_picker_sheet.dart';
 import '../widgets/downloads_sheet.dart';
 import '../widgets/feedback_sheet.dart';
@@ -15,7 +14,6 @@ import '../widgets/profile_edit_dialog.dart';
 import '../widgets/recommendation_card.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/update_dialog.dart';
-import 'audiobook_detail_screen.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
 import 'virtual_dj_screen.dart';
@@ -138,66 +136,160 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             actions: [
+              // 1. Dezent platzierter KI-DJ
               IconButton(
-                icon: const Icon(Icons.bug_report_outlined, color: Colors.white),
-                tooltip: 'Feedback & GitHub Issue erstellen',
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  FeedbackSheet.show(context);
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.campaign_outlined, color: Colors.white),
-                tooltip: 'Durchsage an Lautsprecher',
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  _showAnnouncementDialog(context, prov);
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.notifications_none_rounded,
-                    color: Colors.white),
-                tooltip: 'Systemstatus & Mitteilungen',
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  _showNotificationsSheet(context);
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.history_rounded, color: Colors.white),
-                tooltip: 'Zuletzt gehört',
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  _showHistorySheet(context, prov);
-                },
-              ),
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.settings_outlined,
-                        color: Colors.white),
-                    tooltip: 'Einstellungen',
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => const SettingsScreen()),
-                      );
-                    },
+                icon: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        SpotifyColors.orange.withValues(alpha: 0.25),
+                        Colors.deepPurple.withValues(alpha: 0.25),
+                      ],
+                    ),
+                    shape: BoxShape.circle,
                   ),
-                  if (prov.hasUpdate)
-                    Positioned(
-                      top: 10,
-                      right: 10,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: SpotifyColors.orange,
-                          shape: BoxShape.circle,
+                  child: const Icon(Icons.auto_awesome_rounded,
+                      color: SpotifyColors.orangeLight, size: 18),
+                ),
+                tooltip: 'KI-DJ Radio',
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const VirtualDjScreen()),
+                  );
+                },
+              ),
+              // 2. Spotify Connect Geräte & Multiroom
+              IconButton(
+                icon: Icon(
+                  prov.activePlayer?.isLocal == true
+                      ? Icons.smartphone_rounded
+                      : Icons.speaker_rounded,
+                  color: prov.isPlaying ? SpotifyColors.green : Colors.white,
+                  size: 22,
+                ),
+                tooltip: 'Geräte & Multiroom',
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => const DevicePickerSheet(),
+                  );
+                },
+              ),
+              // 3. Aufgeräumtes Overflow-Menü
+              PopupMenuButton<String>(
+                icon: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(Icons.more_vert_rounded, color: Colors.white, size: 22),
+                    if (prov.hasUpdate)
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: SpotifyColors.orange,
+                            shape: BoxShape.circle,
+                          ),
                         ),
                       ),
+                  ],
+                ),
+                color: SpotifyColors.surfaceElevated,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: SpotifyColors.borderSubtle),
+                ),
+                onSelected: (val) {
+                  HapticFeedback.lightImpact();
+                  switch (val) {
+                    case 'settings':
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      );
+                      break;
+                    case 'history':
+                      _showHistorySheet(context, prov);
+                      break;
+                    case 'announce':
+                      _showAnnouncementDialog(context, prov);
+                      break;
+                    case 'notifications':
+                      _showNotificationsSheet(context);
+                      break;
+                    case 'feedback':
+                      FeedbackSheet.show(context);
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'settings',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.settings_outlined, color: Colors.white, size: 18),
+                        const SizedBox(width: 10),
+                        const Text('Einstellungen', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                        if (prov.hasUpdate) ...[
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: SpotifyColors.orange,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text('UPDATE', style: TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.w900)),
+                          ),
+                        ],
+                      ],
                     ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'history',
+                    child: Row(
+                      children: [
+                        Icon(Icons.history_rounded, color: Colors.white, size: 18),
+                        SizedBox(width: 10),
+                        Text('Zuletzt gehört', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'announce',
+                    child: Row(
+                      children: [
+                        Icon(Icons.campaign_outlined, color: Colors.white, size: 18),
+                        SizedBox(width: 10),
+                        Text('Durchsage', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'notifications',
+                    child: Row(
+                      children: [
+                        Icon(Icons.notifications_none_rounded, color: Colors.white, size: 18),
+                        SizedBox(width: 10),
+                        Text('Mitteilungen & Status', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'feedback',
+                    child: Row(
+                      children: [
+                        Icon(Icons.bug_report_outlined, color: Colors.white, size: 18),
+                        SizedBox(width: 10),
+                        Text('Feedback & Support', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -257,143 +349,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-          // Live Multiroom-Überwachung: Zeigt aktive Lautsprecher im Homelab & erlaubt Steuerung
-          if (prov.otherPlayingPlayers.isNotEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Column(
-                  children: prov.otherPlayingPlayers.map((player) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: SpotifyColors.surfaceElevated,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: SpotifyColors.orange.withValues(alpha: 0.5),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: SpotifyColors.orange.withValues(alpha: 0.15),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: SpotifyColors.orange.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.volume_up,
-                              color: SpotifyColors.orange,
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        player.name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: SpotifyColors.orange,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          letterSpacing: 0.3,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 1.5),
-                                      decoration: BoxDecoration(
-                                        color: SpotifyColors.orange
-                                            .withValues(alpha: 0.2),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'SPIELT GERADE',
-                                        style: TextStyle(
-                                          color: SpotifyColors.orange,
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  '${player.currentTitle ?? "Wiedergabe aktiv"} • ${player.currentArtist ?? ""}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: SpotifyColors.orange,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            icon: const Icon(Icons.touch_app, size: 14),
-                            label: const Text(
-                              'Steuern',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            onPressed: () {
-                              HapticFeedback.lightImpact();
-                              prov.takeOverControl(player);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      'Steuerung übernommen für: ${player.name}'),
-                                  duration: const Duration(seconds: 1),
-                                  backgroundColor: SpotifyColors.surfaceElevated,
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-
-          // Filter Chips
+          // Filter Chips (Musik-Fokus)
           SliverToBoxAdapter(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -405,8 +361,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   _buildChip('Musik'),
                   const SizedBox(width: 8),
                   _buildChip('Podcasts'),
-                  const SizedBox(width: 8),
-                  _buildChip('Hörbücher'),
                   const SizedBox(width: 8),
                   _buildChip('Heruntergeladen'),
                 ],
@@ -572,15 +526,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ] else ...[
-            // Spotify Virtual AI DJ Card
-            if (_selectedFilter != 'Podcasts')
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                  child: _buildVirtualDjBanner(context, prov),
-                ),
-              ),
-
           if (filteredPlaylists.isEmpty)
             SliverToBoxAdapter(
               child: Padding(
@@ -703,52 +648,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
 
-            // Section: Hörspiele & Hörbücher (Die drei ???)
-            if (_selectedFilter == 'Alle' || _selectedFilter == 'Hörbücher') ...[
-              SliverToBoxAdapter(
-                child: _buildSectionHeader(
-                  context,
-                  'Hörspiel-Klassiker: Die drei ???',
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 235,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: prov.audiobooks.length,
-                    itemBuilder: (context, index) {
-                      final ab = prov.audiobooks[index];
-                      return AudiobookCard(
-                        audiobook: ab,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => AudiobookDetailScreen(audiobook: ab),
-                            ),
-                          );
-                        },
-                        onPlay: () {
-                          prov.playAudiobook(ab);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ],
-
             // Section: Deine Mediathek (Playlists & Alben)
-            if (_selectedFilter != 'Hörbücher') ...[
-              SliverToBoxAdapter(
-                child: _buildSectionHeader(
-                  context,
-                  _selectedFilter == 'Podcasts'
-                      ? 'Deine Podcasts & Shows (${prov.podcasts.length})'
-                      : 'Deine Playlists & Favoriten',
-                ),
+            SliverToBoxAdapter(
+              child: _buildSectionHeader(
+                context,
+                _selectedFilter == 'Podcasts'
+                    ? 'Deine Podcasts & Shows (${prov.podcasts.length})'
+                    : 'Deine Playlists & Favoriten',
               ),
+            ),
               SliverToBoxAdapter(
                 child: SizedBox(
                   height: 215,
@@ -772,7 +680,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-            ],
 
             if (_selectedFilter != 'Podcasts' && prov.albums.isNotEmpty) ...[
               SliverToBoxAdapter(
@@ -813,176 +720,6 @@ class _HomeScreenState extends State<HomeScreen> {
             child: SizedBox(height: 110),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildVirtualDjBanner(BuildContext context, MusicProvider prov) {
-    final isDjActive = prov.isDjActive;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.mediumImpact();
-        if (!isDjActive) {
-          prov.startVirtualDj();
-        }
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const VirtualDjScreen()),
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          gradient: const LinearGradient(
-            colors: [
-              Color(0xFF2B1206),
-              Color(0xFF170D09),
-              Color(0xFF0E0E13),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          border: Border.all(
-            color: isDjActive
-                ? SpotifyColors.orange.withValues(alpha: 0.75)
-                : SpotifyColors.orange.withValues(alpha: 0.35),
-            width: 1.2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: SpotifyColors.orange
-                  .withValues(alpha: isDjActive ? 0.22 : 0.12),
-              blurRadius: 20,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Glowing Adobe-Ember Studio DJ Orb
-            Container(
-              width: 52,
-              height: 52,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: SweepGradient(
-                  colors: [
-                    SpotifyColors.orange,
-                    Color(0xFFFFA726),
-                    Color(0xFFFF3D00),
-                    SpotifyColors.orangeLight,
-                    SpotifyColors.orange,
-                  ],
-                ),
-              ),
-              child: Center(
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Color(0xFF0A0A0E),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      isDjActive
-                          ? Icons.graphic_eq_rounded
-                          : Icons.auto_awesome_rounded,
-                      color: SpotifyColors.orange,
-                      size: 21,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-
-            // Text Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: SpotifyColors.orange.withValues(alpha: 0.22),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: SpotifyColors.orange.withValues(alpha: 0.6),
-                            width: 0.6,
-                          ),
-                        ),
-                        child: const Text(
-                          'KI-DJ STUDIO',
-                          style: TextStyle(
-                            color: SpotifyColors.orangeLight,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 7),
-                      Flexible(
-                        child: Text(
-                          isDjActive
-                              ? 'Vibe: ${prov.currentDjVibe.title}'
-                              : 'Dein persönlicher Studio-Moderator',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: SpotifyColors.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    isDjActive
-                        ? (prov.djSpeechText ?? 'Tippe für Moderation & Vibe')
-                        : 'Live-Mix, Übergänge & KI-Sprachmoderation starten',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-
-            // Ember Play Button
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: SpotifyColors.emberGradient,
-                boxShadow: [
-                  BoxShadow(
-                    color: SpotifyColors.orange.withValues(alpha: 0.45),
-                    blurRadius: 10,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.play_arrow_rounded,
-                color: Colors.black,
-                size: 24,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
