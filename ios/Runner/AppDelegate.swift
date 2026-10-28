@@ -669,18 +669,12 @@ class AppleNowPlayingManager: NSObject {
     let artworkUrl = (info["artworkUrl"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     let artworkBytes = (info["artworkBytes"] as? FlutterStandardTypedData)?.data
 
-    // Aktiviere AudioSession + unhörbaren Keep-Alive-Player während der Remote-Wiedergabe,
-    // damit iOS die Now-Playing Dynamic Island dauerhaft anzeigt.
-    // Wenn lokale Wiedergabe (isLocal == true) aktiv ist, pausieren wir den silentPlayer,
-    // da audioplayers bereits einen echten nativen AVPlayer auf der AVAudioSession betreibt.
+    // Aktiviere AudioSession + unhörbaren Keep-Alive-Player während der Wiedergabe,
+    // damit iOS die App im Hintergrund niemals pausiert und die Dynamic Island aktiv hält.
     if isPlaying {
       AudioSessionManager.shared.configureAudioSession()
-      if isLocal {
-        silentPlayer?.pause()
-      } else {
-        if silentPlayer?.isPlaying != true {
-          silentPlayer?.play()
-        }
+      if silentPlayer?.isPlaying != true {
+        silentPlayer?.play()
       }
     } else {
       silentPlayer?.pause()
