@@ -15,6 +15,11 @@ const String screenshotDir =
 
 Future<void> saveScreenshot(
     WidgetTester tester, GlobalKey repaintKey, String filename) async {
+  final dir = Directory(screenshotDir);
+  if (!dir.existsSync()) {
+    // Auf CI-Runnern (z. B. GitHub Actions macOS) existiert das lokale Verzeichnis nicht -> überspringen
+    return;
+  }
   final boundary = repaintKey.currentContext?.findRenderObject()
       as RenderRepaintBoundary?;
   if (boundary == null) return;

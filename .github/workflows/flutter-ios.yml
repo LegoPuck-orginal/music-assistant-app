@@ -30,7 +30,7 @@ jobs:
         run: flutter analyze
 
       - name: Run Smoke Tests
-        run: flutter test
+        run: flutter test --reporter expanded
 
       - name: Build iOS Release App (Device / No CodeSign)
         run: |
@@ -41,17 +41,21 @@ jobs:
         if: failure()
         run: |
           echo "==================== TAIL OF LOG ===================="
-          tail -n 120 build.log
-          echo "==================== XCODEBUILD / SWIFT / FLUTTER ERRORS ===================="
-          grep -in -C 8 -E "error:|fatal error:|BUILD FAILED|The following build commands failed|AppDelegate\.swift" build.log || true
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git checkout -B build-log
-          grep -in -C 10 -E "error:|fatal error:|BUILD FAILED|The following build commands failed|AppDelegate\.swift" build.log > build_error_tail.txt || true
-          tail -n 300 build.log >> build_error_tail.txt || true
-          git add -f build_error_tail.txt
-          git commit -m "chore: save build failure log" || true
-          git push -f origin build-log || true
+          if [ -f build.log ]; then
+            tail -n 120 build.log
+            echo "==================== XCODEBUILD / SWIFT / FLUTTER ERRORS ===================="
+            grep -in -C 8 -E "error:|fatal error:|BUILD FAILED|The following build commands failed|AppDelegate\.swift" build.log || true
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git checkout -B build-log
+            grep -in -C 10 -E "error:|fatal error:|BUILD FAILED|The following build commands failed|AppDelegate\.swift" build.log > build_error_tail.txt || true
+            tail -n 300 build.log >> build_error_tail.txt || true
+            git add -f build_error_tail.txt
+            git commit -m "chore: save build failure log" || true
+            git push -f origin build-log || true
+          else
+            echo "build.log does not exist (failed during flutter analyze or flutter test)."
+          fi
 
       - name: Extract App Version from Pubspec
         run: |
