@@ -577,17 +577,7 @@ class MusicProvider extends ChangeNotifier {
       }
     }
 
-    // 3. Dynamischer Profil-Lautsprecher (falls Raumname zum angemeldeten Benutzerprofil passt)
-    final profileFirst = _currentUser?.effectiveName.split(' ').first.toLowerCase();
-    if (profileFirst != null && profileFirst.isNotEmpty) {
-      for (final p in realSpeakers) {
-        if (p.isAvailable && p.name.toLowerCase().contains(profileFirst)) {
-          return p;
-        }
-      }
-    }
-
-    // 4. Erster verfügbarer echter Netzwerk-Lautsprecher
+    // 3. Erster verfügbarer echter Netzwerk-Lautsprecher (nur falls vorhanden)
     for (final p in realSpeakers) {
       if (p.isAvailable) return p;
     }
@@ -1466,13 +1456,13 @@ class MusicProvider extends ChangeNotifier {
         }
       }
 
-      for (final p in enrichedPlayers) {
-        if (p.type == 'Sendspin' ||
-            (p.name.toLowerCase().contains('iphone') && p.id != 'local_iphone') ||
-            p.id == _sendspinService.clientId) {
-          _sendspinService.serverPlayerId = p.id;
-          debugPrint('[MusicProvider] Sendspin iPhone Player registriert mit ID: ${p.id}');
-          break;
+      if (_sendspinService.clientId != null) {
+        for (final p in enrichedPlayers) {
+          if (p.id == _sendspinService.clientId) {
+            _sendspinService.serverPlayerId = p.id;
+            debugPrint('[MusicProvider] Sendspin iPhone Player registriert mit ID: ${p.id}');
+            break;
+          }
         }
       }
 
@@ -2436,22 +2426,12 @@ class MusicProvider extends ChangeNotifier {
     if (!isLocalPlayback && _activePlayer != null && !_activePlayer!.isLocal) {
       return _activePlayer!.id;
     }
-    final sendspinId = _sendspinService.serverPlayerId ??
-        _sendspinService.clientId ??
-        _players.firstWhere(
-          (p) =>
-              (p.type == 'Sendspin' ||
-                  p.name.toLowerCase().contains('iphone')) &&
-              p.id != 'local_iphone',
-          orElse: () => PlayerDevice.localIPhone(),
-        ).id;
-    if (sendspinId != 'local_iphone') return sendspinId;
-    if (_savedActivePlayerId != 'local_iphone') {
-      final real = _players.cast<PlayerDevice?>().firstWhere(
-        (p) => p != null && !p.isLocal && p.isAvailable,
-        orElse: () => null,
-      );
-      if (real != null) return real.id;
+    // Eindeutige Sendspin-ID des aktuellen Geräts
+    if (_sendspinService.serverPlayerId != null) {
+      return _sendspinService.serverPlayerId;
+    }
+    if (_sendspinService.clientId != null) {
+      return _sendspinService.clientId;
     }
     return null;
   }
