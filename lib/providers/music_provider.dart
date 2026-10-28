@@ -2204,6 +2204,7 @@ class MusicProvider extends ChangeNotifier {
             await _localAudioPlayer.setVolume(vol);
             await _localAudioPlayer.stop();
             await _localAudioPlayer.play(DeviceFileSource(dt.localFilePath));
+            unawaited(AppleNowPlayingService.instance.sync(this, force: true));
             return;
           } catch (e) {
             debugPrint('[MusicProvider] Offline play error: $e');
@@ -2212,19 +2213,78 @@ class MusicProvider extends ChangeNotifier {
       }
     }
 
-    // 2. Wiedergabe: Sendspin iPhone Player oder echter Music Assistant Lautsprecher (Volle Songlänge!)
-    final targetPlayerId = _effectiveActivePlayerId;
-    if (_api.isConnected && targetPlayerId != null) {
-      // Echte Music Assistant Wiedergabe via Sendspin oder Netzwerk-Lautsprecher (Volle Songlänge!)
-      await _localAudioPlayer.stop();
-      if (isLocalPlayback || _activePlayer?.type == 'Sendspin') {
-        await _sendspinService.unlock();
+    // 2. Lokale iPhone Wiedergabe (Native iOS Audio via _localAudioPlayer & Flow-Streaming)
+    if (isLocalPlayback) {
+      _positionTimer?.cancel();
+      try {
+        String? playUrl;
+
+        // A. Falls Track bereits eine direkte HTTP Audio-Stream-URL hat (z. B. Webradio/Hörspiel/Podcast)
+        if (track.uri != null &&
+            track.uri!.startsWith('http') &&
+            !track.uri!.contains('p.scdn.co/mp3-preview') &&
+            !_isImageUrl(track.uri!)) {
+          playUrl = track.uri;
+        }
+
+        // B. Falls mit Music Assistant verbunden: Flow-Stream oder Full-Track-Stream
+        if (playUrl == null && _api.isConnected) {
+          final sendspinQueueId = _sendspinService.serverPlayerId;
+          if (sendspinQueueId != null) {
+            final mediaUri = _resolveTrackMediaUri(track);
+            try {
+              await _api.playMedia(
+                sendspinQueueId,
+                mediaUri,
+                option: 'replace',
+                radioMode: radioMode,
+              );
+              playUrl = _api.getQueueFlowStreamUrl(sendspinQueueId);
+            } catch (e) {
+              debugPrint('[MusicProvider] Local queue flow playMedia error: $e');
+            }
+          }
+          playUrl ??= await _api.fetchFullTrackStreamUrl(track, queueId: sendspinQueueId);
+        }
+
+        // C. Fallback auf Track-URI
+        if (playUrl == null &&
+            track.uri != null &&
+            track.uri!.startsWith('http') &&
+            !_isImageUrl(track.uri!)) {
+          playUrl = track.uri;
+        }
+
+        if (playUrl != null &&
+            playUrl.startsWith('http') &&
+            !_isImageUrl(playUrl)) {
+          final vol = (_activePlayer?.volume ?? 60) / 100.0;
+          await _localAudioPlayer.setVolume(vol);
+          await _localAudioPlayer.stop();
+          if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
+            await _localAudioPlayer.play(UrlSource(playUrl));
+          } else {
+            _startPositionTimer();
+          }
+        } else {
+          _startPositionTimer();
+        }
+      } catch (e) {
+        debugPrint('[MusicProvider] Local play error: $e');
+        _startPositionTimer();
       }
+      unawaited(AppleNowPlayingService.instance.sync(this, force: true));
+      return;
+    }
+
+    // 3. Remote Wiedergabe auf echtem Music Assistant Netzwerk-Lautsprecher (z. B. Sonos, AirPlay)
+    final targetPlayerId = _activePlayer?.id;
+    if (_api.isConnected && targetPlayerId != null && targetPlayerId != 'local_iphone') {
+      await _localAudioPlayer.stop();
       unawaited(AppleNowPlayingService.instance.sync(this, force: true));
       _startPositionTimer();
       final mediaUri = _resolveTrackMediaUri(track);
       try {
-        // Zuerst den gewählten Song einzeln mit 'replace' starten -> startet sofort in voller Länge!
         await _api.playMedia(
           targetPlayerId,
           mediaUri,
@@ -2232,7 +2292,6 @@ class MusicProvider extends ChangeNotifier {
           radioMode: radioMode,
         );
 
-        // Falls eine Liste (Album, Playlist, Hörbuch) übergeben wurde, die nachfolgenden Titel nahtlos anhängen
         if (!radioMode && newQueue != null && newQueue.length > 1) {
           final startIdx = newQueue.indexWhere((t) => t.id == track.id);
           final afterTracks = startIdx != -1 && startIdx + 1 < newQueue.length
@@ -2261,51 +2320,6 @@ class MusicProvider extends ChangeNotifier {
             await _api.playerPlay(targetPlayerId);
           } catch (_) {}
         }
-      }
-    } else {
-      // Lokaler Fallback (nur falls kein Server verbunden ist oder gar keine Sendspin/Netzwerk-Lautsprecher existieren)
-      _positionTimer?.cancel();
-      try {
-        String? playUrl;
-
-        // Falls Track bereits eine direkte Audio-Stream-URL hat (z. B. Radio/Hörbuch)
-        if (track.uri != null &&
-            track.uri!.startsWith('http') &&
-            !track.uri!.contains('p.scdn.co/mp3-preview') &&
-            !_isImageUrl(track.uri!)) {
-          playUrl = track.uri;
-        }
-
-        // Falls mit Server verbunden, Stream-Endpunkt bevorzugen
-        if (playUrl == null && _api.isConnected) {
-          playUrl = await _api.fetchTrackPreviewUrl(track);
-        }
-
-        // Falls Track eine direkte Stream-URI hat (z. B. Webradio/Hörspiel)
-        if (playUrl == null &&
-            track.uri != null &&
-            track.uri!.startsWith('http') &&
-            !_isImageUrl(track.uri!)) {
-          playUrl = track.uri;
-        }
-
-        if (playUrl != null &&
-            playUrl.startsWith('http') &&
-            !_isImageUrl(playUrl)) {
-          final vol = (_activePlayer?.volume ?? 60) / 100.0;
-          await _localAudioPlayer.setVolume(vol);
-          await _localAudioPlayer.stop();
-          if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
-            await _localAudioPlayer.play(UrlSource(playUrl));
-          } else {
-            _startPositionTimer();
-          }
-        } else {
-          _startPositionTimer();
-        }
-      } catch (e) {
-        debugPrint('[MusicProvider] Local play error: $e');
-        _startPositionTimer();
       }
     }
   }
@@ -2453,23 +2467,7 @@ class MusicProvider extends ChangeNotifier {
     _isPlaying = !_isPlaying;
     notifyListeners();
 
-    final effPlayerId = _effectiveActivePlayerId;
-    if (effPlayerId != null && _api.isConnected) {
-      if (_isPlaying) {
-        _startPositionTimer();
-        if (isLocalPlayback || _activePlayer?.type == 'Sendspin') {
-          await _sendspinService.unlock();
-          await _sendspinService.sendCommand('play');
-        }
-        await _api.playerPlay(effPlayerId);
-      } else {
-        _positionTimer?.cancel();
-        if (isLocalPlayback || _activePlayer?.type == 'Sendspin') {
-          await _sendspinService.sendCommand('pause');
-        }
-        await _api.playerPause(effPlayerId);
-      }
-    } else if (isLocalPlayback) {
+    if (isLocalPlayback) {
       if (_isPlaying) {
         if (_localAudioPlayer.source == null &&
             _currentTrack != null &&
@@ -2483,25 +2481,31 @@ class MusicProvider extends ChangeNotifier {
         await _localAudioPlayer.pause();
         _positionTimer?.cancel();
       }
-    } else if (_activePlayer != null) {
-      if (_isPlaying) {
-        _startPositionTimer();
-        await _api.playerPlay(_activePlayer!.id);
-      } else {
-        _positionTimer?.cancel();
-        await _api.playerPause(_activePlayer!.id);
+    } else {
+      final effPlayerId = _effectiveActivePlayerId ?? _activePlayer?.id;
+      if (effPlayerId != null && _api.isConnected) {
+        if (_isPlaying) {
+          _startPositionTimer();
+          await _api.playerPlay(effPlayerId);
+        } else {
+          _positionTimer?.cancel();
+          await _api.playerPause(effPlayerId);
+        }
       }
     }
+    unawaited(AppleNowPlayingService.instance.sync(this, force: true));
   }
 
   Future<void> next() async {
-    final effPlayerId = _effectiveActivePlayerId;
-    if (effPlayerId != null && _api.isConnected) {
-      try {
-        await _api.playerNext(effPlayerId);
-        return;
-      } catch (e) {
-        debugPrint('[MusicProvider] Remote playerNext fallback: $e');
+    if (!isLocalPlayback) {
+      final effPlayerId = _effectiveActivePlayerId;
+      if (effPlayerId != null && _api.isConnected) {
+        try {
+          await _api.playerNext(effPlayerId);
+          return;
+        } catch (e) {
+          debugPrint('[MusicProvider] Remote playerNext fallback: $e');
+        }
       }
     }
 
@@ -2527,13 +2531,15 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
 
-    final effPlayerId = _effectiveActivePlayerId;
-    if (effPlayerId != null && _api.isConnected) {
-      try {
-        await _api.playerPrevious(effPlayerId);
-        return;
-      } catch (e) {
-        debugPrint('[MusicProvider] Remote playerPrevious fallback: $e');
+    if (!isLocalPlayback) {
+      final effPlayerId = _effectiveActivePlayerId;
+      if (effPlayerId != null && _api.isConnected) {
+        try {
+          await _api.playerPrevious(effPlayerId);
+          return;
+        } catch (e) {
+          debugPrint('[MusicProvider] Remote playerPrevious fallback: $e');
+        }
       }
     }
 
@@ -2549,10 +2555,9 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> seekTo(Duration position) async {
     _currentPosition = position;
-    final effPlayerId = _effectiveActivePlayerId;
-    if (effPlayerId != null) {
+    if (!isLocalPlayback && _effectiveActivePlayerId != null) {
       _positionTracker.setAnchor(
-        queueId: effPlayerId,
+        queueId: _effectiveActivePlayerId!,
         elapsedSec: position.inMilliseconds / 1000.0,
         isPlaying: _isPlaying,
         durationSec: _totalDuration.inSeconds.toDouble(),
@@ -2560,9 +2565,9 @@ class MusicProvider extends ChangeNotifier {
     }
     notifyListeners();
 
-    if (effPlayerId != null && _api.isConnected) {
+    if (!isLocalPlayback && _effectiveActivePlayerId != null && _api.isConnected) {
       try {
-        await _api.playerSeek(effPlayerId, position.inSeconds);
+        await _api.playerSeek(_effectiveActivePlayerId!, position.inSeconds);
       } catch (e) {
         debugPrint('[MusicProvider] Remote seek error: $e');
       }

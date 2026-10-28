@@ -136,6 +136,7 @@ class AppleNowPlayingService {
         'durationSeconds': durSeconds,
         'positionSeconds': posSeconds,
         'isPlaying': isPlaying,
+        'isLocal': provider.isLocalPlayback,
         'artworkUrl': artUrl,
       };
       if (cachedBytes != null) {
@@ -197,6 +198,7 @@ class AppleNowPlayingService {
         'durationSeconds': p.totalDuration.inMilliseconds / 1000.0,
         'positionSeconds': posSeconds,
         'isPlaying': p.isPlaying,
+        'isLocal': p.isLocalPlayback,
         'artworkUrl': artUrl,
       };
       if (cachedBytes != null) {

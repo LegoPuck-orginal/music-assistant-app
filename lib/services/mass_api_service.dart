@@ -654,7 +654,46 @@ class MassApiService {
     return [];
   }
 
-  /// Ruft Audio Preview Stream URL ab (für lokale iPhone Wiedergabe)
+  /// Gibt die native kontinuierliche HTTP-Flow-Stream-URL einer Music Assistant Warteschlange zurück
+  /// (unterstützt MP3 und Lossless FLAC, perfekt für nativen AVPlayer auf iOS)
+  String getQueueFlowStreamUrl(String queueId, {bool lossless = false}) {
+    final cleanUrl = _serverUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final ext = lossless ? 'flac' : 'mp3';
+    return '$cleanUrl/flow/$queueId/stream.$ext';
+  }
+
+  /// Ermittelt die vollständige Audio-Stream-URL für einen Song in voller Länge
+  /// (keine 30s-Vorschau!)
+  Future<String?> fetchFullTrackStreamUrl(Track track, {String? queueId}) async {
+    final cleanUrl = _serverUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    // 1. Falls der Track bereits eine direkte HTTP-Audio-Stream-URL besitzt (Radio, Podcast, Audiobook)
+    if (track.uri != null &&
+        track.uri!.startsWith('http') &&
+        !track.uri!.contains('p.scdn.co/mp3-preview') &&
+        !_isStaticImageUrl(track.uri!)) {
+      return track.uri;
+    }
+
+    // 2. Falls eine aktive Player-Queue auf dem Server existiert, deren Flow-Stream nutzen
+    if (queueId != null && queueId.isNotEmpty && queueId != 'local_iphone') {
+      return getQueueFlowStreamUrl(queueId);
+    }
+
+    // 3. Music Assistant Track-Stream API Endpunkt
+    final mediaUri = track.rawSource?['uri']?.toString() ?? track.uri ?? track.id;
+    return '$cleanUrl/api/stream?track_id=${Uri.encodeComponent(track.id)}&uri=${Uri.encodeComponent(mediaUri)}';
+  }
+
+  bool _isStaticImageUrl(String url) {
+    final lower = url.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.webp') ||
+        lower.contains('imageproxy');
+  }
+
+  /// Ruft Audio Preview Stream URL ab (für kurze 30s Vorhör-Funktion)
   Future<String?> fetchTrackPreviewUrl(Track track) async {
     try {
       final provider = track.provider ?? 'library';
