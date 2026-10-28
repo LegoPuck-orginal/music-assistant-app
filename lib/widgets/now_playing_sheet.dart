@@ -78,45 +78,50 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                         color: Colors.white, size: 30),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
-                  Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: SpotifyColors.orange.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: SpotifyColors.orange.withValues(alpha: 0.45),
-                            width: 0.7,
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: SpotifyColors.orange.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: SpotifyColors.orange.withValues(alpha: 0.45),
+                              width: 0.7,
+                            ),
+                          ),
+                          child: Text(
+                            prov.losslessStreaming
+                                ? 'STUDIO HI-RES • LIVE'
+                                : 'STUDIO STREAM • LIVE',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: SpotifyColors.orangeLight,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.1,
+                            ),
                           ),
                         ),
-                        child: Text(
-                          prov.losslessStreaming
-                              ? 'STUDIO HI-RES • LIVE'
-                              : 'STUDIO STREAM • LIVE',
+                        const SizedBox(height: 3),
+                        Text(
+                          track.album.isNotEmpty
+                              ? track.album
+                              : 'Music Assistant',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: SpotifyColors.orangeLight,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.1,
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        track.album.isNotEmpty
-                            ? track.album
-                            : 'Music Assistant',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.more_horiz_rounded,
@@ -135,51 +140,57 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
               Hero(
                 tag: 'now-playing-art',
                 child: Center(
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: SpotifyColors.surfaceElevated,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: prov.isPlaying
-                              ? SpotifyColors.orange.withValues(alpha: 0.5)
-                              : Colors.white12,
-                          width: 1.2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.85),
-                            blurRadius: 32,
-                            offset: const Offset(0, 16),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.31,
+                      maxWidth: MediaQuery.of(context).size.height * 0.31,
+                    ),
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: SpotifyColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: prov.isPlaying
+                                ? SpotifyColors.orange.withValues(alpha: 0.5)
+                                : Colors.white12,
+                            width: 1.2,
                           ),
-                          if (prov.isPlaying)
+                          boxShadow: [
                             BoxShadow(
-                              color:
-                                  SpotifyColors.orange.withValues(alpha: 0.22),
-                              blurRadius: 36,
-                              spreadRadius: 2,
+                              color: Colors.black.withValues(alpha: 0.85),
+                              blurRadius: 32,
+                              offset: const Offset(0, 16),
                             ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18.5),
-                        child: track.imageUrl != null
-                            ? Image.network(
-                                track.imageUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    const Icon(
+                            if (prov.isPlaying)
+                              BoxShadow(
+                                color:
+                                    SpotifyColors.orange.withValues(alpha: 0.22),
+                                blurRadius: 36,
+                                spreadRadius: 2,
+                              ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18.5),
+                          child: track.imageUrl != null
+                              ? Image.network(
+                                  track.imageUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(
+                                    Icons.music_note_rounded,
+                                    color: SpotifyColors.orange,
+                                    size: 100,
+                                  ),
+                                )
+                              : const Icon(
                                   Icons.music_note_rounded,
                                   color: SpotifyColors.orange,
                                   size: 100,
                                 ),
-                              )
-                            : const Icon(
-                                Icons.music_note_rounded,
-                                color: SpotifyColors.orange,
-                                size: 100,
-                              ),
+                        ),
                       ),
                     ),
                   ),
@@ -500,33 +511,39 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  GestureDetector(
-                    onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        backgroundColor: Colors.transparent,
-                        builder: (_) => const DevicePickerSheet(),
-                      );
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.devices,
-                          color: SpotifyColors.green,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          prov.activePlayer?.name ?? 'Wiedergabegerät wählen',
-                          style: const TextStyle(
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => const DevicePickerSheet(),
+                        );
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.devices,
                             color: SpotifyColors.green,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                            size: 18,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              prov.activePlayer?.name ?? 'Wiedergabegerät wählen',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: SpotifyColors.green,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   Row(

@@ -91,6 +91,7 @@ class MusicProvider extends ChangeNotifier {
   String? _dspError;
   StreamSubscription? _eventsSubscription;
   StreamSubscription? _authSubscription;
+  StreamSubscription? _sendspinReadySub;
 
   // Search Results
   List<Track> _searchResultsTracks = [];
@@ -2221,10 +2222,10 @@ class MusicProvider extends ChangeNotifier {
         (track.uri!.contains('stream') || _activePlayer?.isLocal == true)) {
       _positionTimer?.cancel();
       try {
-        final vol = (_activePlayer?.volume ?? 60) / 100.0;
-        await _localAudioPlayer.setVolume(vol);
-        await _localAudioPlayer.stop();
         if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
+          final vol = (_activePlayer?.volume ?? 60) / 100.0;
+          await _localAudioPlayer.setVolume(vol);
+          await _localAudioPlayer.stop();
           await _localAudioPlayer.play(UrlSource(track.uri!));
         } else {
           _startPositionTimer();
@@ -2237,12 +2238,27 @@ class MusicProvider extends ChangeNotifier {
     }
 
     // 3. Echte Music Assistant Wiedergabe (Netzwerk-Lautsprecher ODER Dieses iPhone via Sendspin)
-    final targetPlayerId = _effectiveActivePlayerId ??
-        _activePlayer?.id ??
-        _players.firstWhere((p) => !p.isLocal && p.isAvailable, orElse: () => PlayerDevice.localIPhone()).id;
+    String? targetPlayerId;
+    if (!isLocalPlayback && _activePlayer != null && !_activePlayer!.isLocal) {
+      targetPlayerId = _activePlayer!.id;
+    } else {
+      targetPlayerId = _effectiveActivePlayerId;
+      if (targetPlayerId == null && _savedActivePlayerId != 'local_iphone') {
+        final realSpeaker = _players.cast<PlayerDevice?>().firstWhere(
+          (p) => p != null && !p.isLocal && p.isAvailable,
+          orElse: () => null,
+        );
+        if (realSpeaker != null) {
+          targetPlayerId = realSpeaker.id;
+          _activePlayer = realSpeaker.copyWith(isSelected: true);
+        }
+      }
+    }
 
-    if (_api.isConnected && targetPlayerId != 'local_iphone') {
-      await _localAudioPlayer.stop();
+    if (_api.isConnected && targetPlayerId != null && targetPlayerId != 'local_iphone') {
+      if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
+        await _localAudioPlayer.stop();
+      }
       if (isLocalPlayback || _activePlayer?.type == 'Sendspin') {
         await _sendspinService.unlock();
       }
@@ -2287,7 +2303,23 @@ class MusicProvider extends ChangeNotifier {
         }
       }
     } else {
-      // 4. Fallback-Modus für Offline / Tests
+      // 4. Fallback-Modus für lokale iPhone-Wiedergabe (ohne registrierten Sendspin-Server) oder Offline / Tests
+      _positionTimer?.cancel();
+      try {
+        if (!kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST')) {
+          final streamUrl = await _api.fetchFullTrackStreamUrl(track, queueId: targetPlayerId);
+          final vol = (_activePlayer?.volume ?? 60) / 100.0;
+          await _localAudioPlayer.setVolume(vol);
+          await _localAudioPlayer.stop();
+          if (streamUrl != null && streamUrl.isNotEmpty) {
+            await _localAudioPlayer.play(UrlSource(streamUrl));
+          } else if (track.previewUrl != null && track.previewUrl!.isNotEmpty) {
+            await _localAudioPlayer.play(UrlSource(track.previewUrl!));
+          }
+        }
+      } catch (e) {
+        debugPrint('[MusicProvider] Local fallback audio error: $e');
+      }
       _startPositionTimer();
       unawaited(AppleNowPlayingService.instance.sync(this, force: true));
     }
@@ -2401,10 +2433,11 @@ class MusicProvider extends ChangeNotifier {
   }
 
   String? get _effectiveActivePlayerId {
-    if (!isLocalPlayback && _activePlayer != null) {
+    if (!isLocalPlayback && _activePlayer != null && !_activePlayer!.isLocal) {
       return _activePlayer!.id;
     }
     final sendspinId = _sendspinService.serverPlayerId ??
+        _sendspinService.clientId ??
         _players.firstWhere(
           (p) =>
               (p.type == 'Sendspin' ||
@@ -2412,12 +2445,28 @@ class MusicProvider extends ChangeNotifier {
               p.id != 'local_iphone',
           orElse: () => PlayerDevice.localIPhone(),
         ).id;
-    return sendspinId != 'local_iphone' ? sendspinId : null;
+    if (sendspinId != 'local_iphone') return sendspinId;
+    if (_savedActivePlayerId != 'local_iphone') {
+      final real = _players.cast<PlayerDevice?>().firstWhere(
+        (p) => p != null && !p.isLocal && p.isAvailable,
+        orElse: () => null,
+      );
+      if (real != null) return real.id;
+    }
+    return null;
   }
 
   Future<void> _initSendspinPlayer() async {
     if (_serverUrl.isEmpty) return;
     try {
+      _sendspinReadySub?.cancel();
+      _sendspinReadySub = _sendspinService.onReady.listen((clientId) {
+        debugPrint('[MusicProvider] Sendspin meldet Bereitschaft mit ClientId: $clientId');
+        _sendspinService.serverPlayerId = clientId;
+        if (_api.isConnected) {
+          refreshServerData();
+        }
+      });
       await _sendspinService.initialize(
         serverUrl: _serverUrl,
         clientName: 'Dieses iPhone',
@@ -3295,6 +3344,7 @@ class MusicProvider extends ChangeNotifier {
     _downloadService.removeListener(notifyListeners);
     _authSubscription?.cancel();
     _eventsSubscription?.cancel();
+    _sendspinReadySub?.cancel();
     _positionTimer?.cancel();
     _positionTicker?.cancel();
     _playerPollTimer?.cancel();

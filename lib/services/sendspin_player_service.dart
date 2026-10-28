@@ -27,8 +27,11 @@ class SendspinPlayerService {
 
   final StreamController<Map<String, dynamic>> _stateController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<String> _readyController =
+      StreamController<String>.broadcast();
 
   Stream<Map<String, dynamic>> get onStateChanged => _stateController.stream;
+  Stream<String> get onReady => _readyController.stream;
   bool get isReady => _isReady;
   bool get isInitialized => _isInitialized;
   String? get clientId => _clientId;
@@ -53,6 +56,8 @@ class SendspinPlayerService {
       _isInitialized = true;
       _isReady = true;
       _clientId = 'mock_sendspin_client_test';
+      serverPlayerId = _clientId;
+      _readyController.add(_clientId!);
       debugPrint('[Sendspin] Test-Umgebung: Sendspin Mock aktiv.');
       return;
     }
@@ -98,11 +103,13 @@ $bundleJs
           throw new Error("SendspinPlayer Klasse nicht gefunden");
         }
 
+        const audioEl = document.getElementById('dummy-media');
         player = new PlayerClass({
           baseUrl: baseUrl,
           clientName: clientName || "Dieses iPhone",
           productName: "Music Assistant iOS",
           correctionMode: "quality-local",
+          audioElement: audioEl,
           requiredLeadTimeMs: 250,
           minBufferMs: 250,
           onStateChange: (state) => {
@@ -197,6 +204,10 @@ $bundleJs
                   final data = jsonDecode(args.first.toString());
                   _clientId = data['clientId']?.toString();
                   _isReady = true;
+                  if (_clientId != null) {
+                    serverPlayerId = _clientId;
+                    _readyController.add(_clientId!);
+                  }
                   debugPrint('[Sendspin] Bereit! ClientId: $_clientId');
                 }
               } catch (e) {

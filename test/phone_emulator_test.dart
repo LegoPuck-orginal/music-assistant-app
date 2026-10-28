@@ -7,8 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:music_assistant_app/providers/music_provider.dart';
 import 'package:music_assistant_app/screens/main_navigation_screen.dart';
+import 'package:music_assistant_app/screens/virtual_dj_screen.dart';
 import 'package:music_assistant_app/theme/spotify_colors.dart';
 import 'package:music_assistant_app/widgets/device_picker_sheet.dart';
+import 'package:music_assistant_app/widgets/now_playing_sheet.dart';
 
 const String screenshotDir =
     '/home/tim-m/.gemini/antigravity-cli/brain/9680a59f-93f0-40b1-9954-ea3611ce591a';
@@ -148,9 +150,52 @@ void main() {
       expect(find.text('Durchsage'), findsOneWidget);
 
       await saveScreenshot(tester, repaintKey, 'iphone_02_home_menu.png');
+
+      // Popup-Menü sauber schließen
+      Navigator.of(tester.element(find.text('Einstellungen'))).pop();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('2. Spotify Connect Device Picker Sheet & Multi-Room Sync',
+    testWidgets('2. Now Playing Screen & Live Waveform Scrubber',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final prov = MusicProvider();
+      final playerId = prov.localAudioPlayer.playerId;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        MethodChannel('xyz.luan/audioplayers/events/$playerId'),
+        (MethodCall methodCall) async => null,
+      );
+
+      // Titel starten
+      await prov.playTrack(prov.queue.first);
+
+      final repaintKey = GlobalKey();
+      await tester.pumpWidget(
+        createPhoneEmulatorFrame(
+          child: const Scaffold(body: NowPlayingSheet()),
+          repaintKey: repaintKey,
+          musicProvider: prov,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byType(NowPlayingSheet), findsOneWidget);
+      expect(find.text(prov.currentTrack!.title), findsWidgets);
+      expect(find.text(prov.currentTrack!.artist), findsWidgets);
+
+      await saveScreenshot(tester, repaintKey, 'iphone_03_now_playing.png');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('3. Spotify Connect Device Picker Sheet & Multi-Room Sync',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(393 * 3, 852 * 3);
       tester.view.devicePixelRatio = 3.0;
@@ -180,10 +225,11 @@ void main() {
       // Überprüfe Hero-Bereich des aktiven Geräts
       expect(find.textContaining('Dieses iPhone'), findsWidgets);
 
-      await saveScreenshot(tester, repaintKey, 'iphone_03_spotify_connect.png');
+      await saveScreenshot(tester, repaintKey, 'iphone_04_spotify_connect.png');
+      await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('3. Neuer Hörspiele Tab in der Hauptnavigation',
+    testWidgets('4. Neuer Hörspiele Tab in der Hauptnavigation',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(393 * 3, 852 * 3);
       tester.view.devicePixelRatio = 3.0;
@@ -217,10 +263,11 @@ void main() {
       expect(find.text('Hörspiele'), findsWidgets);
       expect(find.text('Die drei ???'), findsWidgets);
 
-      await saveScreenshot(tester, repaintKey, 'iphone_04_hoerspiele.png');
+      await saveScreenshot(tester, repaintKey, 'iphone_05_hoerspiele.png');
+      await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('4. Bibliothek & Lieblingssongs Direktanzeige',
+    testWidgets('5. Bibliothek & Lieblingssongs Direktanzeige',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(393 * 3, 852 * 3);
       tester.view.devicePixelRatio = 3.0;
@@ -254,7 +301,49 @@ void main() {
       expect(find.text('Deine Bibliothek'), findsOneWidget);
       expect(find.text('Lieblingssongs'), findsWidgets);
 
-      await saveScreenshot(tester, repaintKey, 'iphone_05_library.png');
+      await saveScreenshot(tester, repaintKey, 'iphone_06_library.png');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('6. Virtual KI-DJ Studio & Voice Settings',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final prov = MusicProvider();
+      final playerId = prov.localAudioPlayer.playerId;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        MethodChannel('xyz.luan/audioplayers/events/$playerId'),
+        (MethodCall methodCall) async => null,
+      );
+      final repaintKey = GlobalKey();
+
+      await tester.pumpWidget(
+        createPhoneEmulatorFrame(
+          child: const VirtualDjScreen(),
+          repaintKey: repaintKey,
+          musicProvider: prov,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('STUDIO KI-DJ'), findsOneWidget);
+      expect(find.text('VIBE & MIX WECHSELN'), findsOneWidget);
+
+      await saveScreenshot(tester, repaintKey, 'iphone_07_virtual_dj.png');
+
+      // Voice Settings Sheet öffnen
+      await tester.tap(find.byIcon(Icons.tune_rounded));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('DJ STIMME & SPRACHMODELL'), findsOneWidget);
+      await saveScreenshot(tester, repaintKey, 'iphone_08_dj_voice_settings.png');
+      await tester.pumpWidget(const SizedBox());
     });
   });
 }

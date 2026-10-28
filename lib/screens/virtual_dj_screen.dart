@@ -204,12 +204,16 @@ class _VirtualDjScreenState extends State<VirtualDjScreen> {
                           color: SpotifyColors.amber,
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          'Spielt auf: ${prov.activePlayer!.name}',
-                          style: const TextStyle(
-                            color: SpotifyColors.amber,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            'Spielt auf: ${prov.activePlayer!.name}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: SpotifyColors.amber,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
@@ -592,15 +596,15 @@ class _VirtualDjScreenState extends State<VirtualDjScreen> {
                             Icon(
                               Icons.shuffle_rounded,
                               color: Colors.black,
-                              size: 20,
+                              size: 18,
                             ),
-                            SizedBox(width: 10),
+                            SizedBox(width: 8),
                             Text(
                               'VIBE & MIX WECHSELN',
                               style: TextStyle(
-                                fontSize: 13.5,
+                                fontSize: 12.0,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 1.1,
+                                letterSpacing: 0.8,
                               ),
                             ),
                           ],
