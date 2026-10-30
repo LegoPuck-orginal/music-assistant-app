@@ -28,6 +28,8 @@ class StorageService {
   static const String _keyDontStopTheMusic = 'mass_dont_stop_the_music';
   static const String _keyCustomPlaylists = 'mass_custom_playlists';
   static const String _keyRecentlyPlayed = 'mass_recently_played';
+  static const String _keySendspinIdentity = 'mass_sendspin_identity';
+  static const String _keyDeviceSuffix = 'mass_device_suffix';
 
   // Kein hartcodierter persönlicher Token im App-Code (Datenschutz)
   static const String defaultAdminToken = '';
@@ -122,6 +124,46 @@ class StorageService {
     } else {
       await prefs.setString(_keyActivePlayer, id);
     }
+  }
+
+  /// Stabile Sendspin-Identität (Schlüsselpaar des SDK), damit das iPhone nach
+  /// jedem App-Start derselbe Player auf dem Server bleibt (keine Geister-Player).
+  Future<Map<String, String>> loadSendspinIdentity() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_keySendspinIdentity);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  Future<void> saveSendspinIdentity(Map<String, String> items) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keySendspinIdentity, jsonEncode(items));
+  }
+
+  /// Kurzes, zufälliges, dauerhaft gespeichertes Geräte-Suffix. Der Player-Name
+  /// "Dieses iPhone (xxxx)" ist dadurch auf dem Server eindeutig, ohne dass
+  /// irgendwelche Namens-Heuristiken fremde Lautsprecher treffen können.
+  Future<String> loadOrCreateDeviceSuffix() async {
+    final prefs = await SharedPreferences.getInstance();
+    var suffix = prefs.getString(_keyDeviceSuffix);
+    if (suffix == null || suffix.length < 4) {
+      const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+      var seed = DateTime.now().microsecondsSinceEpoch;
+      final buf = StringBuffer();
+      for (var i = 0; i < 4; i++) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        buf.write(chars[seed % chars.length]);
+      }
+      suffix = buf.toString();
+      await prefs.setString(_keyDeviceSuffix, suffix);
+    }
+    return suffix;
   }
 
   Future<Set<String>> loadLikedTrackIds() async {

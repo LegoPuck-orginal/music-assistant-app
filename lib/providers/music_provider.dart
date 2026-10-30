@@ -1390,7 +1390,35 @@ class MusicProvider extends ChangeNotifier {
       final List<PlayerDevice> enrichedPlayers = [];
       PlayerDevice? activelyPlaying;
 
+      // Der Server vergibt dem iPhone-Sendspin-Player eine EIGENE Player-ID (nicht die
+      // SDK-Client-ID). Zuordnung strikt über den eindeutigen, app-generierten Namen
+      // "Dieses iPhone (xxxx)" – keine Teilstring-Heuristiken auf fremden Geräten.
+      if (_sendspinService.isReady) {
+        // Bei mehreren gleichnamigen Einträgen (z. B. Reste einer früheren Installation)
+        // zählt der verfügbare, zuletzt registrierte Player.
+        final sameName = remotePlayers
+            .where((rp) => rp.name == _sendspinService.clientName)
+            .toList();
+        final live = sameName.where((rp) => rp.isAvailable).toList();
+        final match = live.isNotEmpty
+            ? live.last
+            : (sameName.isNotEmpty ? sameName.last : null);
+        if (match != null) {
+          if (_sendspinService.serverPlayerId != match.id) {
+            debugPrint(
+                '[MusicProvider] Sendspin iPhone Player registriert mit ID: ${match.id}');
+          }
+          _sendspinService.serverPlayerId = match.id;
+        }
+      }
+
       for (final rp in remotePlayers) {
+        // Der eigene Sendspin-Player wird in der UI durch "Dieses iPhone" repräsentiert
+        if (rp.id == _sendspinService.serverPlayerId ||
+            (_sendspinService.isReady &&
+                rp.name == _sendspinService.clientName)) {
+          continue;
+        }
         final q = queueMap[rp.id];
         String effectiveState = rp.state;
         String? effectiveTitle = rp.currentTitle;
@@ -1453,16 +1481,6 @@ class MusicProvider extends ChangeNotifier {
 
         if (p.isPlaying && activelyPlaying == null) {
           activelyPlaying = p;
-        }
-      }
-
-      if (_sendspinService.clientId != null) {
-        for (final p in enrichedPlayers) {
-          if (p.id == _sendspinService.clientId) {
-            _sendspinService.serverPlayerId = p.id;
-            debugPrint('[MusicProvider] Sendspin iPhone Player registriert mit ID: ${p.id}');
-            break;
-          }
         }
       }
 
@@ -2228,6 +2246,16 @@ class MusicProvider extends ChangeNotifier {
     }
 
     // 3. Echte Music Assistant Wiedergabe (Netzwerk-Lautsprecher ODER Dieses iPhone via Sendspin)
+    if (isLocalPlayback &&
+        _api.isConnected &&
+        _sendspinService.serverPlayerId == null &&
+        !kIsWeb &&
+        !Platform.environment.containsKey('FLUTTER_TEST')) {
+      if (!_sendspinService.isReady) {
+        await _initSendspinPlayer();
+      }
+      await _resolveLocalSendspinPlayerId();
+    }
     String? targetPlayerId;
     if (!isLocalPlayback && _activePlayer != null && !_activePlayer!.isLocal) {
       targetPlayerId = _activePlayer!.id;
@@ -2430,9 +2458,6 @@ class MusicProvider extends ChangeNotifier {
     if (_sendspinService.serverPlayerId != null) {
       return _sendspinService.serverPlayerId;
     }
-    if (_sendspinService.clientId != null) {
-      return _sendspinService.clientId;
-    }
     return null;
   }
 
@@ -2442,18 +2467,36 @@ class MusicProvider extends ChangeNotifier {
       _sendspinReadySub?.cancel();
       _sendspinReadySub = _sendspinService.onReady.listen((clientId) {
         debugPrint('[MusicProvider] Sendspin meldet Bereitschaft mit ClientId: $clientId');
-        _sendspinService.serverPlayerId = clientId;
-        if (_api.isConnected) {
-          refreshServerData();
-        }
+        // Player-ID vom Server ermitteln (kurz nach dem Hello registriert der Server den Player)
+        unawaited(_resolveLocalSendspinPlayerId());
       });
+      final suffix = await _storage.loadOrCreateDeviceSuffix();
+      final identity = await _storage.loadSendspinIdentity();
       await _sendspinService.initialize(
         serverUrl: _serverUrl,
-        clientName: 'Dieses iPhone',
+        clientName: 'Dieses iPhone ($suffix)',
+        authToken: _authToken,
+        identityStore: identity,
+        onPersistIdentity: _storage.saveSendspinIdentity,
       );
     } catch (e) {
       debugPrint('[MusicProvider] Sendspin Init Fehler: $e');
     }
+  }
+
+  /// Ermittelt die vom Server vergebene Player-ID des iPhone-Sendspin-Players
+  /// (mehrere Versuche, da der Server den Player erst kurz nach dem Hello anlegt).
+  Future<bool> _resolveLocalSendspinPlayerId() async {
+    // Der Server legt den Player erst einige Sekunden nach dem Hello an (gemessen: bis ~15 s)
+    for (var attempt = 0; attempt < 40; attempt++) {
+      if (_sendspinService.serverPlayerId != null) return true;
+      if (_api.isConnected) {
+        await refreshServerData();
+        if (_sendspinService.serverPlayerId != null) return true;
+      }
+      await Future.delayed(const Duration(seconds: 1));
+    }
+    return _sendspinService.serverPlayerId != null;
   }
 
   Future<void> togglePlayPause() async {
